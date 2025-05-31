@@ -912,7 +912,7 @@ export default {
       
       try {
         const params = {};
-        if this.statisticsDateRange.start) {
+        if (this.statisticsDateRange.start) {
           params.startDate = this.statisticsDateRange.start;
         }
         if (this.statisticsDateRange.end) {
