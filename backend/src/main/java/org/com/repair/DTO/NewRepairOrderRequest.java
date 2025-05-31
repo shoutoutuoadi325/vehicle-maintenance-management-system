@@ -15,8 +15,10 @@ public record NewRepairOrderRequest(
     Double laborCost,
     Double materialCost,
     Double totalCost,
+    Double estimatedHours,
+    Double actualHours,
     Long userId,
     Long vehicleId,
     Set<Long> technicianIds
 ) {
-} 
+}

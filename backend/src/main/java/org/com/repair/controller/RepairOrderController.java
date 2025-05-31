@@ -2,6 +2,7 @@ package org.com.repair.controller;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
 
 import org.com.repair.DTO.NewRepairOrderRequest;
 import org.com.repair.DTO.RepairOrderResponse;
@@ -143,4 +144,27 @@ public class RepairOrderController {
         List<Object[]> statistics = repairOrderService.getTaskStatisticsBySkillType(startDate, endDate);
         return new ResponseEntity<>(statistics, HttpStatus.OK);
     }
-} 
+    
+    @PutMapping("/{id}/reassign")
+    public ResponseEntity<RepairOrderResponse> reassignTechnicians(
+            @PathVariable Long id,
+            @RequestBody Set<Long> technicianIds,
+            @RequestParam(defaultValue = "true") boolean isManual) {
+        try {
+            RepairOrderResponse response = repairOrderService.reassignTechnicians(id, technicianIds, isManual);
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } catch (RuntimeException e) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+    }
+    
+    @PutMapping("/{id}/auto-reassign")
+    public ResponseEntity<RepairOrderResponse> autoReassignTechnicians(@PathVariable Long id) {
+        try {
+            RepairOrderResponse response = repairOrderService.autoReassignTechnicians(id);
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } catch (RuntimeException e) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+    }
+}

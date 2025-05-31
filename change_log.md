@@ -39,12 +39,6 @@ FK: Foreign Key (外键)<p>
 # 前端运行时的注意事项
 如果直接npm run serve失败：如果存在node_modules则删除这个文件夹及其中的所有内容，然后npm install之后再npm run serve即可
 
-# 后端运行说明
-1. 确保MySQL数据库运行在localhost:3306
-2. 数据库名称：vehicle_maintenance_db
-3. 用户名/密码：root/123456（根据实际情况调整）
-4. 运行SpringBoot应用：VehicleMaintenanceApplication
-
 # 主要业务流程
 1. **客户注册** → **添加车辆** → **提交维修申请**
 2. **管理员审核** → **分配技师** → **设置费用预估**

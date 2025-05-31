@@ -18,6 +18,9 @@ public record RepairOrderResponse(
     Double laborCost,
     Double materialCost,
     Double totalCost,
+    Double estimatedHours,
+    Double actualHours,
+    String assignmentType,
     UserInfo user,
     VehicleInfo vehicle,
     List<TechnicianInfo> technicians
@@ -34,6 +37,9 @@ public record RepairOrderResponse(
             repairOrder.getLaborCost(),
             repairOrder.getMaterialCost(),
             repairOrder.getTotalCost(),
+            repairOrder.getEstimatedHours(),
+            repairOrder.getActualHours(),
+            repairOrder.getAssignmentType() != null ? repairOrder.getAssignmentType().toString() : "AUTO",
             repairOrder.getUser() != null ? new UserInfo(
                 repairOrder.getUser().getId(),
                 repairOrder.getUser().getName(),
