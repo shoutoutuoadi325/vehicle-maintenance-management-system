@@ -79,6 +79,12 @@ erDiagram
     ORDER_TECHNICIAN {
         Long order_id PK, FK "维修单ID (主键, 外键)"
         Long technician_id PK, FK "技师ID (主键, 外键)"
+        Date assigned_at "分配时间"
+        Date started_at "开始时间"
+        Date completed_at "完成时间"
+        Double estimated_hours "预估工时"
+        Double actual_hours "实际工时"
+        String assignment_type "分配类型 (AUTO/MANUAL)"
     }
 
     USER ||--o{ VEHICLE : "拥有"

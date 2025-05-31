@@ -60,6 +60,16 @@ public class RepairOrder {
 
     @Column
     private Double totalCost;
+    
+    @Column
+    private Double estimatedHours;
+    
+    @Column
+    private Double actualHours;
+    
+    @Column
+    @Enumerated(EnumType.STRING)
+    private AssignmentType assignmentType = AssignmentType.AUTO;
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
@@ -90,6 +100,10 @@ public class RepairOrder {
     // 枚举类型定义
     public enum RepairStatus {
         PENDING, ASSIGNED, IN_PROGRESS, COMPLETED, CANCELLED
+    }
+    
+    public enum AssignmentType {
+        AUTO, MANUAL
     }
 
     // 构造函数
@@ -176,6 +190,30 @@ public class RepairOrder {
     public void setTotalCost(Double totalCost) {
         this.totalCost = totalCost;
     }
+    
+    public Double getEstimatedHours() {
+        return estimatedHours;
+    }
+    
+    public void setEstimatedHours(Double estimatedHours) {
+        this.estimatedHours = estimatedHours;
+    }
+    
+    public Double getActualHours() {
+        return actualHours;
+    }
+    
+    public void setActualHours(Double actualHours) {
+        this.actualHours = actualHours;
+    }
+    
+    public AssignmentType getAssignmentType() {
+        return assignmentType;
+    }
+    
+    public void setAssignmentType(AssignmentType assignmentType) {
+        this.assignmentType = assignmentType;
+    }
 
     public User getUser() {
         return user;
@@ -216,4 +254,4 @@ public class RepairOrder {
     public void setFeedbacks(List<Feedback> feedbacks) {
         this.feedbacks = feedbacks;
     }
-} 
+}

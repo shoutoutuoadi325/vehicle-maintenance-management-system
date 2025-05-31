@@ -31,16 +31,19 @@ public class RepairOrderService {
     private final UserRepository userRepository;
     private final VehicleRepository vehicleRepository;
     private final TechnicianRepository technicianRepository;
+    private final AutoAssignmentService autoAssignmentService;
     
     public RepairOrderService(
             RepairOrderRepository repairOrderRepository,
             UserRepository userRepository,
             VehicleRepository vehicleRepository,
-            TechnicianRepository technicianRepository) {
+            TechnicianRepository technicianRepository,
+            AutoAssignmentService autoAssignmentService) {
         this.repairOrderRepository = repairOrderRepository;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.technicianRepository = technicianRepository;
+        this.autoAssignmentService = autoAssignmentService;
     }
     
     @Transactional
@@ -53,7 +56,7 @@ public class RepairOrderService {
         
         RepairOrder repairOrder = new RepairOrder();
         repairOrder.setOrderNumber(generateOrderNumber());
-        repairOrder.setStatus(request.status() != null ? request.status() : RepairStatus.PENDING);
+        repairOrder.setStatus(request.status() != null ? request.status() : RepairOrder.RepairStatus.PENDING);
         repairOrder.setDescription(request.description());
         repairOrder.setCreatedAt(request.createdAt() != null ? request.createdAt() : new Date());
         repairOrder.setUpdatedAt(new Date());
@@ -61,9 +64,12 @@ public class RepairOrderService {
         repairOrder.setLaborCost(request.laborCost());
         repairOrder.setMaterialCost(request.materialCost());
         repairOrder.setTotalCost(request.totalCost());
+        repairOrder.setEstimatedHours(request.estimatedHours());
+        repairOrder.setActualHours(request.actualHours());
         repairOrder.setUser(user);
         repairOrder.setVehicle(vehicle);
         
+        // 如果指定了技师，使用手动分配
         if (request.technicianIds() != null && !request.technicianIds().isEmpty()) {
             Set<Technician> technicians = new HashSet<>();
             for (Long technicianId : request.technicianIds()) {
@@ -72,10 +78,81 @@ public class RepairOrderService {
                 technicians.add(technician);
             }
             repairOrder.setTechnicians(technicians);
+            repairOrder.setAssignmentType(RepairOrder.AssignmentType.MANUAL);
+            repairOrder.setStatus(RepairOrder.RepairStatus.ASSIGNED);
+        } else {
+            // 自动分配技师
+            Set<org.com.repair.entity.Technician.SkillType> requiredSkills = 
+                autoAssignmentService.determineRequiredSkillTypes(request.description());
+            Set<Technician> assignedTechnicians = 
+                autoAssignmentService.autoAssignTechnicians(repairOrder, requiredSkills);
+            
+            if (!assignedTechnicians.isEmpty()) {
+                repairOrder.setTechnicians(assignedTechnicians);
+                repairOrder.setAssignmentType(RepairOrder.AssignmentType.AUTO);
+                repairOrder.setStatus(RepairOrder.RepairStatus.ASSIGNED);
+                
+                // 计算预估工时
+                double totalEstimatedHours = 0;
+                for (org.com.repair.entity.Technician.SkillType skillType : requiredSkills) {
+                    totalEstimatedHours += autoAssignmentService.estimateWorkHours(request.description(), skillType);
+                }
+                repairOrder.setEstimatedHours(totalEstimatedHours);
+            }
         }
         
         RepairOrder savedOrder = repairOrderRepository.save(repairOrder);
         return new RepairOrderResponse(savedOrder);
+    }
+    
+    @Transactional
+    public RepairOrderResponse reassignTechnicians(Long orderId, Set<Long> technicianIds, boolean isManual) {
+        RepairOrder repairOrder = repairOrderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("维修工单不存在"));
+        
+        Set<Technician> technicians = new HashSet<>();
+        for (Long technicianId : technicianIds) {
+            Technician technician = technicianRepository.findById(technicianId)
+                    .orElseThrow(() -> new RuntimeException("技师不存在: " + technicianId));
+            technicians.add(technician);
+        }
+        
+        repairOrder.setTechnicians(technicians);
+        repairOrder.setAssignmentType(isManual ? RepairOrder.AssignmentType.MANUAL : RepairOrder.AssignmentType.AUTO);
+        repairOrder.setStatus(RepairOrder.RepairStatus.ASSIGNED);
+        repairOrder.setUpdatedAt(new Date());
+        
+        RepairOrder updatedOrder = repairOrderRepository.save(repairOrder);
+        return new RepairOrderResponse(updatedOrder);
+    }
+    
+    @Transactional
+    public RepairOrderResponse autoReassignTechnicians(Long orderId) {
+        RepairOrder repairOrder = repairOrderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("维修工单不存在"));
+        
+        // 重新进行自动分配
+        Set<org.com.repair.entity.Technician.SkillType> requiredSkills = 
+            autoAssignmentService.determineRequiredSkillTypes(repairOrder.getDescription());
+        Set<Technician> assignedTechnicians = 
+            autoAssignmentService.autoAssignTechnicians(repairOrder, requiredSkills);
+        
+        if (!assignedTechnicians.isEmpty()) {
+            repairOrder.setTechnicians(assignedTechnicians);
+            repairOrder.setAssignmentType(RepairOrder.AssignmentType.AUTO);
+            repairOrder.setStatus(RepairOrder.RepairStatus.ASSIGNED);
+            repairOrder.setUpdatedAt(new Date());
+            
+            // 重新计算预估工时
+            double totalEstimatedHours = 0;
+            for (org.com.repair.entity.Technician.SkillType skillType : requiredSkills) {
+                totalEstimatedHours += autoAssignmentService.estimateWorkHours(repairOrder.getDescription(), skillType);
+            }
+            repairOrder.setEstimatedHours(totalEstimatedHours);
+        }
+        
+        RepairOrder updatedOrder = repairOrderRepository.save(repairOrder);
+        return new RepairOrderResponse(updatedOrder);
     }
     
     public Optional<RepairOrderResponse> getRepairOrderById(Long id) {

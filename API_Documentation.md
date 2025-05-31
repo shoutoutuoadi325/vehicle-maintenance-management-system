@@ -387,6 +387,23 @@
   - `endDate` - 结束日期 (格式: yyyy-MM-dd)
 - **响应:** `200 OK`
 
+### 5.15 手动重新分配技师
+- **接口:** `PUT /api/repair-orders/{id}/reassign`
+- **描述:** 手动重新分配技师到指定维修订单
+- **路径参数:** `id` - 订单ID
+- **查询参数:** `isManual` (默认值: true) - 是否为手动分配
+- **请求体:** 技师ID数组
+```json
+[1, 2, 3]
+```
+- **响应:** `200 OK` 或 `404 Not Found`
+
+### 5.16 自动重新分配技师
+- **接口:** `PUT /api/repair-orders/{id}/auto-reassign`
+- **描述:** 根据系统算法自动重新分配技师
+- **路径参数:** `id` - 订单ID
+- **响应:** `200 OK` 或 `404 Not Found`
+
 ---
 
 ## 6. 材料管理 API (`/api/materials`)
@@ -588,4 +605,4 @@ Content-Type: application/json
 
 ---
 
-**最后更新时间:** 2024年12月 
+**最后更新时间:** 2024年12月

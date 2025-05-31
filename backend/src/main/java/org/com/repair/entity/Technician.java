@@ -41,6 +41,12 @@ public class Technician {
 
     @Column(nullable = false)
     private Double hourlyRate;
+    
+    @Column
+    private Double totalWorkHours = 0.0;
+    
+    @Column
+    private Integer completedOrders = 0;
 
     @ManyToMany(mappedBy = "technicians")
     private Set<RepairOrder> repairOrders;
@@ -126,6 +132,22 @@ public class Technician {
     public void setHourlyRate(Double hourlyRate) {
         this.hourlyRate = hourlyRate;
     }
+    
+    public Double getTotalWorkHours() {
+        return totalWorkHours;
+    }
+    
+    public void setTotalWorkHours(Double totalWorkHours) {
+        this.totalWorkHours = totalWorkHours;
+    }
+    
+    public Integer getCompletedOrders() {
+        return completedOrders;
+    }
+    
+    public void setCompletedOrders(Integer completedOrders) {
+        this.completedOrders = completedOrders;
+    }
 
     public Set<RepairOrder> getRepairOrders() {
         return repairOrders;
@@ -134,4 +156,4 @@ public class Technician {
     public void setRepairOrders(Set<RepairOrder> repairOrders) {
         this.repairOrders = repairOrders;
     }
-} 
+}
