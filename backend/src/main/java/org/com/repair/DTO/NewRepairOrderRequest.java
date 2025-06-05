@@ -4,6 +4,7 @@ import java.util.Date;
 import java.util.Set;
 
 import org.com.repair.entity.RepairOrder.RepairStatus;
+import org.com.repair.entity.Technician.SkillType;
 
 public record NewRepairOrderRequest(
     String orderNumber,
@@ -19,6 +20,7 @@ public record NewRepairOrderRequest(
     Double actualHours,
     Long userId,
     Long vehicleId,
-    Set<Long> technicianIds
+    Set<Long> technicianIds,
+    SkillType requiredSkillType
 ) {
 }

@@ -50,6 +50,10 @@ public class RepairOrder {
 
     @Column
     @Temporal(TemporalType.TIMESTAMP)
+    private Date startedAt;
+
+    @Column
+    @Temporal(TemporalType.TIMESTAMP)
     private Date completedAt;
 
     @Column
@@ -70,6 +74,10 @@ public class RepairOrder {
     @Column
     @Enumerated(EnumType.STRING)
     private AssignmentType assignmentType = AssignmentType.AUTO;
+
+    @Column
+    @Enumerated(EnumType.STRING)
+    private org.com.repair.entity.Technician.SkillType requiredSkillType;
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
@@ -159,6 +167,14 @@ public class RepairOrder {
         this.updatedAt = updatedAt;
     }
 
+    public Date getStartedAt() {
+        return startedAt;
+    }
+
+    public void setStartedAt(Date startedAt) {
+        this.startedAt = startedAt;
+    }
+
     public Date getCompletedAt() {
         return completedAt;
     }
@@ -213,6 +229,14 @@ public class RepairOrder {
     
     public void setAssignmentType(AssignmentType assignmentType) {
         this.assignmentType = assignmentType;
+    }
+
+    public org.com.repair.entity.Technician.SkillType getRequiredSkillType() {
+        return requiredSkillType;
+    }
+
+    public void setRequiredSkillType(org.com.repair.entity.Technician.SkillType requiredSkillType) {
+        this.requiredSkillType = requiredSkillType;
     }
 
     public User getUser() {

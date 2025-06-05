@@ -1,6 +1,7 @@
 package org.com.repair.service;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -54,6 +55,17 @@ public class RepairOrderService {
         Vehicle vehicle = vehicleRepository.findById(request.vehicleId())
                 .orElseThrow(() -> new RuntimeException("车辆不存在"));
         
+        // 检查是否有对应工种的技师
+        if (request.requiredSkillType() != null) {
+            Technician assignedTechnician = autoAssignmentService.autoAssignBestTechnician(request.requiredSkillType());
+            
+            if (assignedTechnician == null) {
+                // 获取工种名称用于错误提示
+                String skillTypeName = getSkillTypeName(request.requiredSkillType());
+                throw new RuntimeException(String.format("抱歉，暂时没有可用的%s技师。请稍后再试或选择其他维修类型。我们会尽快安排合适的技师为您服务。", skillTypeName));
+            }
+        }
+        
         RepairOrder repairOrder = new RepairOrder();
         repairOrder.setOrderNumber(generateOrderNumber());
         repairOrder.setStatus(request.status() != null ? request.status() : RepairOrder.RepairStatus.PENDING);
@@ -68,37 +80,17 @@ public class RepairOrderService {
         repairOrder.setActualHours(request.actualHours());
         repairOrder.setUser(user);
         repairOrder.setVehicle(vehicle);
+        repairOrder.setRequiredSkillType(request.requiredSkillType());
         
-        // 如果指定了技师，使用手动分配
-        if (request.technicianIds() != null && !request.technicianIds().isEmpty()) {
-            Set<Technician> technicians = new HashSet<>();
-            for (Long technicianId : request.technicianIds()) {
-                Technician technician = technicianRepository.findById(technicianId)
-                        .orElseThrow(() -> new RuntimeException("技师不存在: " + technicianId));
-                technicians.add(technician);
-            }
-            repairOrder.setTechnicians(technicians);
-            repairOrder.setAssignmentType(RepairOrder.AssignmentType.MANUAL);
-            repairOrder.setStatus(RepairOrder.RepairStatus.ASSIGNED);
-        } else {
-            // 自动分配技师
-            Set<org.com.repair.entity.Technician.SkillType> requiredSkills = 
-                autoAssignmentService.determineRequiredSkillTypes(request.description());
-            Set<Technician> assignedTechnicians = 
-                autoAssignmentService.autoAssignTechnicians(repairOrder, requiredSkills);
+        // 自动分配技师（不再支持手动分配）
+        if (request.requiredSkillType() != null) {
+            Technician assignedTechnician = autoAssignmentService.autoAssignBestTechnician(request.requiredSkillType());
             
-            if (!assignedTechnicians.isEmpty()) {
-                repairOrder.setTechnicians(assignedTechnicians);
-                repairOrder.setAssignmentType(RepairOrder.AssignmentType.AUTO);
-                repairOrder.setStatus(RepairOrder.RepairStatus.ASSIGNED);
-                
-                // 计算预估工时
-                double totalEstimatedHours = 0;
-                for (org.com.repair.entity.Technician.SkillType skillType : requiredSkills) {
-                    totalEstimatedHours += autoAssignmentService.estimateWorkHours(request.description(), skillType);
-                }
-                repairOrder.setEstimatedHours(totalEstimatedHours);
-            }
+            Set<Technician> technicians = new HashSet<>();
+            technicians.add(assignedTechnician);
+            repairOrder.setTechnicians(technicians);
+            repairOrder.setAssignmentType(RepairOrder.AssignmentType.AUTO);
+            repairOrder.setStatus(RepairOrder.RepairStatus.ASSIGNED);
         }
         
         RepairOrder savedOrder = repairOrderRepository.save(repairOrder);
@@ -279,19 +271,58 @@ public class RepairOrderService {
     }
     
     @Transactional
-    public RepairOrderResponse updateRepairOrderStatus(Long id, RepairStatus status) {
-        RepairOrder repairOrder = repairOrderRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("维修工单不存在"));
+    public RepairOrderResponse updateRepairOrderStatus(Long orderId, RepairOrder.RepairStatus newStatus, Double materialCost) {
+        RepairOrder repairOrder = repairOrderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("维修订单不存在"));
         
-        repairOrder.setStatus(status);
+        RepairOrder.RepairStatus oldStatus = repairOrder.getStatus();
+        repairOrder.setStatus(newStatus);
         repairOrder.setUpdatedAt(new Date());
         
-        if (status == RepairStatus.COMPLETED) {
-            repairOrder.setCompletedAt(new Date());
+        // 如果从ASSIGNED状态变为IN_PROGRESS，记录开始时间
+        if (oldStatus == RepairOrder.RepairStatus.ASSIGNED && newStatus == RepairOrder.RepairStatus.IN_PROGRESS) {
+            repairOrder.setStartedAt(new Date());
         }
         
-        RepairOrder updatedOrder = repairOrderRepository.save(repairOrder);
-        return new RepairOrderResponse(updatedOrder);
+        // 如果从IN_PROGRESS状态变为COMPLETED，计算工时费和总费用
+        if (oldStatus == RepairOrder.RepairStatus.IN_PROGRESS && newStatus == RepairOrder.RepairStatus.COMPLETED) {
+            repairOrder.setCompletedAt(new Date());
+            
+            // 计算实际工作时间（小时）
+            if (repairOrder.getStartedAt() != null) {
+                long workTimeMillis = repairOrder.getCompletedAt().getTime() - repairOrder.getStartedAt().getTime();
+                double actualHours = Math.ceil(workTimeMillis / (1000.0 * 60 * 60)); // 不满1小时按1小时计算
+                repairOrder.setActualHours(actualHours);
+                
+                // 计算工时费
+                if (repairOrder.getTechnicians() != null && !repairOrder.getTechnicians().isEmpty()) {
+                    Technician technician = repairOrder.getTechnicians().iterator().next();
+                    double laborCost = actualHours * technician.getHourlyRate();
+                    repairOrder.setLaborCost(laborCost);
+                }
+            }
+            
+            // 设置材料费（由技师设定）
+            if (materialCost != null) {
+                repairOrder.setMaterialCost(materialCost);
+            }
+            
+            // 计算总费用
+            double totalCost = (repairOrder.getLaborCost() != null ? repairOrder.getLaborCost() : 0.0) +
+                              (repairOrder.getMaterialCost() != null ? repairOrder.getMaterialCost() : 0.0);
+            repairOrder.setTotalCost(totalCost);
+            
+            // 更新技师完成订单数量
+            if (repairOrder.getTechnicians() != null && !repairOrder.getTechnicians().isEmpty()) {
+                for (Technician technician : repairOrder.getTechnicians()) {
+                    technician.setCompletedOrders((technician.getCompletedOrders() != null ? technician.getCompletedOrders() : 0) + 1);
+                    technicianRepository.save(technician);
+                }
+            }
+        }
+        
+        RepairOrder savedOrder = repairOrderRepository.save(repairOrder);
+        return new RepairOrderResponse(savedOrder);
     }
     
     @Transactional
@@ -362,5 +393,148 @@ public class RepairOrderService {
         String dateStr = dateFormat.format(new Date());
         long count = repairOrderRepository.count() + 1;
         return "RO" + dateStr + String.format("%04d", count);
+    }
+    
+    /**
+     * 获取技师工种类型的中文名称
+     */
+    private String getSkillTypeName(org.com.repair.entity.Technician.SkillType skillType) {
+        switch (skillType) {
+            case MECHANIC:
+                return "机械维修";
+            case ELECTRICIAN:
+                return "电气维修";
+            case BODY_WORK:
+                return "车身维修";
+            case PAINT:
+                return "喷漆";
+            case DIAGNOSTIC:
+                return "故障诊断";
+            default:
+                return skillType.toString();
+        }
+    }
+    
+    /**
+     * 重新分配所有未分配的订单
+     * 用于管理员刷新数据时自动分配之前因技师不足而未分配的订单
+     */
+    @Transactional
+    public List<RepairOrderResponse> reassignPendingOrders() {
+        List<RepairOrderResponse> reassignedOrders = new ArrayList<>();
+        
+        // 查找所有状态为PENDING且有技师工种要求的订单
+        List<RepairOrder> pendingOrders = repairOrderRepository.findByStatus(RepairOrder.RepairStatus.PENDING)
+                .stream()
+                .filter(order -> order.getRequiredSkillType() != null)
+                .collect(Collectors.toList());
+        
+        int totalPendingOrders = pendingOrders.size();
+        int successfulAssignments = 0;
+        
+        for (RepairOrder order : pendingOrders) {
+            try {
+                // 尝试为订单分配技师
+                Technician assignedTechnician = autoAssignmentService.autoAssignBestTechnician(order.getRequiredSkillType());
+                
+                if (assignedTechnician != null) {
+                    Set<Technician> technicians = new HashSet<>();
+                    technicians.add(assignedTechnician);
+                    order.setTechnicians(technicians);
+                    order.setAssignmentType(RepairOrder.AssignmentType.AUTO);
+                    order.setStatus(RepairOrder.RepairStatus.ASSIGNED);
+                    order.setUpdatedAt(new Date());
+                    
+                    RepairOrder savedOrder = repairOrderRepository.save(order);
+                    reassignedOrders.add(new RepairOrderResponse(savedOrder));
+                    successfulAssignments++;
+                }
+            } catch (Exception e) {
+                // 记录错误但继续处理其他订单
+                System.err.println("重新分配订单 " + order.getId() + " 失败: " + e.getMessage());
+            }
+        }
+        
+        System.out.println(String.format("重新分配完成：总计 %d 个待分配订单，成功分配 %d 个", 
+                totalPendingOrders, successfulAssignments));
+        
+        return reassignedOrders;
+    }
+    
+    /**
+     * 统计各车辆品牌的维修数量
+     */
+    public List<Map<String, Object>> getVehicleBrandRepairStatistics() {
+        List<Map<String, Object>> statistics = new ArrayList<>();
+        
+        try {
+            // 获取所有维修订单及其车辆信息
+            List<RepairOrder> allOrders = repairOrderRepository.findAllWithDetails();
+            
+            // 统计各品牌的维修数量
+            Map<String, Integer> brandCounts = new HashMap<>();
+            
+            for (RepairOrder order : allOrders) {
+                if (order.getVehicle() != null && order.getVehicle().getBrand() != null) {
+                    String brand = order.getVehicle().getBrand();
+                    brandCounts.put(brand, brandCounts.getOrDefault(brand, 0) + 1);
+                }
+            }
+            
+            // 转换为统计结果并按维修数量排序
+            for (Map.Entry<String, Integer> entry : brandCounts.entrySet()) {
+                Map<String, Object> brandStat = new HashMap<>();
+                brandStat.put("brand", entry.getKey());
+                brandStat.put("repairCount", entry.getValue());
+                statistics.add(brandStat);
+            }
+            
+            // 按维修数量降序排序
+            statistics.sort((a, b) -> Integer.compare((Integer) b.get("repairCount"), (Integer) a.get("repairCount")));
+            
+        } catch (Exception e) {
+            System.err.println("获取车辆品牌维修统计失败: " + e.getMessage());
+        }
+        
+        return statistics;
+    }
+    
+    /**
+     * 统计各维修工种类型的订单数量
+     */
+    public List<Map<String, Object>> getSkillTypeRepairStatistics() {
+        List<Map<String, Object>> statistics = new ArrayList<>();
+        
+        try {
+            // 获取所有维修订单
+            List<RepairOrder> allOrders = repairOrderRepository.findAll();
+            
+            // 统计各工种类型的订单数量
+            Map<String, Integer> skillTypeCounts = new HashMap<>();
+            
+            for (RepairOrder order : allOrders) {
+                if (order.getRequiredSkillType() != null) {
+                    String skillType = order.getRequiredSkillType().toString();
+                    String skillTypeName = getSkillTypeName(order.getRequiredSkillType());
+                    skillTypeCounts.put(skillTypeName, skillTypeCounts.getOrDefault(skillTypeName, 0) + 1);
+                }
+            }
+            
+            // 转换为统计结果
+            for (Map.Entry<String, Integer> entry : skillTypeCounts.entrySet()) {
+                Map<String, Object> skillTypeStat = new HashMap<>();
+                skillTypeStat.put("skillType", entry.getKey());
+                skillTypeStat.put("orderCount", entry.getValue());
+                statistics.add(skillTypeStat);
+            }
+            
+            // 按订单数量降序排序
+            statistics.sort((a, b) -> Integer.compare((Integer) b.get("orderCount"), (Integer) a.get("orderCount")));
+            
+        } catch (Exception e) {
+            System.err.println("获取工种类型维修统计失败: " + e.getMessage());
+        }
+        
+        return statistics;
     }
 }

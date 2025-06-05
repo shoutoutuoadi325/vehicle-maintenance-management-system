@@ -485,6 +485,49 @@
         </div>
       </div>
     </div>
+
+    <!-- 完成任务模态框 -->
+    <div v-if="showCompleteTask && selectedTask" class="modal-overlay" @click="closeCompleteTask">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h2>完成任务</h2>
+          <button class="modal-close" @click="closeCompleteTask">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="task-summary">
+            <h3>{{ selectedTask.orderNumber || `维修单 #${selectedTask.id}` }}</h3>
+            <p>{{ selectedTask.description }}</p>
+            <p><strong>车辆:</strong> {{ getVehicleDisplay(selectedTask) }}</p>
+          </div>
+          
+          <form @submit.prevent="submitCompleteTask">
+            <div class="form-group">
+              <label class="form-label">材料费用 <span class="required">*</span></label>
+              <input v-model="completeTaskForm.materialCost" type="number" step="0.01" min="0" 
+                     class="form-input" placeholder="请输入材料费用" required>
+              <small class="form-help">请输入本次维修使用的材料总费用</small>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">工作说明</label>
+              <textarea v-model="completeTaskForm.workNotes" class="form-input" rows="3"
+                        placeholder="请简要说明本次维修的工作内容（可选）"></textarea>
+            </div>
+            
+            <div class="modal-footer">
+              <button type="button" @click="closeCompleteTask" class="btn btn-outline">
+                取消
+              </button>
+              <button type="submit" class="btn btn-success" :disabled="isSubmitting">
+                <i class="fas fa-check"></i> {{ isSubmitting ? '完成中...' : '完成任务' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -497,9 +540,14 @@ export default {
       activeTab: 'overview',
       showUserMenu: false,
       showTaskDetail: false,
+      showCompleteTask: false,
       taskFilter: '',
       allTasks: [],
       selectedTask: null,
+      completeTaskForm: {
+        materialCost: '',
+        workNotes: ''
+      },
       statistics: {
         totalTasks: 0,
         completedTasks: 0,
@@ -511,7 +559,8 @@ export default {
         total: 0,
         averagePerTask: 0
       },
-      profileForm: {}
+      profileForm: {},
+      isSubmitting: false
     }
   },
   computed: {
@@ -729,40 +778,12 @@ export default {
       }
     },
     async completeTask(task) {
-      if (!confirm('确定要完成这个任务吗？')) {
-        return;
-      }
-      
-      try {
-        console.log('完成任务:', task.id);
-        const response = await this.$axios.put(`/repair-orders/${task.id}/status`, null, {
-          params: { status: 'COMPLETED' }
-        });
-        
-        // 更新本地任务状态
-        const taskIndex = this.allTasks.findIndex(t => t.id === task.id);
-        if (taskIndex !== -1) {
-          this.allTasks[taskIndex].status = 'COMPLETED';
-          this.allTasks[taskIndex].completedAt = new Date().toISOString();
-          this.allTasks[taskIndex].updatedAt = new Date().toISOString();
-        }
-        
-        this.loadStatistics(); // 重新计算统计信息
-        this.loadEarnings(); // 重新计算收入
-        this.$emit('message', '任务已完成！', 'success');
-      } catch (error) {
-        console.error('完成任务失败:', error);
-        // 如果API不存在，直接更新本地状态
-        const taskIndex = this.allTasks.findIndex(t => t.id === task.id);
-        if (taskIndex !== -1) {
-          this.allTasks[taskIndex].status = 'COMPLETED';
-          this.allTasks[taskIndex].completedAt = new Date().toISOString();
-          this.allTasks[taskIndex].updatedAt = new Date().toISOString();
-        }
-        this.loadStatistics();
-        this.loadEarnings();
-        this.$emit('message', '任务已完成！', 'success');
-      }
+      this.selectedTask = task;
+      this.completeTaskForm = {
+        materialCost: '',
+        workNotes: ''
+      };
+      this.showCompleteTask = true;
     },
     viewTask(task) {
       this.selectedTask = task;
@@ -811,6 +832,45 @@ export default {
       localStorage.removeItem('user');
       localStorage.removeItem('userRole');
       this.$router.push('/');
+    },
+    async submitCompleteTask() {
+      try {
+        this.isSubmitting = true;
+        console.log('提交完成任务:', this.selectedTask.id);
+        const response = await this.$axios.put(`/repair-orders/${this.selectedTask.id}/status`, null, {
+          params: { 
+            status: 'COMPLETED',
+            materialCost: this.completeTaskForm.materialCost
+          }
+        });
+        
+        // 更新本地任务状态
+        const taskIndex = this.allTasks.findIndex(t => t.id === this.selectedTask.id);
+        if (taskIndex !== -1) {
+          this.allTasks[taskIndex].status = 'COMPLETED';
+          this.allTasks[taskIndex].completedAt = new Date().toISOString();
+          this.allTasks[taskIndex].materialCost = this.completeTaskForm.materialCost;
+          this.allTasks[taskIndex].updatedAt = new Date().toISOString();
+        }
+        
+        this.closeCompleteTask();
+        this.loadStatistics(); // 重新计算统计信息
+        this.loadEarnings(); // 重新计算收入
+        this.$emit('message', '任务已完成！', 'success');
+      } catch (error) {
+        console.error('完成任务失败:', error);
+        this.$emit('message', '完成任务失败: ' + (error.response?.data?.message || error.message), 'error');
+      } finally {
+        this.isSubmitting = false;
+      }
+    },
+    closeCompleteTask() {
+      this.showCompleteTask = false;
+      this.selectedTask = null;
+      this.completeTaskForm = {
+        materialCost: '',
+        workNotes: ''
+      };
     }
   }
 }

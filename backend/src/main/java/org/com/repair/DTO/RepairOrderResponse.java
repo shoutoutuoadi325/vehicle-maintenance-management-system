@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 
 import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.RepairOrder.RepairStatus;
+import org.com.repair.entity.Technician.SkillType;
 
 public record RepairOrderResponse(
     Long id,
@@ -14,6 +15,7 @@ public record RepairOrderResponse(
     String description,
     Date createdAt,
     Date updatedAt,
+    Date startedAt,
     Date completedAt,
     Double laborCost,
     Double materialCost,
@@ -21,6 +23,7 @@ public record RepairOrderResponse(
     Double estimatedHours,
     Double actualHours,
     String assignmentType,
+    SkillType requiredSkillType,
     UserInfo user,
     VehicleInfo vehicle,
     List<TechnicianInfo> technicians
@@ -33,6 +36,7 @@ public record RepairOrderResponse(
             repairOrder.getDescription(),
             repairOrder.getCreatedAt(),
             repairOrder.getUpdatedAt(),
+            repairOrder.getStartedAt(),
             repairOrder.getCompletedAt(),
             repairOrder.getLaborCost(),
             repairOrder.getMaterialCost(),
@@ -40,6 +44,7 @@ public record RepairOrderResponse(
             repairOrder.getEstimatedHours(),
             repairOrder.getActualHours(),
             repairOrder.getAssignmentType() != null ? repairOrder.getAssignmentType().toString() : "AUTO",
+            repairOrder.getRequiredSkillType(),
             repairOrder.getUser() != null ? new UserInfo(
                 repairOrder.getUser().getId(),
                 repairOrder.getUser().getName(),

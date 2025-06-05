@@ -1,5 +1,6 @@
 package org.com.repair.controller;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -148,6 +149,57 @@ public class AdminController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "获取统计数据失败: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * 重新分配所有待分配的订单
+     * 当系统中新增技师后，可以调用此接口重新分配之前未分配的订单
+     */
+    @PostMapping("/reassign-pending-orders")
+    public ResponseEntity<Map<String, Object>> reassignPendingOrders() {
+        try {
+            List<org.com.repair.DTO.RepairOrderResponse> reassignedOrders = repairOrderService.reassignPendingOrders();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "重新分配完成");
+            response.put("reassignedCount", reassignedOrders.size());
+            response.put("reassignedOrders", reassignedOrders);
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            e.printStackTrace();
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "重新分配失败: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+    
+    /**
+     * 获取车辆品牌维修数量统计
+     */
+    @GetMapping("/vehicle-brand-statistics")
+    public ResponseEntity<List<Map<String, Object>>> getVehicleBrandStatistics() {
+        try {
+            List<Map<String, Object>> statistics = repairOrderService.getVehicleBrandRepairStatistics();
+            return ResponseEntity.ok(statistics);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ArrayList<>());
+        }
+    }
+    
+    /**
+     * 获取维修工种类型统计
+     */
+    @GetMapping("/skill-type-statistics")
+    public ResponseEntity<List<Map<String, Object>>> getSkillTypeStatistics() {
+        try {
+            List<Map<String, Object>> statistics = repairOrderService.getSkillTypeRepairStatistics();
+            return ResponseEntity.ok(statistics);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ArrayList<>());
         }
     }
     

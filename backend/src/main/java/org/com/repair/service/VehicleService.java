@@ -6,10 +6,14 @@ import java.util.stream.Collectors;
 
 import org.com.repair.DTO.NewVehicleRequest;
 import org.com.repair.DTO.VehicleResponse;
+import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.User;
 import org.com.repair.entity.Vehicle;
+import org.com.repair.repository.RepairOrderRepository;
 import org.com.repair.repository.UserRepository;
 import org.com.repair.repository.VehicleRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,10 +22,13 @@ public class VehicleService {
     
     private final VehicleRepository vehicleRepository;
     private final UserRepository userRepository;
+    private final RepairOrderRepository repairOrderRepository;
+    private static final Logger logger = LoggerFactory.getLogger(VehicleService.class);
     
-    public VehicleService(VehicleRepository vehicleRepository, UserRepository userRepository) {
+    public VehicleService(VehicleRepository vehicleRepository, UserRepository userRepository, RepairOrderRepository repairOrderRepository) {
         this.vehicleRepository = vehicleRepository;
         this.userRepository = userRepository;
+        this.repairOrderRepository = repairOrderRepository;
     }
     
     @Transactional
@@ -51,10 +58,34 @@ public class VehicleService {
                 .map(VehicleResponse::new);
     }
     
+    @Transactional(readOnly = true)
     public List<VehicleResponse> getVehiclesByUserId(Long userId) {
-        return vehicleRepository.findByUserId(userId).stream()
-                .map(VehicleResponse::new)
-                .collect(Collectors.toList());
+        try {
+            logger.info("开始获取用户ID: {} 的车辆列表", userId);
+            List<Vehicle> vehicles = vehicleRepository.findByUserId(userId);
+            logger.info("成功获取到 {} 辆车", vehicles.size());
+            
+            List<VehicleResponse> responses = vehicles.stream()
+                    .map(vehicle -> {
+                        try {
+                            // 为每辆车单独查询维修订单
+                            List<RepairOrder> repairOrders = repairOrderRepository.findByVehicleId(vehicle.getId());
+                            logger.info("车辆 {} 有 {} 个维修订单", vehicle.getLicensePlate(), repairOrders.size());
+                            return new VehicleResponse(vehicle, repairOrders);
+                        } catch (Exception e) {
+                            logger.error("转换车辆数据时出错，车辆ID: " + vehicle.getId(), e);
+                            return null;
+                        }
+                    })
+                    .filter(response -> response != null)
+                    .collect(Collectors.toList());
+            
+            logger.info("成功转换 {} 辆车的数据", responses.size());
+            return responses;
+        } catch (Exception e) {
+            logger.error("获取用户车辆列表时出错，用户ID: " + userId, e);
+            throw new RuntimeException("获取车辆列表失败: " + e.getMessage());
+        }
     }
     
     @Transactional

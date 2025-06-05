@@ -182,6 +182,10 @@
               <option value="IN_PROGRESS">进行中</option>
               <option value="COMPLETED">已完成</option>
             </select>
+            <button class="btn btn-secondary" @click="manualReassignPendingOrders" :disabled="isLoading">
+              <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i> 
+              {{ isLoading ? '分配中...' : '重新分配' }}
+            </button>
           </div>
         </div>
 
@@ -230,9 +234,6 @@
               </div>
             </div>
             <div class="order-footer">
-              <button v-if="order.status === 'PENDING'" class="btn btn-primary" @click="assignOrder(order)">
-                <i class="fas fa-user-plus"></i> 分配技师
-              </button>
               <button class="btn btn-outline" @click="viewOrderDetail(order)">
                 <i class="fas fa-eye"></i> 查看详情
               </button>
@@ -355,60 +356,157 @@
                 :size="200"
               />
             </div>
+            
+            <!-- 车辆品牌维修统计 -->
+            <div class="chart-card">
+              <Chart
+                title="车辆品牌维修统计"
+                type="bar"
+                :data="vehicleBrandChartData"
+                :width="400"
+                :height="300"
+              />
+            </div>
+            
+            <!-- 维修工种类型统计 -->
+            <div class="chart-card">
+              <Chart
+                title="维修工种类型统计"
+                type="bar"
+                :data="skillTypeChartData"
+                :width="400"
+                :height="300"
+              />
+            </div>
           </div>
 
           <!-- 详细数据表格 -->
           <div class="stat-section">
             <h3>技师工作量详细统计</h3>
             <div class="technician-stats">
-                              <table>
-                  <thead>
-                    <tr>
-                      <th>技师</th>
-                      <th>技能类型</th>
-                      <th>完成任务数</th>
-                      <th>总收入</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="stat in statistics.technicianStats" :key="stat.technicianId">
-                      <td>{{ stat.technicianName }}</td>
-                      <td>{{ getSkillTypeName(stat.skillType) }}</td>
-                      <td>{{ stat.completedTasks }}</td>
-                      <td>¥{{ stat.totalEarnings }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <table>
+                <thead>
+                  <tr>
+                    <th>技师</th>
+                    <th>技能类型</th>
+                    <th>完成任务数</th>
+                    <th>总收入</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="stat in statistics.technicianStats" :key="stat.technicianId">
+                    <td>{{ stat.technicianName }}</td>
+                    <td>{{ getSkillTypeName(stat.skillType) }}</td>
+                    <td>{{ stat.completedTasks }}</td>
+                    <td>¥{{ stat.totalEarnings }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <!-- 负面反馈统计 -->
+          <!-- 全部反馈统计 -->
           <div class="stat-section">
-            <h3>负面反馈统计</h3>
+            <h3>用户反馈统计</h3>
             <div class="feedback-stats">
-              <div v-if="statistics.negativeFeedback && statistics.negativeFeedback.length > 0">
-                                  <table>
-                    <thead>
-                      <tr>
-                        <th>订单号</th>
-                        <th>反馈内容</th>
-                        <th>技师</th>
-                        <th>日期</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="feedback in statistics.negativeFeedback" :key="feedback.orderId">
-                        <td>{{ feedback.orderNumber }}</td>
-                        <td>{{ feedback.comment }}</td>
-                        <td>{{ feedback.technicianName }}</td>
-                        <td>{{ formatDate(feedback.date) }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+              <div v-if="statistics.allFeedback && statistics.allFeedback.length > 0">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>订单号</th>
+                      <th>评分</th>
+                      <th>反馈内容</th>
+                      <th>用户</th>
+                      <th>日期</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="feedback in statistics.allFeedback.slice(0, 10)" :key="feedback.id">
+                      <td>{{ feedback.repairOrder?.orderNumber || '未知' }}</td>
+                      <td>
+                        <div class="rating-stars">
+                          <span v-for="star in 5" :key="star" 
+                                :class="star <= feedback.rating ? 'star active' : 'star'">
+                            ★
+                          </span>
+                          <span class="rating-text">({{ feedback.rating }}分)</span>
+                        </div>
+                      </td>
+                      <td class="feedback-comment">{{ feedback.comment }}</td>
+                      <td>{{ feedback.user?.name || '未知用户' }}</td>
+                      <td>{{ formatDate(feedback.createdAt) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-if="statistics.allFeedback.length > 10" class="feedback-pagination">
+                  <p>显示前10条，共{{ statistics.allFeedback.length }}条反馈</p>
+                </div>
               </div>
               <div v-else class="no-feedback">
-                <i class="fas fa-smile"></i>
-                <p>暂无负面反馈，服务质量良好！</p>
+                <i class="fas fa-comments"></i>
+                <p>暂无用户反馈</p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 车辆品牌维修统计详细数据 -->
+          <div class="stat-section">
+            <h3>车辆品牌维修数量排行</h3>
+            <div class="brand-stats">
+              <div v-if="statistics.vehicleBrandStats && statistics.vehicleBrandStats.length > 0">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>排名</th>
+                      <th>车辆品牌</th>
+                      <th>维修次数</th>
+                      <th>占比</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(stat, index) in statistics.vehicleBrandStats" :key="stat.brand">
+                      <td>{{ index + 1 }}</td>
+                      <td>{{ stat.brand }}</td>
+                      <td>{{ stat.repairCount }}</td>
+                      <td>{{ ((stat.repairCount / allOrders.length) * 100).toFixed(1) }}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else class="no-data">
+                <i class="fas fa-car"></i>
+                <p>暂无车辆品牌统计数据</p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 维修工种类型统计详细数据 -->
+          <div class="stat-section">
+            <h3>维修工种类型需求统计</h3>
+            <div class="skill-type-stats">
+              <div v-if="statistics.skillTypeStats && statistics.skillTypeStats.length > 0">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>排名</th>
+                      <th>工种类型</th>
+                      <th>订单数量</th>
+                      <th>占比</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(stat, index) in statistics.skillTypeStats" :key="stat.skillType">
+                      <td>{{ index + 1 }}</td>
+                      <td>{{ stat.skillType }}</td>
+                      <td>{{ stat.orderCount }}</td>
+                      <td>{{ ((stat.orderCount / allOrders.length) * 100).toFixed(1) }}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else class="no-data">
+                <i class="fas fa-tools"></i>
+                <p>暂无工种类型统计数据</p>
               </div>
             </div>
           </div>
@@ -587,61 +685,7 @@
       </div>
     </div>
 
-    <!-- 订单分配模态框 -->
-    <div v-if="showAssignModal && selectedOrder" class="modal-overlay" @click="closeAssignModal">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h2>分配订单: {{ selectedOrder.orderNumber }}</h2>
-          <button class="modal-close" @click="closeAssignModal">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-        <div class="modal-body">
-          <div class="assign-form">
-            <div class="form-group">
-              <label class="form-label">选择技师</label>
-              <div class="technician-selection">
-                <div v-for="tech in availableTechnicians" :key="tech.id" class="technician-option">
-                  <input 
-                    type="checkbox" 
-                    :id="`tech-${tech.id}`" 
-                    v-model="assignForm.technicianIds" 
-                    :value="tech.id"
-                  >
-                  <label :for="`tech-${tech.id}`" class="technician-label">
-                    <div class="tech-info">
-                      <span class="tech-name">{{ tech.name }}</span>
-                      <span class="tech-skill">{{ getSkillTypeName(tech.skillType) }}</span>
-                      <span class="tech-rate">¥{{ tech.hourlyRate }}/小时</span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">工时费用</label>
-              <input v-model="assignForm.laborCost" type="number" step="0.01" class="form-input" placeholder="输入工时费用">
-            </div>
-            <div class="form-group">
-              <label class="form-label">材料费用</label>
-              <input v-model="assignForm.materialCost" type="number" step="0.01" class="form-input" placeholder="输入材料费用">
-            </div>
-            <div class="form-group">
-              <label class="form-label">总费用</label>
-              <input v-model="totalCost" type="number" step="0.01" class="form-input" readonly>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button @click="confirmAssign" class="btn btn-primary">
-            <i class="fas fa-check"></i> 确认分配
-          </button>
-          <button @click="closeAssignModal" class="btn btn-outline">
-            <i class="fas fa-times"></i> 取消
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 添加技师模态框 -->
   </div>
 </template>
 
@@ -658,15 +702,42 @@ export default {
       user: {},
       activeTab: 'overview',
       showUserMenu: false,
-      showAssignModal: false,
-      showCreateOrder: false,
-      showCreateTechnician: false,
       showOrderDetailModal: false,
+      showCreateTechnician: false,
+      showEditTechnician: false,
+      showAssignModal: false,
       selectedOrder: null,
       selectedOrderDetail: null,
+      editingTechnician: null,
       orderFilter: '',
-      userSearchTerm: '',
-      isLoading: false,
+      orderSortBy: 'createdAt',
+      orderSortDesc: true,
+      technicianForm: {
+        name: '',
+        employeeId: '',
+        username: '',
+        password: '',
+        phone: '',
+        email: '',
+        skillType: '',
+        hourlyRate: ''
+      },
+      assignForm: {
+        technicianIds: [],
+        laborCost: 0,
+        materialCost: 0
+      },
+      statistics: {
+        totalRevenue: 0,
+        totalOrders: 0,
+        activeTechnicians: 0,
+        avgOrderValue: 0,
+        monthlyGrowth: 0,
+        monthlyRevenue: [],
+        vehicleBrandStats: [],
+        skillTypeStats: [],
+        allFeedback: []
+      },
       allOrders: [],
       technicians: [],
       users: [],
@@ -676,21 +747,9 @@ export default {
         completedOrders: 0,
         activeTechnicians: 0
       },
-      statistics: {
-        totalRevenue: 0,
-        laborCost: 0,
-        materialCost: 0,
-        technicianStats: [],
-        negativeFeedback: []
-      },
       statisticsDateRange: {
         start: '',
         end: ''
-      },
-      assignForm: {
-        technicianIds: [],
-        laborCost: 0,
-        materialCost: 0
       }
     }
   },
@@ -781,6 +840,28 @@ export default {
         }));
       
       return data.length > 0 ? data : [{ label: '暂无数据', value: 1 }];
+    },
+    // 车辆品牌维修统计图表数据
+    vehicleBrandChartData() {
+      if (!this.statistics.vehicleBrandStats || this.statistics.vehicleBrandStats.length === 0) {
+        return [{ label: '暂无数据', value: 0 }];
+      }
+      
+      return this.statistics.vehicleBrandStats.map(stat => ({
+        label: stat.brand,
+        value: stat.repairCount
+      }));
+    },
+    // 维修工种类型统计图表数据
+    skillTypeChartData() {
+      if (!this.statistics.skillTypeStats || this.statistics.skillTypeStats.length === 0) {
+        return [{ label: '暂无数据', value: 0 }];
+      }
+      
+      return this.statistics.skillTypeStats.map(stat => ({
+        label: stat.skillType,
+        value: stat.orderCount
+      }));
     }
   },
   created() {
@@ -837,6 +918,13 @@ export default {
       this.isLoading = true;
       try {
         await this.loadData();
+        
+        // 尝试重新分配待分配的订单
+        await this.reassignPendingOrders();
+        
+        // 重新分配后再次加载数据以反映最新状态
+        await this.loadOrders();
+        
         // 强制重新计算统计数据
         await this.loadDashboardStats();
         if (this.isSuperAdmin) {
@@ -943,19 +1031,26 @@ export default {
               endDate: this.statisticsDateRange.end
             }
           }).catch(() => null),
-          this.$axios.get('/repair-orders/negative-feedback').catch(() => null)
+          this.$axios.get('/feedbacks').catch(() => null)
         ]);
         
         // 如果API调用失败，基于本地数据计算统计信息
         if (!revenueStats || !techStats || !feedbackStats) {
           this.calculateLocalStatistics();
         } else {
+          // 获取新的统计数据
+          await this.loadVehicleBrandStatistics();
+          await this.loadSkillTypeStatistics();
+          
           this.statistics = {
             totalRevenue: revenueStats.data?.total_cost || 0,
             laborCost: revenueStats.data?.total_labor_cost || 0,
             materialCost: revenueStats.data?.total_material_cost || 0,
             technicianStats: techStats.data || [],
-            negativeFeedback: feedbackStats.data || []
+            allFeedback: feedbackStats.data || [],
+            vehicleBrandStats: this.statistics.vehicleBrandStats || [],
+            skillTypeStats: this.statistics.skillTypeStats || [],
+            monthlyRevenue: this.statistics.monthlyRevenue || []
           };
         }
       } catch (error) {
@@ -996,76 +1091,33 @@ export default {
         };
       });
       
-      // 获取真实的负面反馈数据
-      await this.loadNegativeFeedback();
+      // 获取真实的反馈数据
+      await this.loadAllFeedback();
+      
+      // 加载新的统计数据
+      await this.loadVehicleBrandStatistics();
+      await this.loadSkillTypeStatistics();
       
       this.statistics = {
         totalRevenue,
         laborCost,
         materialCost,
         technicianStats,
-        negativeFeedback: this.statistics.negativeFeedback || []
+        allFeedback: this.statistics.allFeedback || [],
+        vehicleBrandStats: this.statistics.vehicleBrandStats || [],
+        skillTypeStats: this.statistics.skillTypeStats || [],
+        monthlyRevenue: this.statistics.monthlyRevenue || []
       };
     },
     
-
-    
-    async loadNegativeFeedback() {
+    async loadAllFeedback() {
       try {
-        const response = await this.$axios.get('/admins/negative-feedback');
-        this.statistics.negativeFeedback = response.data;
+        const response = await this.$axios.get('/feedbacks');
+        this.statistics.allFeedback = response.data;
       } catch (error) {
-        console.error('加载负面反馈失败:', error);
-        this.statistics.negativeFeedback = [];
+        console.error('加载反馈失败:', error);
+        this.statistics.allFeedback = [];
       }
-    },
-    assignOrder(order) {
-      this.selectedOrder = order;
-      this.assignForm = {
-        technicianIds: [],
-        laborCost: 0,
-        materialCost: 0
-      };
-      this.showAssignModal = true;
-    },
-    async confirmAssign() {
-      try {
-        // 使用修复后的浮点数计算
-        const laborCost = Math.round(parseFloat(this.assignForm.laborCost || 0) * 100) / 100;
-        const materialCost = Math.round(parseFloat(this.assignForm.materialCost || 0) * 100) / 100;
-        const totalCost = Math.round((laborCost + materialCost) * 100) / 100;
-        
-        const updateData = {
-          technicianIds: this.assignForm.technicianIds,
-          laborCost: laborCost,
-          materialCost: materialCost,
-          totalCost: totalCost,
-          status: 'ASSIGNED'
-        };
-        
-        console.log('分配订单数据:', updateData);
-        
-        await this.$axios.put(`/repair-orders/${this.selectedOrder.id}`, updateData);
-        
-        // 更新本地数据
-        const orderIndex = this.allOrders.findIndex(o => o.id === this.selectedOrder.id);
-        if (orderIndex !== -1) {
-          this.allOrders[orderIndex] = { ...this.allOrders[orderIndex], ...updateData };
-        }
-        
-        this.closeAssignModal();
-        this.$emit('message', '订单分配成功', 'success');
-        
-        // 重新加载所有数据以确保同步
-        await this.refreshData();
-      } catch (error) {
-        console.error('分配订单失败:', error);
-        this.$emit('message', '分配订单失败: ' + (error.response?.data?.message || error.message), 'error');
-      }
-    },
-    closeAssignModal() {
-      this.showAssignModal = false;
-      this.selectedOrder = null;
     },
     async viewOrderDetail(order) {
       try {
@@ -1166,6 +1218,72 @@ export default {
       localStorage.removeItem('user');
       localStorage.removeItem('userRole');
       this.$router.push('/');
+    },
+    async reassignPendingOrders() {
+      try {
+        const response = await this.$axios.post('/admins/reassign-pending-orders');
+        
+        if (response.data.reassignedCount > 0) {
+          this.$emit('message', 
+            `成功重新分配 ${response.data.reassignedCount} 个订单`, 
+            'success'
+          );
+          console.log('重新分配的订单:', response.data.reassignedOrders);
+        } else {
+          console.log('没有需要重新分配的订单');
+        }
+      } catch (error) {
+        console.error('重新分配订单失败:', error);
+        // 重新分配失败不影响整体刷新流程，只记录错误
+        console.warn('重新分配订单失败，但数据刷新将继续');
+      }
+    },
+    async manualReassignPendingOrders() {
+      try {
+        this.isLoading = true;
+        this.$emit('message', '正在重新分配待分配订单...', 'info');
+        
+        const response = await this.$axios.post('/admins/reassign-pending-orders');
+        
+        if (response.data.reassignedCount > 0) {
+          this.$emit('message', 
+            `成功重新分配 ${response.data.reassignedCount} 个订单`, 
+            'success'
+          );
+          console.log('重新分配的订单:', response.data.reassignedOrders);
+          
+          // 重新加载订单数据以反映最新状态
+          await this.loadOrders();
+          await this.loadDashboardStats();
+        } else {
+          this.$emit('message', '当前没有需要重新分配的订单', 'info');
+        }
+      } catch (error) {
+        console.error('手动重新分配订单失败:', error);
+        this.$emit('message', '重新分配失败: ' + (error.response?.data?.error || error.message), 'error');
+      } finally {
+        this.isLoading = false;
+      }
+    },
+    async loadVehicleBrandStatistics() {
+      try {
+        const response = await this.$axios.get('/admins/vehicle-brand-statistics');
+        this.statistics.vehicleBrandStats = response.data;
+        console.log('加载车辆品牌统计数据成功:', this.statistics.vehicleBrandStats);
+      } catch (error) {
+        console.error('加载车辆品牌统计失败:', error);
+        this.statistics.vehicleBrandStats = [];
+      }
+    },
+    async loadSkillTypeStatistics() {
+      try {
+        const response = await this.$axios.get('/admins/skill-type-statistics');
+        this.statistics.skillTypeStats = response.data;
+        console.log('加载工种类型统计数据成功:', this.statistics.skillTypeStats);
+      } catch (error) {
+        console.error('加载工种类型统计失败:', error);
+        this.statistics.skillTypeStats = [];
+      }
     }
   }
 }
@@ -1669,14 +1787,47 @@ export default {
 }
 
 .no-feedback i {
-  font-size: 3rem;
-  color: #10b981;
+  font-size: 2rem;
   margin-bottom: 1rem;
+  opacity: 0.5;
 }
 
-.no-feedback p {
+.brand-stats table,
+.skill-type-stats table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.brand-stats th,
+.brand-stats td,
+.skill-type-stats th,
+.skill-type-stats td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.brand-stats th,
+.skill-type-stats th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+}
+
+.no-data {
+  text-align: center;
+  padding: 2rem;
+  color: #6b7280;
+}
+
+.no-data i {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.no-data p {
   margin: 0;
-  font-size: 1rem;
 }
 
 .stat-section {
@@ -1890,7 +2041,43 @@ export default {
   font-size: 0.875rem;
 }
 
+/* 反馈相关样式 */
+.rating-stars {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
 
+.star {
+  color: #d1d5db;
+  font-size: 1rem;
+}
+
+.star.active {
+  color: #f59e0b;
+}
+
+.rating-text {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-left: 0.5rem;
+}
+
+.feedback-comment {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feedback-pagination {
+  text-align: center;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 0.5rem;
+  color: #6b7280;
+}
 
 /* 响应式设计 */
 @media (max-width: 768px) {
@@ -1953,5 +2140,38 @@ export default {
     gap: 1rem;
     text-align: center;
   }
+}
+
+.btn-secondary {
+  background: #6b7280;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #4b5563;
+  transform: translateY(-1px);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary .fa-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>

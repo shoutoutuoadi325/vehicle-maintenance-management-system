@@ -81,4 +81,12 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
                    "ORDER BY occurrence_count DESC",
            nativeQuery = true)
     List<Object[]> findMostCommonIssuesByModel(@Param("brand") String brand, @Param("model") String model);
+    
+    /**
+     * 根据用户ID查找车辆列表（带用户和维修订单信息）
+     * @param userId 用户ID
+     * @return 车辆列表
+     */
+    @Query("SELECT DISTINCT v FROM Vehicle v LEFT JOIN FETCH v.user LEFT JOIN FETCH v.repairOrders WHERE v.user.id = :userId")
+    List<Vehicle> findByUserIdWithDetails(@Param("userId") Long userId);
 } 

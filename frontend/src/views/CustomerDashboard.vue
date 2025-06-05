@@ -356,6 +356,21 @@
                       placeholder="请详细描述车辆故障情况，如：发动机异响、刹车片磨损等" required></textarea>
           </div>
           <div class="form-group">
+            <label class="form-label">维修类型 <span class="required">*</span></label>
+            <select v-model="repairOrderForm.requiredSkillType" class="form-input" required>
+              <option value="">请选择维修类型</option>
+              <option value="MECHANIC">机械维修</option>
+              <option value="ELECTRICIAN">电气维修</option>
+              <option value="BODY_WORK">车身维修</option>
+              <option value="PAINT">喷漆</option>
+              <option value="DIAGNOSTIC">故障诊断</option>
+            </select>
+            <small class="form-help">
+              <i class="fas fa-info-circle"></i> 
+              我们会根据您选择的维修类型自动分配最合适的技师。如暂无对应技师，请您稍后再试或选择其他维修类型。
+            </small>
+          </div>
+          <div class="form-group">
             <label class="form-label">预约时间</label>
             <input v-model="repairOrderForm.preferredDate" type="datetime-local" class="form-input"
                    :min="new Date().toISOString().slice(0, 16)">
@@ -517,24 +532,21 @@ export default {
   name: 'CustomerDashboard',
   data() {
     return {
-      user: {},
-      activeTab: 'overview',
+      user: null,
+      vehicles: [],
+      repairOrders: [],
+      recentOrders: [],
+      feedbacks: [],
+      completedOrdersWithoutFeedback: [],
+      activeTab: 'dashboard',
       showUserMenu: false,
       showAddVehicle: false,
       showCreateOrder: false,
       showOrderDetail: false,
       showFeedback: false,
-      vehicles: [],
-      repairOrders: [],
-      feedbacks: [],
-      completedOrdersWithoutFeedback: [],
-      statistics: {
-        vehicleCount: 0,
-        repairCount: 0,
-        pendingCount: 0,
-        totalCost: 0
-      },
-      recentOrders: [],
+      selectedOrder: null,
+      feedbackOrder: null,
+      isSubmitting: false,
       vehicleForm: {
         licensePlate: '',
         brand: '',
@@ -543,20 +555,29 @@ export default {
         color: '',
         vin: ''
       },
-      profileForm: {},
       repairOrderForm: {
         vehicleId: '',
         description: '',
         preferredDate: '',
-        contactPhone: ''
+        contactPhone: '',
+        requiredSkillType: ''
       },
-      selectedOrder: null,
-      feedbackOrder: null,
       feedbackForm: {
         comment: '',
         rating: 0
       },
-      isSubmitting: false
+      profileForm: {
+        name: '',
+        phone: '',
+        email: '',
+        address: ''
+      },
+      statistics: {
+        vehicleCount: 0,
+        repairCount: 0,
+        pendingCount: 0,
+        totalCost: 0
+      }
     }
   },
   computed: {
@@ -612,18 +633,31 @@ export default {
         console.log('开始加载车辆数据，用户ID:', this.user.id);
         const response = await this.$axios.get(`/vehicles/user/${this.user.id}`);
         console.log('车辆API响应:', response.data);
-        this.vehicles = response.data || [];
-        console.log('设置车辆数据:', this.vehicles);
         
-        if (this.vehicles.length === 0) {
-          console.log('没有找到车辆数据');
+        if (Array.isArray(response.data)) {
+          this.vehicles = response.data;
+          console.log('成功设置车辆数据，共', this.vehicles.length, '辆车');
+          this.vehicles.forEach((vehicle, index) => {
+            console.log(`车辆${index + 1}:`, {
+              id: vehicle.id,
+              licensePlate: vehicle.licensePlate,
+              brand: vehicle.brand,
+              model: vehicle.model,
+              repairOrders: vehicle.repairOrders?.length || 0
+            });
+          });
+          
+          // 更新统计信息
+          this.calculateStatistics();
         } else {
-          console.log(`成功加载 ${this.vehicles.length} 辆车辆`);
+          console.error('API返回的数据不是数组:', response.data);
+          this.vehicles = [];
         }
       } catch (error) {
         console.error('加载车辆失败:', error);
         console.error('错误详情:', error.response?.data);
         this.$emit('message', `加载车辆失败: ${error.response?.data?.message || error.message}`, 'error');
+        this.vehicles = [];
       }
     },
     async loadRepairOrders() {
@@ -681,9 +715,16 @@ export default {
         )
       };
       
+      // 调试信息
+      console.log('所有维修订单:', this.repairOrders);
+      console.log('已完成订单:', this.repairOrders.filter(order => order.status === 'COMPLETED'));
+      console.log('所有反馈:', this.feedbacks);
+      
       // 更新可反馈的维修单列表
       this.completedOrdersWithoutFeedback = this.repairOrders
         .filter(order => order.status === 'COMPLETED' && !this.hasUserFeedback(order));
+      
+      console.log('可反馈的订单:', this.completedOrdersWithoutFeedback);
     },
     
     formatCurrency(amount) {
@@ -811,19 +852,45 @@ export default {
           totalCost: 0,
           userId: this.user.id,
           vehicleId: this.repairOrderForm.vehicleId,
-          technicianIds: []
+          technicianIds: [],
+          requiredSkillType: this.repairOrderForm.requiredSkillType
         };
         
         const response = await this.$axios.post('/repair-orders', orderData);
         this.repairOrders.push(response.data);
         this.showCreateOrder = false;
-        this.repairOrderForm = { vehicleId: '', description: '', preferredDate: '', contactPhone: '' };
+        this.repairOrderForm = { vehicleId: '', description: '', preferredDate: '', contactPhone: '', requiredSkillType: '' };
         this.calculateStatistics();
-        this.$emit('message', '预约维修成功', 'success');
+        
+        // 检查订单状态，给出相应提示
+        if (response.data.status === 'ASSIGNED') {
+          this.$emit('message', '预约维修成功！系统已为您分配技师，我们将尽快为您安排维修服务。', 'success');
+        } else {
+          this.$emit('message', '预约提交成功！我们会尽快为您安排合适的技师。', 'success');
+        }
+        
       } catch (error) {
         console.error('预约维修失败:', error);
-        const errorMessage = error.response?.data?.message || error.message || '预约维修失败';
-        this.$emit('message', errorMessage, 'error');
+        
+        // 解析错误消息
+        let errorMessage = '预约维修失败';
+        
+        if (error.response && error.response.data) {
+          if (typeof error.response.data === 'string') {
+            errorMessage = error.response.data;
+          } else if (error.response.data.message) {
+            errorMessage = error.response.data.message;
+          }
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        
+        // 如果是技师不可用的错误，使用警告级别
+        if (errorMessage.includes('暂时没有可用的') || errorMessage.includes('技师')) {
+          this.$emit('message', errorMessage, 'warning');
+        } else {
+          this.$emit('message', errorMessage, 'error');
+        }
       } finally {
         this.isSubmitting = false;
       }
@@ -876,7 +943,7 @@ export default {
       }
     },
     hasUserFeedback(order) {
-      return this.feedbacks.some(feedback => feedback.repairOrderId === order.id);
+      return this.feedbacks.some(feedback => feedback.repairOrder && feedback.repairOrder.id === order.id);
     },
     getSkillTypeName(skillType) {
       const skillMap = {
@@ -1235,17 +1302,25 @@ export default {
   gap: 1.5rem;
 }
 
-.vehicle-card,
-.order-card,
-.feedback-card {
+.vehicles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  padding: 1.5rem;
+  grid-auto-rows: minmax(min-content, max-content);
+}
+
+.vehicle-card {
+  display: flex;
+  flex-direction: column;
   background: white;
   padding: 1.5rem;
   border-radius: 1rem;
   box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+  height: 100%;
 }
 
-.vehicle-header,
-.order-header {
+.vehicle-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1361,7 +1436,24 @@ export default {
 }
 
 .required {
-  color: #dc2626;
+  color: #ef4444;
+}
+
+.form-help {
+  display: block;
+  margin-top: 0.5rem;
+  color: #6b7280;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.form-help i {
+  color: #3b82f6;
+  margin-right: 0.25rem;
+}
+
+.btn {
+  /* Add any necessary styles for the btn class */
 }
 
 .detail-section {

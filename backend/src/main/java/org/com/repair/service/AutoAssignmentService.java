@@ -1,6 +1,5 @@
 package org.com.repair.service;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -17,13 +16,42 @@ import org.springframework.stereotype.Service;
 public class AutoAssignmentService {
     
     private final TechnicianRepository technicianRepository;
+    private final FeedbackService feedbackService;
     
-    public AutoAssignmentService(TechnicianRepository technicianRepository) {
+    public AutoAssignmentService(TechnicianRepository technicianRepository, FeedbackService feedbackService) {
         this.technicianRepository = technicianRepository;
+        this.feedbackService = feedbackService;
     }
     
     /**
-     * 自动分配技师到维修工单
+     * 自动分配单个技师到维修工单（基于指定的技师工种类型）
+     * @param requiredSkillType 需要的技能类型
+     * @return 分配的技师
+     */
+    public Technician autoAssignBestTechnician(SkillType requiredSkillType) {
+        List<Technician> availableTechnicians = technicianRepository.findBySkillType(requiredSkillType);
+        
+        if (availableTechnicians.isEmpty()) {
+            return null;
+        }
+        
+        // 计算每个技师的评分
+        Map<Technician, Double> scores = new HashMap<>();
+        
+        for (Technician technician : availableTechnicians) {
+            double score = calculateTechnicianScore(technician);
+            scores.put(technician, score);
+        }
+        
+        // 返回评分最高的技师
+        return scores.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
+    }
+    
+    /**
+     * 自动分配技师到维修工单（旧版本，保持兼容）
      * @param repairOrder 维修工单
      * @param requiredSkillTypes 需要的技能类型
      * @return 分配的技师集合
@@ -32,7 +60,7 @@ public class AutoAssignmentService {
         Set<Technician> assignedTechnicians = new HashSet<>();
         
         for (SkillType skillType : requiredSkillTypes) {
-            Technician bestTechnician = findBestAvailableTechnician(skillType);
+            Technician bestTechnician = autoAssignBestTechnician(skillType);
             if (bestTechnician != null) {
                 assignedTechnicians.add(bestTechnician);
             }
@@ -80,62 +108,38 @@ public class AutoAssignmentService {
     }
     
     /**
-     * 查找最合适的可用技师
-     * 优先级：工作负载 > 时薪 > 经验
+     * 计算技师评分
+     * 评分规则：评分越高越好，工作负载越少越好，完成任务数量多更好
      */
-    private Technician findBestAvailableTechnician(SkillType skillType) {
-        List<Technician> availableTechnicians = technicianRepository.findAvailableTechnicians(skillType);
+    private double calculateTechnicianScore(Technician technician) {
+        // 获取技师的平均评分（0-5分）
+        Double averageRating = feedbackService.getAverageRatingByTechnicianId(technician.getId());
+        double ratingScore = (averageRating != null) ? averageRating : 3.0; // 默认3分
         
-        if (availableTechnicians.isEmpty()) {
-            return null;
-        }
+        // 获取当前工作负载（未完成的订单数量）
+        int currentWorkload = getCurrentWorkload(technician);
+        double workloadScore = Math.max(0, 10 - currentWorkload); // 工作负载越少分数越高
         
-        // 计算每个技师的评分
-        Map<Technician, Double> scores = new HashMap<>();
+        // 获取完成任务数量
+        int completedOrders = technician.getCompletedOrders() != null ? technician.getCompletedOrders() : 0;
+        double experienceScore = Math.min(completedOrders * 0.1, 5.0); // 经验分数，最高5分
         
-        for (Technician technician : availableTechnicians) {
-            double score = calculateTechnicianScore(technician);
-            scores.put(technician, score);
-        }
-        
-        // 返回评分最高的技师
-        return scores.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
-                .map(Map.Entry::getKey)
-                .orElse(null);
+        // 综合评分：评分权重50%，工作负载权重30%，经验权重20%
+        return (ratingScore * 0.5) + (workloadScore * 0.3) + (experienceScore * 0.2);
     }
     
     /**
-     * 计算技师评分
-     * 评分规则：工作负载越少评分越高，时薪适中，完成任务数量多
+     * 获取技师当前工作负载
      */
-    private double calculateTechnicianScore(Technician technician) {
-        double score = 100.0; // 基础分
+    private int getCurrentWorkload(Technician technician) {
+        if (technician.getRepairOrders() == null) {
+            return 0;
+        }
         
-        // 工作负载评分（权重40%）
-        int activeTasksCount = technician.getRepairOrders() != null ? 
-            (int) technician.getRepairOrders().stream()
-                .filter(order -> !"COMPLETED".equals(order.getStatus()) && !"CANCELLED".equals(order.getStatus()))
-                .count() : 0;
-        
-        double workloadScore = Math.max(0, 40 - (activeTasksCount * 8)); // 每个活跃任务减8分
-        score += workloadScore * 0.4;
-        
-        // 时薪评分（权重20%） - 适中的时薪得分更高
-        double hourlyRate = technician.getHourlyRate();
-        double hourlyRateScore = 20 - Math.abs(hourlyRate - 80); // 假设80是理想时薪
-        score += Math.max(0, hourlyRateScore) * 0.2;
-        
-        // 经验评分（权重40%） - 根据完成的任务数量
-        int completedTasksCount = technician.getRepairOrders() != null ? 
-            (int) technician.getRepairOrders().stream()
-                .filter(order -> "COMPLETED".equals(order.getStatus()))
-                .count() : 0;
-        
-        double experienceScore = Math.min(40, completedTasksCount * 2); // 每完成一个任务加2分，最多40分
-        score += experienceScore * 0.4;
-        
-        return score;
+        return (int) technician.getRepairOrders().stream()
+                .filter(order -> order.getStatus() == RepairOrder.RepairStatus.ASSIGNED || 
+                               order.getStatus() == RepairOrder.RepairStatus.IN_PROGRESS)
+                .count();
     }
     
     /**

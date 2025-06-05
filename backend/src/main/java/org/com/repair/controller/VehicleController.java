@@ -1,10 +1,14 @@
 package org.com.repair.controller;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.com.repair.DTO.NewVehicleRequest;
 import org.com.repair.DTO.VehicleResponse;
 import org.com.repair.service.VehicleService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,29 +24,60 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/vehicles")
 public class VehicleController {
     
+    private static final Logger logger = LoggerFactory.getLogger(VehicleController.class);
     private final VehicleService vehicleService;
     
     public VehicleController(VehicleService vehicleService) {
         this.vehicleService = vehicleService;
     }
     
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<Object> getVehiclesByUserId(@PathVariable Long userId) {
+        try {
+            logger.info("Fetching vehicles for user ID: {}", userId);
+            List<VehicleResponse> vehicles = vehicleService.getVehiclesByUserId(userId);
+            logger.info("Found {} vehicles for user ID: {}", vehicles.size(), userId);
+            return ResponseEntity.ok(vehicles);
+        } catch (Exception e) {
+            logger.error("Error fetching vehicles for user ID: " + userId, e);
+            Map<String, String> error = new HashMap<>();
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
+    
     @PostMapping
-    public ResponseEntity<VehicleResponse> addVehicle(@RequestBody NewVehicleRequest request) {
-        VehicleResponse response = vehicleService.addVehicle(request);
-        return new ResponseEntity<>(response, HttpStatus.CREATED);
+    public ResponseEntity<Object> addVehicle(@RequestBody NewVehicleRequest request) {
+        try {
+            logger.info("Adding new vehicle with license plate: {}", request.licensePlate());
+            VehicleResponse response = vehicleService.addVehicle(request);
+            logger.info("Successfully added vehicle with ID: {}", response.id());
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (Exception e) {
+            logger.error("Error adding vehicle", e);
+            Map<String, String> error = new HashMap<>();
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
     }
     
     @GetMapping("/{id}")
-    public ResponseEntity<VehicleResponse> getVehicleById(@PathVariable Long id) {
-        return vehicleService.getVehicleById(id)
-                .map(vehicle -> new ResponseEntity<>(vehicle, HttpStatus.OK))
-                .orElse(new ResponseEntity<>(HttpStatus.NOT_FOUND));
-    }
-    
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<List<VehicleResponse>> getVehiclesByUserId(@PathVariable Long userId) {
-        List<VehicleResponse> vehicles = vehicleService.getVehiclesByUserId(userId);
-        return new ResponseEntity<>(vehicles, HttpStatus.OK);
+    public ResponseEntity<Object> getVehicleById(@PathVariable Long id) {
+        try {
+            logger.info("Fetching vehicle with ID: {}", id);
+            return vehicleService.getVehicleById(id)
+                    .map(vehicle -> ResponseEntity.ok().body((Object)vehicle))
+                    .orElseGet(() -> {
+                        Map<String, String> error = new HashMap<>();
+                        error.put("message", "Vehicle not found");
+                        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+                    });
+        } catch (Exception e) {
+            logger.error("Error fetching vehicle with ID: " + id, e);
+            Map<String, String> error = new HashMap<>();
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
     }
     
     @GetMapping("/license-plate/{licensePlate}")
@@ -59,19 +94,39 @@ public class VehicleController {
     }
     
     @PutMapping("/{id}")
-    public ResponseEntity<VehicleResponse> updateVehicle(@PathVariable Long id, @RequestBody NewVehicleRequest request) {
+    public ResponseEntity<Object> updateVehicle(@PathVariable Long id, @RequestBody NewVehicleRequest request) {
         try {
+            logger.info("Updating vehicle with ID: {}", id);
             VehicleResponse response = vehicleService.updateVehicle(id, request);
-            return new ResponseEntity<>(response, HttpStatus.OK);
-        } catch (RuntimeException e) {
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            logger.info("Successfully updated vehicle with ID: {}", id);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error updating vehicle with ID: " + id, e);
+            Map<String, String> error = new HashMap<>();
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
     
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteVehicle(@PathVariable Long id) {
-        boolean deleted = vehicleService.deleteVehicle(id);
-        return deleted ? new ResponseEntity<>(HttpStatus.NO_CONTENT) : new ResponseEntity<>(HttpStatus.NOT_FOUND);
+    public ResponseEntity<Object> deleteVehicle(@PathVariable Long id) {
+        try {
+            logger.info("Deleting vehicle with ID: {}", id);
+            boolean deleted = vehicleService.deleteVehicle(id);
+            if (deleted) {
+                logger.info("Successfully deleted vehicle with ID: {}", id);
+                return ResponseEntity.noContent().build();
+            } else {
+                Map<String, String> error = new HashMap<>();
+                error.put("message", "Vehicle not found");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+            }
+        } catch (Exception e) {
+            logger.error("Error deleting vehicle with ID: " + id, e);
+            Map<String, String> error = new HashMap<>();
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
     }
     
     @GetMapping("/statistics/by-model")
