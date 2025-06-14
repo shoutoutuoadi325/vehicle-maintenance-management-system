@@ -1,13 +1,16 @@
 package org.com.repair.service;
 
 import java.time.LocalDate;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.com.repair.DTO.NewTechnicianRequest;
+import org.com.repair.DTO.RepairOrderResponse;
 import org.com.repair.DTO.TechnicianResponse;
 import org.com.repair.controller.TechnicianController.TechnicianStatistics;
+import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.Technician;
 import org.com.repair.entity.Technician.SkillType;
 import org.com.repair.repository.RepairOrderRepository;
@@ -21,13 +24,16 @@ public class TechnicianService {
     private final TechnicianRepository technicianRepository;
     private final RepairOrderRepository repairOrderRepository;
     private final FeedbackService feedbackService;
+    private final AutoAssignmentService autoAssignmentService;
     
     public TechnicianService(TechnicianRepository technicianRepository, 
                            RepairOrderRepository repairOrderRepository,
-                           FeedbackService feedbackService) {
+                           FeedbackService feedbackService,
+                           AutoAssignmentService autoAssignmentService) {
         this.technicianRepository = technicianRepository;
         this.repairOrderRepository = repairOrderRepository;
         this.feedbackService = feedbackService;
+        this.autoAssignmentService = autoAssignmentService;
     }
     
     @Transactional
@@ -197,5 +203,123 @@ public class TechnicianService {
         int targetMonth = month != null ? month : now.getMonthValue();
         
         return technicianRepository.calculateMonthlyEarnings(technicianId, targetYear, targetMonth);
+    }
+    
+    /**
+     * 技师拒绝订单
+     * @param technicianId 技师ID
+     * @param orderId 订单ID
+     * @param reason 拒绝原因
+     * @return 是否拒绝成功
+     */
+    @Transactional
+    public boolean rejectOrder(Long technicianId, Long orderId, String reason) {
+        // 1. 验证技师是否存在
+        Technician technician = technicianRepository.findById(technicianId)
+                .orElseThrow(() -> new RuntimeException("技师不存在"));
+        
+        // 2. 验证订单是否存在
+        RepairOrder order = repairOrderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("维修订单不存在"));
+        
+        // 3. 验证订单是否分配给该技师
+        boolean isAssignedToTechnician = order.getTechnicians() != null && 
+                order.getTechnicians().stream()
+                        .anyMatch(t -> t.getId().equals(technicianId));
+        
+        if (!isAssignedToTechnician) {
+            throw new RuntimeException("此订单未分配给您，无法拒绝");
+        }
+        
+        // 4. 验证订单状态是否可以拒绝（只有ASSIGNED状态的订单可以拒绝）
+        if (order.getStatus() != RepairOrder.RepairStatus.ASSIGNED) {
+            throw new RuntimeException("订单状态不允许拒绝，只有已分配状态的订单可以拒绝");
+        }
+        
+        // 5. 从订单的技师列表中移除当前技师
+        order.getTechnicians().removeIf(t -> t.getId().equals(technicianId));
+        
+        // 6. 记录拒绝原因（可以在RepairOrder中添加拒绝记录字段，这里暂时在日志中记录）
+        System.out.println(String.format("技师 %s (ID: %d) 拒绝了订单 %s (ID: %d)，原因：%s", 
+                technician.getName(), technicianId, order.getOrderNumber(), orderId, 
+                reason != null ? reason : "未提供原因"));
+        
+        // 7. 重新自动分配给其他技师
+        try {
+            // 获取订单所需的技能类型
+            SkillType requiredSkillType = order.getRequiredSkillType();
+            if (requiredSkillType == null) {
+                // 如果没有指定技能类型，从描述中分析
+                var skillTypes = autoAssignmentService.determineRequiredSkillTypes(order.getDescription());
+                if (!skillTypes.isEmpty()) {
+                    requiredSkillType = skillTypes.iterator().next(); // 取第一个
+                }
+            }
+            
+            if (requiredSkillType != null) {
+                // 排除已拒绝的技师，寻找其他技师
+                Technician newTechnician = autoAssignmentService.autoAssignBestTechnicianExcluding(
+                        requiredSkillType, technicianId);
+                
+                if (newTechnician != null) {
+                    // 分配给新技师
+                    order.getTechnicians().add(newTechnician);
+                    order.setUpdatedAt(new Date());
+                    order.setStatus(RepairOrder.RepairStatus.ASSIGNED);
+                    
+                    repairOrderRepository.save(order);
+                    
+                    System.out.println(String.format("订单 %s 已重新分配给技师 %s (ID: %d)", 
+                            order.getOrderNumber(), newTechnician.getName(), newTechnician.getId()));
+                    
+                    return true;
+                } else {
+                    // 没有其他可用技师，将订单状态改为PENDING
+                    order.setStatus(RepairOrder.RepairStatus.PENDING);
+                    order.setUpdatedAt(new Date());
+                    repairOrderRepository.save(order);
+                    
+                    System.out.println(String.format("订单 %s 无其他可用技师，已改为待分配状态", 
+                            order.getOrderNumber()));
+                    
+                    return true;
+                }
+            } else {
+                throw new RuntimeException("无法确定订单所需技能类型，无法重新分配");
+            }
+        } catch (Exception e) {
+            // 重新分配失败，将订单状态改为PENDING
+            order.setStatus(RepairOrder.RepairStatus.PENDING);
+            order.setUpdatedAt(new Date());
+            repairOrderRepository.save(order);
+            
+            System.err.println(String.format("订单 %s 重新分配失败：%s，已改为待分配状态", 
+                    order.getOrderNumber(), e.getMessage()));
+            
+            return true; // 拒绝操作成功，但重新分配失败
+        }
+    }
+    
+    /**
+     * 获取分配给技师的待处理订单
+     * @param technicianId 技师ID
+     * @return 订单列表
+     */
+    public List<Object> getAssignedOrders(Long technicianId) {
+        // 验证技师是否存在
+        if (!technicianRepository.existsById(technicianId)) {
+            throw new RuntimeException("技师不存在");
+        }
+        
+        // 获取分配给该技师且状态为ASSIGNED的订单
+        List<RepairOrder> assignedOrders = repairOrderRepository.findByTechnicianIdAndStatus(
+                technicianId, RepairOrder.RepairStatus.ASSIGNED);
+        
+        return assignedOrders.stream()
+                .map(order -> new RepairOrderResponse(order))
+                .collect(Collectors.toList())
+                .stream()
+                .map(response -> (Object) response)
+                .collect(Collectors.toList());
     }
 } 

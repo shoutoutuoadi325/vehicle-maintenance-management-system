@@ -160,6 +160,71 @@ public class TechnicianController {
         return new ResponseEntity<>(earnings, HttpStatus.OK);
     }
     
+    /**
+     * 技师拒绝订单
+     * @param technicianId 技师ID
+     * @param orderId 订单ID
+     * @param reason 拒绝原因（可选）
+     * @return 拒绝结果
+     */
+    @PostMapping("/{technicianId}/reject-order/{orderId}")
+    public ResponseEntity<?> rejectOrder(
+            @PathVariable Long technicianId,
+            @PathVariable Long orderId,
+            @RequestParam(required = false) String reason) {
+        try {
+            boolean success = technicianService.rejectOrder(technicianId, orderId, reason);
+            if (success) {
+                return new ResponseEntity<>(
+                    new SuccessResponse("订单拒绝成功，系统将重新分配给其他技师"), 
+                    HttpStatus.OK
+                );
+            } else {
+                return new ResponseEntity<>(
+                    new ErrorResponse("订单拒绝失败，可能订单不存在或您无权拒绝此订单"), 
+                    HttpStatus.BAD_REQUEST
+                );
+            }
+        } catch (RuntimeException e) {
+            return new ResponseEntity<>(
+                new ErrorResponse(e.getMessage()), 
+                HttpStatus.BAD_REQUEST
+            );
+        }
+    }
+    
+    /**
+     * 获取技师被分配的待处理订单列表
+     * @param technicianId 技师ID
+     * @return 待处理订单列表
+     */
+    @GetMapping("/{technicianId}/assigned-orders")
+    public ResponseEntity<List<Object>> getAssignedOrders(@PathVariable Long technicianId) {
+        try {
+            List<Object> orders = technicianService.getAssignedOrders(technicianId);
+            return new ResponseEntity<>(orders, HttpStatus.OK);
+        } catch (RuntimeException e) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+    }
+    
+    // 成功响应类
+    public static class SuccessResponse {
+        private String message;
+        
+        public SuccessResponse(String message) {
+            this.message = message;
+        }
+        
+        public String getMessage() {
+            return message;
+        }
+        
+        public void setMessage(String message) {
+            this.message = message;
+        }
+    }
+    
     // 技师统计信息类
     public static class TechnicianStatistics {
         private int totalTasks;

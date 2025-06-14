@@ -52,6 +52,15 @@ public interface RepairOrderRepository extends JpaRepository<RepairOrder, Long> 
     List<RepairOrder> findByTechnicianId(@Param("technicianId") Long technicianId);
     
     /**
+     * 根据维修技师ID和状态查找维修工单列表
+     * @param technicianId 维修技师ID
+     * @param status 维修状态
+     * @return 维修工单列表
+     */
+    @Query("SELECT r FROM RepairOrder r JOIN r.technicians t WHERE t.id = :technicianId AND r.status = :status")
+    List<RepairOrder> findByTechnicianIdAndStatus(@Param("technicianId") Long technicianId, @Param("status") RepairStatus status);
+    
+    /**
      * 根据维修状态查找维修工单列表
      * @param status 维修状态
      * @return 维修工单列表
