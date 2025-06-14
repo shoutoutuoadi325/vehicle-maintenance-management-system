@@ -240,6 +240,9 @@
               <button class="btn btn-outline" @click="editOrder(order)">
                 <i class="fas fa-edit"></i> 编辑
               </button>
+              <button class="btn btn-danger btn-outline" @click="showDeleteOrderConfirm(order)">
+                <i class="fas fa-trash"></i> 删除
+              </button>
             </div>
           </div>
         </div>
@@ -549,9 +552,14 @@
                 <td>{{ user.vehicleCount || 0 }}</td>
                 <td>{{ user.orderCount || 0 }}</td>
                 <td>
-                  <button class="btn btn-outline btn-sm" @click="viewUserDetail(user)">
-                    查看
-                  </button>
+                  <div class="action-buttons">
+                    <button class="btn btn-outline btn-sm" @click="viewUserDetail(user)">
+                      <i class="fas fa-eye"></i> 查看
+                    </button>
+                    <button class="btn btn-danger btn-sm" @click="showDeleteUserConfirm(user)">
+                      <i class="fas fa-trash"></i> 删除
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -685,6 +693,130 @@
       </div>
     </div>
 
+    <!-- 删除用户确认模态框 -->
+    <div v-if="showDeleteUserModal" class="modal-overlay" @click="closeDeleteUserModal">
+      <div class="modal-content delete-modal" @click.stop>
+        <div class="modal-header">
+          <h2>删除用户确认</h2>
+          <button class="modal-close" @click="closeDeleteUserModal">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="delete-warning">
+            <div class="warning-icon">
+              <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3>确定要删除此用户吗？</h3>
+            <div class="user-info">
+              <p><strong>用户名:</strong> {{ deleteUser ? deleteUser.username : '未知' }}</p>
+              <p><strong>姓名:</strong> {{ deleteUser ? deleteUser.name : '未知' }}</p>
+              <p><strong>电话:</strong> {{ deleteUser ? deleteUser.phone : '未知' }}</p>
+              <p><strong>车辆数量:</strong> {{ deleteUser ? deleteUser.vehicleCount : 0 }} 辆</p>
+              <p><strong>订单数量:</strong> {{ deleteUser ? deleteUser.orderCount : 0 }} 个</p>
+            </div>
+            <div class="delete-notice">
+              <i class="fas fa-exclamation-circle"></i>
+              <div>
+                <p><strong>警告：此操作不可撤销！</strong></p>
+                <p>删除用户将同时删除：</p>
+                <ul>
+                  <li>用户的所有车辆信息</li>
+                  <li>用户的所有维修订单</li>
+                  <li>相关的反馈记录</li>
+                </ul>
+                <p>建议在删除前先备份重要数据。</p>
+              </div>
+            </div>
+            <div class="confirmation-input">
+              <label class="form-label">请输入用户名 "{{ deleteUser ? deleteUser.username : '' }}" 确认删除：</label>
+              <input 
+                v-model="deleteConfirmText" 
+                class="form-input"
+                :placeholder="`输入 ${deleteUser ? deleteUser.username : ''} 确认删除`"
+              >
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeDeleteUserModal">
+            <i class="fas fa-arrow-left"></i> 取消
+          </button>
+          <button 
+            class="btn btn-danger" 
+            @click="confirmDeleteUser" 
+            :disabled="isDeletingUser || deleteConfirmText !== (deleteUser ? deleteUser.username : '')"
+          >
+            <i class="fas fa-trash"></i> 
+            {{ isDeletingUser ? '删除中...' : '确认删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除订单确认模态框 -->
+    <div v-if="showDeleteOrderModal" class="modal-overlay" @click="closeDeleteOrderModal">
+      <div class="modal-content delete-modal" @click.stop>
+        <div class="modal-header">
+          <h2>删除工单确认</h2>
+          <button class="modal-close" @click="closeDeleteOrderModal">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="delete-warning">
+            <div class="warning-icon">
+              <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3>确定要删除此工单吗？</h3>
+            <div class="order-info">
+              <p><strong>工单号:</strong> {{ deleteOrder ? deleteOrder.orderNumber : '未知' }}</p>
+              <p><strong>客户:</strong> {{ deleteOrder ? (deleteOrder.user?.name || '未知') : '未知' }}</p>
+              <p><strong>车辆:</strong> {{ deleteOrder ? getVehicleDisplay(deleteOrder) : '未知' }}</p>
+              <p><strong>状态:</strong> {{ deleteOrder ? getStatusText(deleteOrder.status) : '未知' }}</p>
+              <p><strong>维修描述:</strong> {{ deleteOrder ? deleteOrder.description : '无' }}</p>
+              <p><strong>总费用:</strong> ¥{{ deleteOrder ? (deleteOrder.totalCost || 0) : 0 }}</p>
+            </div>
+            <div class="delete-notice">
+              <i class="fas fa-exclamation-circle"></i>
+              <div>
+                <p><strong>警告：此操作不可撤销！</strong></p>
+                <p>删除工单将：</p>
+                <ul>
+                  <li>永久删除该维修订单记录</li>
+                  <li>删除相关的技师分配记录</li>
+                  <li>删除相关的费用记录</li>
+                  <li>删除客户对此工单的反馈</li>
+                </ul>
+                <p>建议在删除前确认工单已完成处理。</p>
+              </div>
+            </div>
+            <div class="confirmation-input">
+              <label class="form-label">请输入工单号 "{{ deleteOrder ? deleteOrder.orderNumber : '' }}" 确认删除：</label>
+              <input 
+                v-model="deleteOrderConfirmText" 
+                class="form-input"
+                :placeholder="`输入 ${deleteOrder ? deleteOrder.orderNumber : ''} 确认删除`"
+              >
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeDeleteOrderModal">
+            <i class="fas fa-arrow-left"></i> 取消
+          </button>
+          <button 
+            class="btn btn-danger" 
+            @click="confirmDeleteOrder" 
+            :disabled="isDeletingOrder || deleteOrderConfirmText !== (deleteOrder ? deleteOrder.orderNumber : '')"
+          >
+            <i class="fas fa-trash"></i> 
+            {{ isDeletingOrder ? '删除中...' : '确认删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 添加技师模态框 -->
   </div>
 </template>
@@ -706,9 +838,17 @@ export default {
       showCreateTechnician: false,
       showEditTechnician: false,
       showAssignModal: false,
+      showDeleteUserModal: false,
+      showDeleteOrderModal: false,
       selectedOrder: null,
       selectedOrderDetail: null,
       editingTechnician: null,
+      deleteUser: null,
+      deleteConfirmText: '',
+      isDeletingUser: false,
+      deleteOrder: null,
+      deleteOrderConfirmText: '',
+      isDeletingOrder: false,
       orderFilter: '',
       orderSortBy: 'createdAt',
       orderSortDesc: true,
@@ -1169,6 +1309,122 @@ export default {
     viewUserDetail(user) {
       // 实现用户详情查看
       this.$emit('message', '用户详情功能开发中', 'info');
+    },
+    
+    // 删除用户相关方法
+    showDeleteUserConfirm(user) {
+      this.deleteUser = user;
+      this.deleteConfirmText = '';
+      this.showDeleteUserModal = true;
+    },
+    
+    closeDeleteUserModal() {
+      this.showDeleteUserModal = false;
+      this.deleteUser = null;
+      this.deleteConfirmText = '';
+      this.isDeletingUser = false;
+    },
+    
+    async confirmDeleteUser() {
+      if (!this.deleteUser || this.isDeletingUser) {
+        return;
+      }
+      
+      // 验证用户名输入
+      if (this.deleteConfirmText !== this.deleteUser.username) {
+        this.$emit('message', '请正确输入用户名以确认删除', 'error');
+        return;
+      }
+      
+      try {
+        this.isDeletingUser = true;
+        console.log('删除用户:', {
+          userId: this.deleteUser.id,
+          username: this.deleteUser.username
+        });
+        
+        // 调用后端API删除用户
+        const response = await this.$axios.delete(`/users/${this.deleteUser.id}`);
+        
+        console.log('删除用户成功');
+        
+        // 从本地用户列表中移除被删除的用户
+        this.users = this.users.filter(user => user.id !== this.deleteUser.id);
+        
+        // 重新加载统计数据
+        await this.loadDashboardStats();
+        
+        // 显示成功消息
+        this.$emit('message', `用户 ${this.deleteUser.username} 删除成功`, 'success');
+        
+        // 关闭模态框
+        this.closeDeleteUserModal();
+        
+      } catch (error) {
+        console.error('删除用户失败:', error);
+        const errorMessage = error.response?.data?.message || error.message || '删除用户失败';
+        this.$emit('message', `删除用户失败: ${errorMessage}`, 'error');
+      } finally {
+        this.isDeletingUser = false;
+      }
+    },
+    
+    // 删除订单相关方法
+    showDeleteOrderConfirm(order) {
+      this.deleteOrder = order;
+      this.deleteOrderConfirmText = '';
+      this.showDeleteOrderModal = true;
+    },
+    
+    closeDeleteOrderModal() {
+      this.showDeleteOrderModal = false;
+      this.deleteOrder = null;
+      this.deleteOrderConfirmText = '';
+      this.isDeletingOrder = false;
+    },
+    
+    async confirmDeleteOrder() {
+      if (!this.deleteOrder || this.isDeletingOrder) {
+        return;
+      }
+      
+      // 验证工单号输入
+      if (this.deleteOrderConfirmText !== this.deleteOrder.orderNumber) {
+        this.$emit('message', '请正确输入工单号以确认删除', 'error');
+        return;
+      }
+      
+      try {
+        this.isDeletingOrder = true;
+        console.log('删除工单:', {
+          orderId: this.deleteOrder.id,
+          orderNumber: this.deleteOrder.orderNumber
+        });
+        
+        // 调用后端API删除工单
+        const response = await this.$axios.delete(`/repair-orders/${this.deleteOrder.id}`);
+        
+        console.log('删除工单成功');
+        
+        // 从本地订单列表中移除被删除的工单
+        this.allOrders = this.allOrders.filter(order => order.id !== this.deleteOrder.id);
+        
+        // 重新加载统计数据
+        await this.loadDashboardStats();
+        
+        // 显示成功消息
+        this.$emit('message', `工单 ${this.deleteOrder.orderNumber} 删除成功`, 'success');
+        
+        // 关闭模态框
+        this.closeDeleteOrderModal();
+        
+      } catch (error) {
+        console.error('删除工单失败:', error);
+        const errorMessage = error.response?.data?.message || error.message || '删除工单失败';
+        this.$emit('message', `删除工单失败: ${errorMessage}`, 'error');
+      } finally {
+        this.isDeletingOrder = false;
+      }
     },
     toggleUserMenu() {
       this.showUserMenu = !this.showUserMenu;
@@ -2173,5 +2429,116 @@ export default {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* 删除用户模态框样式 */
+.delete-modal {
+  max-width: 600px;
+  width: 90%;
+}
+
+.delete-warning {
+  text-align: center;
+}
+
+.warning-icon {
+  width: 4rem;
+  height: 4rem;
+  background: #fef3c7;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+  color: #d97706;
+  font-size: 1.5rem;
+}
+
+.delete-warning h3 {
+  color: #dc2626;
+  margin-bottom: 1.5rem;
+  font-size: 1.25rem;
+}
+
+.user-info {
+  background: #f9fafb;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  text-align: left;
+  margin-bottom: 1.5rem;
+}
+
+.user-info p {
+  margin: 0.5rem 0;
+  color: #374151;
+}
+
+.delete-notice {
+  background: #fee2e2;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  text-align: left;
+}
+
+.delete-notice i {
+  color: #dc2626;
+  font-size: 1.25rem;
+  margin-top: 0.125rem;
+}
+
+.delete-notice p {
+  margin: 0 0 0.5rem 0;
+  color: #dc2626;
+  font-size: 0.875rem;
+}
+
+.delete-notice ul {
+  margin: 0.5rem 0 0.5rem 1rem;
+  color: #7f1d1d;
+}
+
+.delete-notice li {
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+}
+
+.confirmation-input {
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.confirmation-input .form-label {
+  font-weight: 600;
+  color: #dc2626;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: white;
+  border: 1px solid #dc2626;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.btn-danger:disabled {
+  background: #fca5a5;
+  border-color: #fca5a5;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 </style>
