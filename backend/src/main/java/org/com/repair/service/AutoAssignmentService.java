@@ -51,6 +51,41 @@ public class AutoAssignmentService {
     }
     
     /**
+     * 自动分配单个技师到维修工单（排除指定的技师）
+     * @param requiredSkillType 需要的技能类型
+     * @param excludeTechnicianId 要排除的技师ID
+     * @return 分配的技师
+     */
+    public Technician autoAssignBestTechnicianExcluding(SkillType requiredSkillType, Long excludeTechnicianId) {
+        List<Technician> availableTechnicians = technicianRepository.findBySkillType(requiredSkillType);
+        
+        if (availableTechnicians.isEmpty()) {
+            return null;
+        }
+        
+        // 排除指定的技师
+        availableTechnicians.removeIf(technician -> technician.getId().equals(excludeTechnicianId));
+        
+        if (availableTechnicians.isEmpty()) {
+            return null;
+        }
+        
+        // 计算每个技师的评分
+        Map<Technician, Double> scores = new HashMap<>();
+        
+        for (Technician technician : availableTechnicians) {
+            double score = calculateTechnicianScore(technician);
+            scores.put(technician, score);
+        }
+        
+        // 返回评分最高的技师
+        return scores.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
+    }
+    
+    /**
      * 自动分配技师到维修工单（旧版本，保持兼容）
      * @param repairOrder 维修工单
      * @param requiredSkillTypes 需要的技能类型

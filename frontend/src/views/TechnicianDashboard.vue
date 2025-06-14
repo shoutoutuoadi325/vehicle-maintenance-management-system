@@ -175,6 +175,9 @@
                 <button v-if="task.status === 'ASSIGNED'" class="btn btn-primary btn-sm" @click="startTask(task)">
                   <i class="fas fa-play"></i> 开始
                 </button>
+                <button v-if="task.status === 'ASSIGNED'" class="btn btn-danger btn-sm" @click="showRejectConfirm(task)">
+                  <i class="fas fa-times"></i> 拒绝
+                </button>
                 <button v-else-if="task.status === 'IN_PROGRESS'" class="btn btn-success btn-sm" @click="completeTask(task)">
                   <i class="fas fa-check"></i> 完成
                 </button>
@@ -245,6 +248,9 @@
             <div class="task-footer">
               <button v-if="task.status === 'ASSIGNED'" @click="startTask(task)" class="btn btn-primary">
                 <i class="fas fa-play"></i> 开始任务
+              </button>
+              <button v-if="task.status === 'ASSIGNED'" @click="showRejectConfirm(task)" class="btn btn-danger">
+                <i class="fas fa-times"></i> 拒绝订单
               </button>
               <button v-if="task.status === 'IN_PROGRESS'" @click="completeTask(task)" class="btn btn-success">
                 <i class="fas fa-check"></i> 完成任务
@@ -379,6 +385,53 @@
         </div>
       </div>
     </main>
+
+    <!-- 拒绝订单确认模态框 -->
+    <div v-if="showRejectModal" class="modal-overlay" @click="closeRejectModal">
+      <div class="modal-content reject-modal" @click.stop>
+        <div class="modal-header">
+          <h2>拒绝订单确认</h2>
+          <button class="modal-close" @click="closeRejectModal">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="reject-info">
+            <div class="warning-icon">
+              <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3>确定要拒绝此订单吗？</h3>
+            <div class="order-info">
+              <p><strong>订单号:</strong> {{ rejectTask ? rejectTask.orderNumber : '未知' }}</p>
+              <p><strong>故障描述:</strong> {{ rejectTask ? rejectTask.description : '未知' }}</p>
+              <p><strong>车辆:</strong> {{ rejectTask ? getVehicleDisplay(rejectTask) : '未知' }}</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">拒绝原因 (可选)</label>
+            <textarea 
+              v-model="rejectReason" 
+              class="form-input" 
+              rows="3" 
+              placeholder="请输入拒绝原因，如：工作负载过重、技能不匹配、设备不足等"
+            ></textarea>
+          </div>
+          <div class="reject-notice">
+            <i class="fas fa-info-circle"></i>
+            <p>拒绝后，系统将自动将此订单重新分配给其他技师。</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeRejectModal">
+            <i class="fas fa-arrow-left"></i> 取消
+          </button>
+          <button class="btn btn-danger" @click="confirmRejectOrder" :disabled="isRejectingOrder">
+            <i class="fas fa-times"></i> 
+            {{ isRejectingOrder ? '处理中...' : '确认拒绝' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- 任务详情模态框 -->
     <div v-if="showTaskDetail && selectedTask" class="modal-overlay" @click="closeTaskDetail">
@@ -550,9 +603,13 @@ export default {
       showUserMenu: false,
       showTaskDetail: false,
       showCompleteTask: false,
+      showRejectModal: false,
       taskFilter: '',
       allTasks: [],
       selectedTask: null,
+      rejectTask: null,
+      rejectReason: '',
+      isRejectingOrder: false,
       completeTaskForm: {
         materialCost: '',
         workNotes: ''
@@ -914,6 +971,67 @@ export default {
     materialRowCost(row) {
       const mat = this.materials.find(m => m.id === row.materialId);
       return mat && row.quantity ? (mat.unitPrice * row.quantity).toFixed(2) : 0;
+    },
+    
+    // 拒绝订单相关方法
+    showRejectConfirm(task) {
+      this.rejectTask = task;
+      this.rejectReason = '';
+      this.showRejectModal = true;
+    },
+    
+    closeRejectModal() {
+      this.showRejectModal = false;
+      this.rejectTask = null;
+      this.rejectReason = '';
+      this.isRejectingOrder = false;
+    },
+    
+    async confirmRejectOrder() {
+      if (!this.rejectTask || this.isRejectingOrder) {
+        return;
+      }
+      
+      try {
+        this.isRejectingOrder = true;
+        console.log('拒绝订单:', {
+          technicianId: this.user.id,
+          orderId: this.rejectTask.id,
+          reason: this.rejectReason
+        });
+        
+        // 调用后端API拒绝订单
+        const response = await this.$axios.post(
+          `/technicians/${this.user.id}/reject-order/${this.rejectTask.id}`,
+          null,
+          {
+            params: {
+              reason: this.rejectReason || '未提供原因'
+            }
+          }
+        );
+        
+        console.log('拒绝订单成功:', response.data);
+        
+        // 从本地任务列表中移除被拒绝的订单
+        this.allTasks = this.allTasks.filter(task => task.id !== this.rejectTask.id);
+        
+        // 重新加载统计数据
+        await this.loadStatistics();
+        
+        // 显示成功消息
+        this.$emit('message', response.data.message || '订单拒绝成功，已重新分配给其他技师', 'success');
+        
+        // 关闭模态框
+        this.closeRejectModal();
+        
+      } catch (error) {
+        console.error('拒绝订单失败:', error);
+        const errorMessage = error.response?.data?.message || error.message || '拒绝订单失败';
+        this.$emit('message', `拒绝订单失败: ${errorMessage}`, 'error');
+      } finally {
+        this.isRejectingOrder = false;
+      }
     }
   },
   watch: {
@@ -1353,6 +1471,23 @@ export default {
   font-size: 0.875rem;
 }
 
+.btn-danger {
+  background: #dc2626;
+  color: white;
+  border: 1px solid #dc2626;
+}
+
+.btn-danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.btn-danger:disabled {
+  background: #fca5a5;
+  border-color: #fca5a5;
+  cursor: not-allowed;
+}
+
 .history-metrics {
   display: flex;
   gap: 1rem;
@@ -1679,5 +1814,69 @@ export default {
   .modal-footer {
     flex-direction: column;
   }
+}
+
+/* 拒绝订单模态框样式 */
+.reject-modal {
+  max-width: 500px;
+  width: 90%;
+}
+
+.reject-info {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.warning-icon {
+  width: 4rem;
+  height: 4rem;
+  background: #fef3c7;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+  color: #d97706;
+  font-size: 1.5rem;
+}
+
+.reject-info h3 {
+  color: #dc2626;
+  margin-bottom: 1rem;
+  font-size: 1.25rem;
+}
+
+.order-info {
+  background: #f9fafb;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  text-align: left;
+  margin-bottom: 1rem;
+}
+
+.order-info p {
+  margin: 0.5rem 0;
+  color: #374151;
+}
+
+.reject-notice {
+  background: #e0f2fe;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.reject-notice i {
+  color: #0369a1;
+  font-size: 1.25rem;
+}
+
+.reject-notice p {
+  margin: 0;
+  color: #0369a1;
+  font-size: 0.875rem;
 }
 </style>
