@@ -219,6 +219,16 @@
               <button v-if="order.status === 'COMPLETED'" @click="addFeedback(order)" class="btn btn-outline">
                 <i class="fas fa-star"></i> 评价
               </button>
+              <button v-if="order.status === 'IN_PROGRESS' && order.urgeStatus === 'NOT_URGED'" 
+                      @click="urgeOrder(order)" 
+                      class="btn btn-warning">
+                <i class="fas fa-bell"></i> 催单
+              </button>
+              <button v-if="order.status === 'IN_PROGRESS' && order.urgeStatus === 'URGED'" 
+                      class="btn btn-warning" 
+                      disabled>
+                <i class="fas fa-bell"></i> 已催单
+              </button>
               <button @click="viewOrderDetail(order)" class="btn btn-primary">
                 <i class="fas fa-eye"></i> 查看详情
               </button>
@@ -981,6 +991,21 @@ export default {
     getRatingText(rating) {
       const texts = ['请评分', '很差', '一般', '满意', '不错', '非常满意'];
       return texts[rating] || texts[0];
+    },
+    async urgeOrder(order) {
+      try {
+        const response = await this.$axios.post(`/repair-orders/${order.id}/urge`);
+        if (response.status === 200) {
+          this.$emit('message', '催单成功', 'success');
+          // 更新订单状态
+          const index = this.repairOrders.findIndex(o => o.id === order.id);
+          if (index !== -1) {
+            this.repairOrders[index] = response.data;
+          }
+        }
+      } catch (error) {
+        this.$emit('message', '催单失败：' + (error.response?.data?.message || '未知错误'), 'error');
+      }
     }
   }
 }

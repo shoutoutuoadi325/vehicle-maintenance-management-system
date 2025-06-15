@@ -166,6 +166,10 @@
                     <i class="fas fa-user"></i>
                     {{ task.user ? task.user.name : '未知客户' }}
                   </span>
+                  <span v-if="task.status === 'IN_PROGRESS' && task.urgeStatus === 'URGED'" class="task-urge">
+                    <i class="fas fa-bell"></i>
+                    已催单
+                  </span>
                 </div>
               </div>
               <div class="task-actions">
@@ -241,6 +245,10 @@
                 <div v-if="task.completedAt" class="info-item">
                   <i class="fas fa-check-circle"></i>
                   <span>完成: {{ formatDate(task.completedAt) }}</span>
+                </div>
+                <div v-if="task.status === 'IN_PROGRESS' && task.urgeStatus === 'URGED'" class="info-item urge">
+                  <i class="fas fa-bell"></i>
+                  <span>客户已催单</span>
                 </div>
               </div>
               <p><strong>工时费用:</strong> ¥{{ task.laborCost || 0 }}</p>
@@ -1878,5 +1886,15 @@ export default {
   margin: 0;
   color: #0369a1;
   font-size: 0.875rem;
+}
+
+.task-urge {
+  color: #f59e0b;
+  font-weight: bold;
+}
+
+.info-item.urge {
+  color: #f59e0b;
+  font-weight: bold;
 }
 </style>

@@ -169,4 +169,14 @@ public class RepairOrderController {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
     }
+    
+    @PostMapping("/{id}/urge")
+    public ResponseEntity<RepairOrderResponse> urgeRepairOrder(@PathVariable Long id) {
+        try {
+            RepairOrderResponse response = repairOrderService.urgeRepairOrder(id);
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } catch (RuntimeException e) {
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        }
+    }
 }

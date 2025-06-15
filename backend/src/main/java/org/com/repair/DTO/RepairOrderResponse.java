@@ -24,6 +24,7 @@ public record RepairOrderResponse(
     Double actualHours,
     String assignmentType,
     SkillType requiredSkillType,
+    String urgeStatus,
     UserInfo user,
     VehicleInfo vehicle,
     List<TechnicianInfo> technicians
@@ -45,6 +46,7 @@ public record RepairOrderResponse(
             repairOrder.getActualHours(),
             repairOrder.getAssignmentType() != null ? repairOrder.getAssignmentType().toString() : "AUTO",
             repairOrder.getRequiredSkillType(),
+            repairOrder.getUrgeStatus() != null ? repairOrder.getUrgeStatus().toString() : "NOT_URGED",
             repairOrder.getUser() != null ? new UserInfo(
                 repairOrder.getUser().getId(),
                 repairOrder.getUser().getName(),
