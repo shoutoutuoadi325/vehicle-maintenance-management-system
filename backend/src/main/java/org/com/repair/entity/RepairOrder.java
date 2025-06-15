@@ -79,6 +79,10 @@ public class RepairOrder {
     @Enumerated(EnumType.STRING)
     private org.com.repair.entity.Technician.SkillType requiredSkillType;
 
+    @Column
+    @Enumerated(EnumType.STRING)
+    private UrgeStatus urgeStatus = UrgeStatus.NOT_URGED;
+
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
     @JsonBackReference("user-repairOrders")
@@ -108,6 +112,10 @@ public class RepairOrder {
     
     public enum AssignmentType {
         AUTO, MANUAL
+    }
+
+    public enum UrgeStatus {
+        NOT_URGED, URGED
     }
 
     // 构造函数
@@ -265,5 +273,13 @@ public class RepairOrder {
 
     public void setFeedbacks(List<Feedback> feedbacks) {
         this.feedbacks = feedbacks;
+    }
+
+    public UrgeStatus getUrgeStatus() {
+        return urgeStatus;
+    }
+
+    public void setUrgeStatus(UrgeStatus urgeStatus) {
+        this.urgeStatus = urgeStatus;
     }
 }

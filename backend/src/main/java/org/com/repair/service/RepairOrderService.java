@@ -388,6 +388,23 @@ public class RepairOrderService {
         return repairOrderRepository.getTaskStatisticsBySkillType(startDate, endDate);
     }
     
+    @Transactional
+    public RepairOrderResponse urgeRepairOrder(Long orderId) {
+        RepairOrder repairOrder = repairOrderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("维修订单不存在"));
+
+        // 检查订单状态是否为进行中
+        if (repairOrder.getStatus() != RepairOrder.RepairStatus.IN_PROGRESS) {
+            throw new RuntimeException("只有进行中的订单才能催单");
+        }
+
+        // 设置催单状态
+        repairOrder.setUrgeStatus(RepairOrder.UrgeStatus.URGED);
+        repairOrder.setUpdatedAt(new Date());
+        
+        return new RepairOrderResponse(repairOrderRepository.save(repairOrder));
+    }
+    
     private String generateOrderNumber() {
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
         String dateStr = dateFormat.format(new Date());

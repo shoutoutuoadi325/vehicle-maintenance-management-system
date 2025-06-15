@@ -198,50 +198,50 @@
           <div v-for="order in filteredOrders" :key="order.id" class="order-card">
             <div class="order-header">
               <div>
-                <h3>{{ order.orderNumber }}</h3>
-                <p>{{ order.description }}</p>
+                <h3>维修单 #{{ order.id }}</h3>
+                <p class="order-vehicle">{{ getVehicleDisplay(order) }}</p>
               </div>
-              <span :class="['status-badge', order.status.toLowerCase()]">
-                {{ getStatusText(order.status) }}
-              </span>
+              <div class="order-status-group">
+                <span :class="['status-badge', order.status.toLowerCase()]">
+                  {{ getStatusText(order.status) }}
+                </span>
+                <span v-if="order.status === 'IN_PROGRESS' && order.urgeStatus === 'URGED'" 
+                      class="urge-badge">
+                  <i class="fas fa-bell"></i> 已催单
+                </span>
+              </div>
             </div>
             <div class="order-body">
+              <p><strong>故障描述:</strong> {{ order.description }}</p>
               <div class="order-info">
                 <div class="info-item">
                   <i class="fas fa-user"></i>
-                  <span>客户: {{ order.user?.name || '未知' }}</span>
+                  <span>客户: {{ order.user ? order.user.name : '未知' }}</span>
                 </div>
                 <div class="info-item">
-                  <i class="fas fa-car"></i>
-                  <span>车辆: {{ getVehicleDisplay(order) }}</span>
+                  <i class="fas fa-phone"></i>
+                  <span>{{ order.user ? order.user.phone : '无联系方式' }}</span>
                 </div>
                 <div class="info-item">
                   <i class="fas fa-calendar"></i>
                   <span>创建: {{ formatDate(order.createdAt) }}</span>
                 </div>
-                <div class="info-item">
-                  <i class="fas fa-dollar-sign"></i>
-                  <span>费用: ¥{{ order.totalCost || 0 }}</span>
+                <div v-if="order.completedAt" class="info-item">
+                  <i class="fas fa-check-circle"></i>
+                  <span>完成: {{ formatDate(order.completedAt) }}</span>
+                </div>
+                <div v-if="order.status === 'IN_PROGRESS' && order.urgeStatus === 'URGED'" 
+                     class="info-item urge">
+                  <i class="fas fa-bell"></i>
+                  <span>客户已催单</span>
                 </div>
               </div>
-              <div v-if="order.technicians && order.technicians.length > 0" class="assigned-technicians">
-                <h4>分配技师:</h4>
-                <div class="technician-list">
-                  <span v-for="tech in order.technicians" :key="tech.id" class="technician-tag">
-                    {{ tech.name }} ({{ getSkillTypeName(tech.skillType) }})
-                  </span>
-                </div>
-              </div>
+              <p><strong>预估费用:</strong> ¥{{ (order.laborCost || 0) + (order.materialCost || 0) }}</p>
+              <p v-if="order.totalCost"><strong>实际费用:</strong> ¥{{ order.totalCost }}</p>
             </div>
             <div class="order-footer">
-              <button class="btn btn-outline" @click="viewOrderDetail(order)">
+              <button @click="viewOrderDetail(order)" class="btn btn-primary">
                 <i class="fas fa-eye"></i> 查看详情
-              </button>
-              <button class="btn btn-outline" @click="editOrder(order)">
-                <i class="fas fa-edit"></i> 编辑
-              </button>
-              <button class="btn btn-danger btn-outline" @click="showDeleteOrderConfirm(order)">
-                <i class="fas fa-trash"></i> 删除
               </button>
             </div>
           </div>
@@ -2540,5 +2540,51 @@ export default {
   border-color: #fca5a5;
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.urge-badge {
+  background-color: #f59e0b;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.urge-badge i {
+  font-size: 0.75rem;
+}
+
+.order-status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.urge-badge {
+  background-color: #f59e0b;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.urge-badge i {
+  font-size: 0.75rem;
+}
+
+.info-item.urge {
+  color: #f59e0b;
+  font-weight: bold;
+}
+
+.info-item.urge i {
+  color: #f59e0b;
 }
 </style>
