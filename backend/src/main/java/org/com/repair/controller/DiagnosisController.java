@@ -27,16 +27,26 @@ public class DiagnosisController {
      * @return 诊断结果
      */
     @PostMapping("/analyze")
-    public ResponseEntity<DiagnosisResponse> analyzeFault(@RequestBody DiagnosisRequest request) {
+    public ResponseEntity<?> analyzeFault(@RequestBody DiagnosisRequest request) {
         try {
             if (request.description() == null || request.description().trim().isEmpty()) {
-                return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+                return ResponseEntity.badRequest()
+                    .body(new ErrorResponse("故障描述不能为空"));
             }
             
             DiagnosisResponse response = diagnosisService.diagnose(request);
             return new ResponseEntity<>(response, HttpStatus.OK);
         } catch (Exception e) {
-            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+            // Log the error for debugging
+            System.err.println("诊断服务错误: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError()
+                .body(new ErrorResponse("AI诊断服务暂时不可用，请稍后再试"));
         }
     }
+    
+    /**
+     * 简单的错误响应类
+     */
+    private record ErrorResponse(String message) {}
 }

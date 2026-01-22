@@ -958,23 +958,18 @@ export default {
         // 获取选中的车辆信息
         const selectedVehicle = this.vehicles.find(v => v.id === this.repairOrderForm.vehicleId);
         
-        if (!selectedVehicle) {
-          this.$emit('message', '请先选择车辆', 'warning');
-          return;
-        }
-        
         const diagnosisData = {
           description: this.repairOrderForm.description,
-          vehicleBrand: selectedVehicle.brand,
-          vehicleModel: selectedVehicle.model,
-          mileage: selectedVehicle.mileage || 0
+          vehicleBrand: selectedVehicle?.brand || '',
+          vehicleModel: selectedVehicle?.model || '',
+          mileage: selectedVehicle?.mileage || 0
         };
         
         const response = await this.$axios.post('/diagnosis/analyze', diagnosisData);
         this.diagnosisResult = response.data;
         
-        // 自动设置推荐的维修类型
-        if (this.diagnosisResult.skillTypeRequired && !this.repairOrderForm.requiredSkillType) {
+        // 自动设置推荐的维修类型（AI推荐优先）
+        if (this.diagnosisResult.skillTypeRequired) {
           this.repairOrderForm.requiredSkillType = this.diagnosisResult.skillTypeRequired;
         }
         
