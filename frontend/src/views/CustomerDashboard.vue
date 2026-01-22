@@ -364,7 +364,49 @@
             <label class="form-label">故障描述 <span class="required">*</span></label>
             <textarea v-model="repairOrderForm.description" class="form-input" rows="4" 
                       placeholder="请详细描述车辆故障情况，如：发动机异响、刹车片磨损等" required></textarea>
+            <button type="button" @click="getIntelligentDiagnosis" class="btn btn-ai" 
+                    :disabled="!repairOrderForm.description || !repairOrderForm.vehicleId || isDiagnosing"
+                    style="margin-top: 8px;">
+              <i class="fas fa-brain"></i> {{ isDiagnosing ? 'AI诊断中...' : 'AI智能诊断' }}
+            </button>
           </div>
+          
+          <!-- AI诊断结果展示 -->
+          <div v-if="diagnosisResult" class="diagnosis-result">
+            <div class="diagnosis-header">
+              <i class="fas fa-robot"></i>
+              <h4>AI诊断结果</h4>
+            </div>
+            <div class="diagnosis-content">
+              <div class="diagnosis-item">
+                <strong>故障类型:</strong> {{ diagnosisResult.faultType }}
+              </div>
+              <div class="diagnosis-item">
+                <strong>可能原因:</strong> {{ diagnosisResult.possibleCause }}
+              </div>
+              <div class="diagnosis-item">
+                <strong>严重程度:</strong> 
+                <span :class="getSeverityClass(diagnosisResult.estimatedSeverity)">
+                  {{ diagnosisResult.estimatedSeverity }}
+                </span>
+              </div>
+              <div class="diagnosis-item">
+                <strong>预估费用:</strong> ¥{{ diagnosisResult.estimatedCost }}
+              </div>
+              <div class="diagnosis-item">
+                <strong>建议维修类型:</strong> {{ getSkillTypeName(diagnosisResult.skillTypeRequired) }}
+              </div>
+              <div class="diagnosis-item">
+                <strong>建议措施:</strong>
+                <ul class="recommendations">
+                  <li v-for="(action, index) in diagnosisResult.recommendedActions" :key="index">
+                    {{ action }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          
           <div class="form-group">
             <label class="form-label">维修类型 <span class="required">*</span></label>
             <select v-model="repairOrderForm.requiredSkillType" class="form-input" required>
@@ -557,6 +599,8 @@ export default {
       selectedOrder: null,
       feedbackOrder: null,
       isSubmitting: false,
+      isDiagnosing: false,
+      diagnosisResult: null,
       vehicleForm: {
         licensePlate: '',
         brand: '',
@@ -870,6 +914,7 @@ export default {
         this.repairOrders.push(response.data);
         this.showCreateOrder = false;
         this.repairOrderForm = { vehicleId: '', description: '', preferredDate: '', contactPhone: '', requiredSkillType: '' };
+        this.diagnosisResult = null; // 清空诊断结果
         this.calculateStatistics();
         
         // 检查订单状态，给出相应提示
@@ -904,6 +949,62 @@ export default {
       } finally {
         this.isSubmitting = false;
       }
+    },
+    async getIntelligentDiagnosis() {
+      try {
+        this.isDiagnosing = true;
+        this.diagnosisResult = null;
+        
+        // 获取选中的车辆信息
+        const selectedVehicle = this.vehicles.find(v => v.id === this.repairOrderForm.vehicleId);
+        
+        if (!selectedVehicle) {
+          this.$emit('message', '请先选择车辆', 'warning');
+          return;
+        }
+        
+        const diagnosisData = {
+          description: this.repairOrderForm.description,
+          vehicleBrand: selectedVehicle.brand,
+          vehicleModel: selectedVehicle.model,
+          mileage: selectedVehicle.mileage || 0
+        };
+        
+        const response = await this.$axios.post('/diagnosis/analyze', diagnosisData);
+        this.diagnosisResult = response.data;
+        
+        // 自动设置推荐的维修类型
+        if (this.diagnosisResult.skillTypeRequired && !this.repairOrderForm.requiredSkillType) {
+          this.repairOrderForm.requiredSkillType = this.diagnosisResult.skillTypeRequired;
+        }
+        
+        this.$emit('message', 'AI诊断完成！请查看诊断结果', 'success');
+      } catch (error) {
+        console.error('AI诊断失败:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'AI诊断服务暂时不可用';
+        this.$emit('message', errorMessage, 'error');
+      } finally {
+        this.isDiagnosing = false;
+      }
+    },
+    getSeverityClass(severity) {
+      const severityMap = {
+        '低': 'severity-low',
+        '中': 'severity-medium',
+        '高': 'severity-high',
+        '极高': 'severity-critical'
+      };
+      return severityMap[severity] || 'severity-medium';
+    },
+    getSkillTypeName(skillType) {
+      const skillTypeMap = {
+        'MECHANIC': '机械维修',
+        'ELECTRICIAN': '电气维修',
+        'BODY_WORK': '车身维修',
+        'PAINT': '喷漆',
+        'DIAGNOSTIC': '故障诊断'
+      };
+      return skillTypeMap[skillType] || skillType;
     },
     viewOrderDetail(order) {
       this.selectedOrder = order;
@@ -1622,6 +1723,161 @@ export default {
   border-radius: 1rem;
   box-shadow: 0 4px 6px rgba(0,0,0,0.05);
 }
+
+/* AI诊断样式 */
+.btn-ai {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.btn-ai:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-ai:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.diagnosis-result {
+  margin-top: 1rem;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  border: 2px solid #667eea;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.diagnosis-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.3);
+}
+
+.diagnosis-header i {
+  font-size: 1.5rem;
+  color: #667eea;
+}
+
+.diagnosis-header h4 {
+  margin: 0;
+  color: #2d3748;
+  font-size: 1.1rem;
+}
+
+.diagnosis-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.diagnosis-item {
+  background: white;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.diagnosis-item strong {
+  display: block;
+  color: #4a5568;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.severity-low {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #d1fae5;
+  color: #065f46;
+  border-radius: 0.375rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.severity-medium {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #fed7aa;
+  color: #92400e;
+  border-radius: 0.375rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.severity-high {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #fecaca;
+  color: #991b1b;
+  border-radius: 0.375rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.severity-critical {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #fca5a5;
+  color: #7f1d1d;
+  border-radius: 0.375rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.recommendations {
+  margin: 0.5rem 0 0 0;
+  padding-left: 1.5rem;
+}
+
+.recommendations li {
+  padding: 0.5rem 0;
+  color: #4a5568;
+  line-height: 1.6;
+}
+
+.recommendations li::marker {
+  color: #667eea;
+}
+
 
 /* 响应式设计 */
 @media (max-width: 768px) {
