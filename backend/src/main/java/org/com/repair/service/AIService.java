@@ -145,8 +145,9 @@ public class AIService {
     
     /**
      * 解析AI响应
+     * Package-private for testing
      */
-    private Set<SkillType> parseAIResponse(String response) {
+    Set<SkillType> parseAIResponse(String response) {
         Set<SkillType> skillTypes = new java.util.HashSet<>();
         
         if (response == null || response.trim().isEmpty()) {
