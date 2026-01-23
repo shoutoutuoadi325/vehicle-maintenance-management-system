@@ -10,10 +10,14 @@ import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.Technician;
 import org.com.repair.entity.Technician.SkillType;
 import org.com.repair.repository.TechnicianRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AutoAssignmentService {
+    
+    private static final Logger logger = LoggerFactory.getLogger(AutoAssignmentService.class);
     
     private final TechnicianRepository technicianRepository;
     private final FeedbackService feedbackService;
@@ -143,24 +147,24 @@ public class AutoAssignmentService {
         
         // 第二步：如果关键字匹配成功，直接返回结果
         if (!skillTypes.isEmpty()) {
-            System.out.println("使用关键字匹配结果: " + skillTypes);
+            logger.info("使用关键字匹配结果: {}", skillTypes);
             return skillTypes;
         }
         
         // 第三步：关键字匹配失败，调用AI API进行智能诊断
-        System.out.println("关键字匹配未找到结果，调用AI进行智能诊断");
+        logger.info("关键字匹配未找到结果，调用AI进行智能诊断");
         try {
             Set<SkillType> aiSkillTypes = aiService.determineSkillTypesByAI(description);
             if (aiSkillTypes != null && !aiSkillTypes.isEmpty()) {
-                System.out.println("AI诊断结果: " + aiSkillTypes);
+                logger.info("AI诊断结果: {}", aiSkillTypes);
                 return aiSkillTypes;
             }
         } catch (Exception e) {
-            System.err.println("AI诊断过程出错: " + e.getMessage());
+            logger.error("AI诊断过程出错: {}", e.getMessage());
         }
         
         // 第四步：如果AI也没有返回结果，使用默认的诊断类型
-        System.out.println("使用默认诊断类型");
+        logger.info("使用默认诊断类型");
         skillTypes.add(SkillType.DIAGNOSTIC);
         return skillTypes;
     }

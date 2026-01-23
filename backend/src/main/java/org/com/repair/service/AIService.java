@@ -7,6 +7,8 @@ import java.util.Set;
 import org.com.repair.DTO.AIRequest;
 import org.com.repair.DTO.AIResponse;
 import org.com.repair.entity.Technician.SkillType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -22,6 +24,8 @@ import org.springframework.web.client.RestTemplate;
  */
 @Service
 public class AIService {
+    
+    private static final Logger logger = LoggerFactory.getLogger(AIService.class);
     
     @Value("${ai.api.key:sk-YlfbboEmR0QGY8bl3bDf1h28NhCEdL4GhFxF9yhfri6UsHvc}")
     private String apiKey;
@@ -54,7 +58,7 @@ public class AIService {
             String aiResponse = callAIAPI(prompt);
             return parseAIResponse(aiResponse);
         } catch (Exception e) {
-            System.err.println("AI诊断失败: " + e.getMessage());
+            logger.error("AI诊断失败: {}", e.getMessage());
             // 如果AI调用失败，返回null，让调用方使用默认逻辑
             return null;
         }
@@ -110,13 +114,13 @@ public class AIService {
                         String content = aiResponse.getChoices().get(0).getMessage().getContent();
                         // 记录成功的URL，下次优先使用
                         workingBaseUrl = baseUrl;
-                        System.out.println("AI API调用成功，使用URL: " + baseUrl);
+                        logger.info("AI API调用成功，使用URL: {}", baseUrl);
                         return content;
                     }
                 }
             } catch (Exception e) {
                 lastException = e;
-                System.err.println("尝试URL " + baseUrl + " 失败: " + e.getMessage());
+                logger.warn("尝试URL {} 失败: {}", baseUrl, e.getMessage());
             }
         }
         
@@ -158,7 +162,7 @@ public class AIService {
         
         // 检查是否为无效输入
         if (trimmedResponse.contains("INVALID")) {
-            System.out.println("AI判定为无效输入");
+            logger.info("AI判定为无效输入");
             return skillTypes;
         }
         
