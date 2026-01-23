@@ -17,10 +17,12 @@ public class AutoAssignmentService {
     
     private final TechnicianRepository technicianRepository;
     private final FeedbackService feedbackService;
+    private final AIService aiService;
     
-    public AutoAssignmentService(TechnicianRepository technicianRepository, FeedbackService feedbackService) {
+    public AutoAssignmentService(TechnicianRepository technicianRepository, FeedbackService feedbackService, AIService aiService) {
         this.technicianRepository = technicianRepository;
         this.feedbackService = feedbackService;
+        this.aiService = aiService;
     }
     
     /**
@@ -113,7 +115,7 @@ public class AutoAssignmentService {
         Set<SkillType> skillTypes = new HashSet<>();
         String lowerDesc = description.toLowerCase();
         
-        // 基于关键词判断需要的技能类型
+        // 第一步：基于关键词判断需要的技能类型
         if (lowerDesc.contains("发动机") || lowerDesc.contains("变速箱") || lowerDesc.contains("刹车") || 
             lowerDesc.contains("轮胎") || lowerDesc.contains("悬挂") || lowerDesc.contains("机械")) {
             skillTypes.add(SkillType.MECHANIC);
@@ -135,10 +137,31 @@ public class AutoAssignmentService {
         }
         
         if (lowerDesc.contains("诊断") || lowerDesc.contains("检测") || lowerDesc.contains("故障") || 
-            lowerDesc.contains("检查") || skillTypes.isEmpty()) {
+            lowerDesc.contains("检查")) {
             skillTypes.add(SkillType.DIAGNOSTIC);
         }
         
+        // 第二步：如果关键字匹配成功，直接返回结果
+        if (!skillTypes.isEmpty()) {
+            System.out.println("使用关键字匹配结果: " + skillTypes);
+            return skillTypes;
+        }
+        
+        // 第三步：关键字匹配失败，调用AI API进行智能诊断
+        System.out.println("关键字匹配未找到结果，调用AI进行智能诊断");
+        try {
+            Set<SkillType> aiSkillTypes = aiService.determineSkillTypesByAI(description);
+            if (aiSkillTypes != null && !aiSkillTypes.isEmpty()) {
+                System.out.println("AI诊断结果: " + aiSkillTypes);
+                return aiSkillTypes;
+            }
+        } catch (Exception e) {
+            System.err.println("AI诊断过程出错: " + e.getMessage());
+        }
+        
+        // 第四步：如果AI也没有返回结果，使用默认的诊断类型
+        System.out.println("使用默认诊断类型");
+        skillTypes.add(SkillType.DIAGNOSTIC);
         return skillTypes;
     }
     
