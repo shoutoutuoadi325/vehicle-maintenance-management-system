@@ -20,13 +20,6 @@ public class AIDiagnosisController {
 
     @PostMapping("/diagnose")
     public ResponseEntity<AIDiagnosisResponse> diagnoseFault(@Valid @RequestBody AIDiagnosisRequest request) {
-        if (request.getProblemDescription() == null || request.getProblemDescription().trim().isEmpty()) {
-            return new ResponseEntity<>(
-                new AIDiagnosisResponse("问题描述不能为空"),
-                HttpStatus.BAD_REQUEST
-            );
-        }
-
         AIDiagnosisResponse response = aiDiagnosisService.diagnoseFault(request.getProblemDescription());
         
         if (response.isSuccess()) {
