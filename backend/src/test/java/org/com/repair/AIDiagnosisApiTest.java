@@ -16,12 +16,23 @@ import static org.junit.jupiter.api.Assertions.*;
  * 
  * 注意：这些测试需要网络连接才能运行。如果在CI环境或无网络环境中，测试将被禁用。
  * 要在本地环境运行这些测试，请移除 @Disabled 注解。
+ * 
+ * 安全提示：在实际测试中，应该从环境变量或测试配置文件中读取API密钥，
+ * 而不是硬编码在代码中。这里为了演示目的保留了默认值。
  */
 public class AIDiagnosisApiTest {
 
-    private final String apiKey = "sk-YlfbboEmR0QGY8bl3bDf1h28NhCEdL4GhFxF9yhfri6UsHvc";
-    private final String baseUrl = "https://api.deerapi.com/v1";
-    private final String model = "gpt-4.1";
+    // 注意：实际使用时应从环境变量读取 API 密钥
+    // 例如: System.getenv("AI_DIAGNOSIS_API_KEY")
+    private final String apiKey = System.getenv("AI_DIAGNOSIS_API_KEY") != null 
+        ? System.getenv("AI_DIAGNOSIS_API_KEY") 
+        : "sk-YlfbboEmR0QGY8bl3bDf1h28NhCEdL4GhFxF9yhfri6UsHvc";
+    private final String baseUrl = System.getenv("AI_DIAGNOSIS_API_BASE_URL") != null
+        ? System.getenv("AI_DIAGNOSIS_API_BASE_URL")
+        : "https://api.deerapi.com/v1";
+    private final String model = System.getenv("AI_DIAGNOSIS_API_MODEL") != null
+        ? System.getenv("AI_DIAGNOSIS_API_MODEL")
+        : "gpt-4.1";
 
     @Test
     @Disabled("需要网络连接和有效的API令牌。在本地环境中手动启用此测试。")

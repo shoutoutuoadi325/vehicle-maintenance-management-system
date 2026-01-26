@@ -45,7 +45,7 @@ public class AIDiagnosisService {
             return parseResponse(responseText);
         } catch (Exception e) {
             logger.error("Error during AI diagnosis: ", e);
-            return new AIDiagnosisResponse("诊断服务暂时不可用，请稍后再试: " + e.getMessage());
+            return new AIDiagnosisResponse("AI诊断服务暂时不可用，请稍后再试");
         }
     }
 
@@ -72,11 +72,12 @@ public class AIDiagnosisService {
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
+            String responseBody = response.body().string();
+            
             if (!response.isSuccessful()) {
-                throw new IOException("API调用失败，状态码: " + response.code() + ", 响应: " + response.body().string());
+                throw new IOException("API调用失败，状态码: " + response.code() + ", 响应: " + responseBody);
             }
 
-            String responseBody = response.body().string();
             logger.info("API Response: {}", responseBody);
             
             JsonNode jsonNode = objectMapper.readTree(responseBody);

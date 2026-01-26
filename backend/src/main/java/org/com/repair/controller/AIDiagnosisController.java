@@ -1,5 +1,6 @@
 package org.com.repair.controller;
 
+import jakarta.validation.Valid;
 import org.com.repair.DTO.AIDiagnosisRequest;
 import org.com.repair.DTO.AIDiagnosisResponse;
 import org.com.repair.service.AIDiagnosisService;
@@ -18,7 +19,7 @@ public class AIDiagnosisController {
     }
 
     @PostMapping("/diagnose")
-    public ResponseEntity<AIDiagnosisResponse> diagnoseFault(@RequestBody AIDiagnosisRequest request) {
+    public ResponseEntity<AIDiagnosisResponse> diagnoseFault(@Valid @RequestBody AIDiagnosisRequest request) {
         if (request.getProblemDescription() == null || request.getProblemDescription().trim().isEmpty()) {
             return new ResponseEntity<>(
                 new AIDiagnosisResponse("问题描述不能为空"),
