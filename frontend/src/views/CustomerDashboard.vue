@@ -20,6 +20,9 @@
           <a href="#" @click="activeTab = 'feedback'" :class="{ active: activeTab === 'feedback' }">
             <i class="fas fa-comment"></i> 反馈
           </a>
+          <a href="#" @click="activeTab = 'ai-diagnosis'" :class="{ active: activeTab === 'ai-diagnosis' }">
+            <i class="fas fa-brain"></i> AI诊断
+          </a>
         </nav>
       </div>
       <div class="header-right">
@@ -295,6 +298,115 @@
               <i class="fas fa-save"></i> 保存更改
             </button>
           </form>
+        </div>
+      </div>
+
+      <!-- AI诊断页面 -->
+      <div v-if="activeTab === 'ai-diagnosis'" class="tab-content">
+        <div class="section-header">
+          <h2><i class="fas fa-brain"></i> AI智能故障诊断</h2>
+        </div>
+        
+        <div class="ai-diagnosis-container">
+          <div class="diagnosis-intro">
+            <div class="intro-card">
+              <i class="fas fa-info-circle"></i>
+              <h3>智能诊断助手</h3>
+              <p>描述您车辆的故障现象，AI将为您分析可能的故障类型并提供维修建议</p>
+            </div>
+          </div>
+
+          <div class="diagnosis-form-section">
+            <form @submit.prevent="submitDiagnosis" class="diagnosis-form">
+              <div class="form-group">
+                <label class="form-label">
+                  <i class="fas fa-clipboard-list"></i> 故障描述 
+                  <span class="required">*</span>
+                </label>
+                <textarea 
+                  v-model="diagnosisForm.problemDescription" 
+                  class="form-input diagnosis-textarea" 
+                  rows="6"
+                  placeholder="请详细描述车辆的故障现象，例如：
+- 启动困难、发动机异响
+- 刹车异常、方向盘抖动
+- 油耗增加、动力不足
+等等，描述越详细，诊断结果越准确。"
+                  required
+                  :disabled="diagnosisLoading"
+                ></textarea>
+              </div>
+              
+              <button 
+                type="submit" 
+                class="btn btn-primary btn-large"
+                :disabled="diagnosisLoading || !diagnosisForm.problemDescription.trim()"
+              >
+                <i :class="diagnosisLoading ? 'fas fa-spinner fa-spin' : 'fas fa-search'"></i>
+                {{ diagnosisLoading ? 'AI诊断中...' : '开始诊断' }}
+              </button>
+            </form>
+          </div>
+
+          <!-- 诊断结果显示 -->
+          <div v-if="diagnosisResult" class="diagnosis-result">
+            <div class="result-header">
+              <i class="fas fa-check-circle"></i>
+              <h3>诊断结果</h3>
+            </div>
+            
+            <div class="result-content">
+              <div class="result-item">
+                <div class="result-label">
+                  <i class="fas fa-exclamation-triangle"></i> 故障类型
+                </div>
+                <div class="result-value fault-type">{{ diagnosisResult.faultType }}</div>
+              </div>
+              
+              <div class="result-item">
+                <div class="result-label">
+                  <i class="fas fa-lightbulb"></i> 维修建议
+                </div>
+                <div class="result-value suggestion">{{ diagnosisResult.suggestion }}</div>
+              </div>
+            </div>
+
+            <div class="result-actions">
+              <button @click="createOrderFromDiagnosis" class="btn btn-primary">
+                <i class="fas fa-plus"></i> 根据诊断创建维修单
+              </button>
+              <button @click="clearDiagnosis" class="btn btn-outline">
+                <i class="fas fa-redo"></i> 重新诊断
+              </button>
+            </div>
+          </div>
+
+          <!-- 错误提示 -->
+          <div v-if="diagnosisError" class="diagnosis-error">
+            <i class="fas fa-exclamation-circle"></i>
+            <p>{{ diagnosisError }}</p>
+            <button @click="diagnosisError = null" class="btn btn-outline btn-small">
+              关闭
+            </button>
+          </div>
+
+          <!-- 历史诊断记录 -->
+          <div v-if="diagnosisHistory.length > 0" class="diagnosis-history">
+            <h3><i class="fas fa-history"></i> 最近诊断记录</h3>
+            <div class="history-list">
+              <div v-for="(item, index) in diagnosisHistory" :key="index" class="history-item">
+                <div class="history-header">
+                  <span class="history-time">{{ formatDate(item.timestamp) }}</span>
+                </div>
+                <div class="history-problem">
+                  <strong>问题：</strong>{{ item.problemDescription }}
+                </div>
+                <div class="history-result">
+                  <strong>诊断：</strong>{{ item.faultType }}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -587,7 +699,14 @@ export default {
         repairCount: 0,
         pendingCount: 0,
         totalCost: 0
-      }
+      },
+      diagnosisForm: {
+        problemDescription: ''
+      },
+      diagnosisResult: null,
+      diagnosisError: null,
+      diagnosisLoading: false,
+      diagnosisHistory: []
     }
   },
   computed: {
@@ -598,6 +717,7 @@ export default {
   created() {
     this.loadUserInfo();
     this.loadData();
+    this.loadDiagnosisHistory();
   },
   methods: {
     loadUserInfo() {
@@ -1005,6 +1125,84 @@ export default {
         }
       } catch (error) {
         this.$emit('message', '催单失败：' + (error.response?.data?.message || '未知错误'), 'error');
+      }
+    },
+    async submitDiagnosis() {
+      this.diagnosisLoading = true;
+      this.diagnosisError = null;
+      this.diagnosisResult = null;
+
+      try {
+        const response = await this.$axios.post('/ai-diagnosis/diagnose', {
+          problemDescription: this.diagnosisForm.problemDescription
+        });
+
+        if (response.data.success) {
+          this.diagnosisResult = {
+            faultType: response.data.faultType,
+            suggestion: response.data.suggestion
+          };
+
+          // 保存到历史记录
+          this.diagnosisHistory.unshift({
+            timestamp: new Date(),
+            problemDescription: this.diagnosisForm.problemDescription,
+            faultType: response.data.faultType,
+            suggestion: response.data.suggestion
+          });
+
+          // 只保留最近10条记录
+          if (this.diagnosisHistory.length > 10) {
+            this.diagnosisHistory = this.diagnosisHistory.slice(0, 10);
+          }
+
+          // 保存历史记录到本地存储
+          localStorage.setItem('diagnosisHistory', JSON.stringify(this.diagnosisHistory));
+
+          this.$emit('message', 'AI诊断完成！', 'success');
+        } else {
+          this.diagnosisError = response.data.errorMessage || 'AI诊断失败，请稍后重试';
+          this.$emit('message', this.diagnosisError, 'error');
+        }
+      } catch (error) {
+        console.error('AI诊断错误:', error);
+        this.diagnosisError = error.response?.data?.errorMessage || 'AI诊断服务暂时不可用，请稍后再试';
+        this.$emit('message', this.diagnosisError, 'error');
+      } finally {
+        this.diagnosisLoading = false;
+      }
+    },
+    clearDiagnosis() {
+      this.diagnosisForm.problemDescription = '';
+      this.diagnosisResult = null;
+      this.diagnosisError = null;
+    },
+    createOrderFromDiagnosis() {
+      // 切换到维修记录页面并打开新建维修单对话框
+      this.activeTab = 'orders';
+      this.showCreateOrder = true;
+      
+      // 将诊断结果填入描述字段
+      if (this.diagnosisResult) {
+        const diagnosisText = `${this.diagnosisForm.problemDescription}\n\n` +
+          `AI诊断结果：\n` +
+          `故障类型：${this.diagnosisResult.faultType}\n` +
+          `建议：${this.diagnosisResult.suggestion}`;
+        this.repairOrderForm.description = diagnosisText;
+      }
+    },
+    loadDiagnosisHistory() {
+      // 从本地存储加载历史记录
+      const history = localStorage.getItem('diagnosisHistory');
+      if (history) {
+        try {
+          this.diagnosisHistory = JSON.parse(history);
+        } catch (error) {
+          console.error('加载诊断历史失败，数据可能已损坏:', error);
+          // 清除损坏的数据
+          localStorage.removeItem('diagnosisHistory');
+          this.diagnosisHistory = [];
+        }
       }
     }
   }
@@ -1721,5 +1919,283 @@ export default {
 .feedback-prompt-text {
   margin: 0.5rem 0;
   font-weight: 500;
+}
+
+/* AI诊断样式 */
+.ai-diagnosis-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.diagnosis-intro {
+  margin-bottom: 2rem;
+}
+
+.intro-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 2rem;
+  border-radius: 1rem;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+}
+
+.intro-card i {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.9;
+}
+
+.intro-card h3 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.intro-card p {
+  opacity: 0.95;
+  line-height: 1.6;
+}
+
+.diagnosis-form-section {
+  background: white;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-bottom: 2rem;
+}
+
+.diagnosis-form .form-label {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #1f2937;
+}
+
+.diagnosis-textarea {
+  min-height: 150px;
+  font-size: 1rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.btn-large {
+  width: 100%;
+  padding: 1rem 2rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+.diagnosis-result {
+  background: white;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-bottom: 2rem;
+  border-left: 4px solid #10b981;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.result-header i {
+  font-size: 1.5rem;
+  color: #10b981;
+}
+
+.result-header h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.result-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.result-item {
+  padding: 1.25rem;
+  background: #f9fafb;
+  border-radius: 0.5rem;
+  border-left: 3px solid #667eea;
+}
+
+.result-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.result-label i {
+  color: #667eea;
+}
+
+.result-value {
+  color: #1f2937;
+  line-height: 1.6;
+}
+
+.fault-type {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.suggestion {
+  font-size: 1rem;
+  white-space: pre-line;
+}
+
+.result-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid #e5e7eb;
+}
+
+.result-actions button {
+  flex: 1;
+}
+
+.diagnosis-error {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-left: 4px solid #dc2626;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.diagnosis-error i {
+  font-size: 1.5rem;
+  color: #dc2626;
+}
+
+.diagnosis-error p {
+  flex: 1;
+  margin: 0;
+  color: #991b1b;
+}
+
+.diagnosis-history {
+  background: white;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-top: 2rem;
+}
+
+.diagnosis-history h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  color: #1f2937;
+}
+
+.diagnosis-history h3 i {
+  color: #667eea;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.history-item {
+  padding: 1.25rem;
+  background: #f9fafb;
+  border-radius: 0.5rem;
+  border-left: 3px solid #9ca3af;
+  transition: all 0.2s;
+}
+
+.history-item:hover {
+  border-left-color: #667eea;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.history-time {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.history-problem,
+.history-result {
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.history-problem strong,
+.history-result strong {
+  color: #4b5563;
+  margin-right: 0.25rem;
+}
+
+.btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .ai-diagnosis-container {
+    padding: 0 1rem;
+  }
+
+  .result-actions {
+    flex-direction: column;
+  }
+
+  .result-actions button {
+    width: 100%;
+  }
 }
 </style>
