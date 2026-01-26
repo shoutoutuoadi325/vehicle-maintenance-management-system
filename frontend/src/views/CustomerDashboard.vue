@@ -327,7 +327,11 @@
                   v-model="diagnosisForm.problemDescription" 
                   class="form-input diagnosis-textarea" 
                   rows="6"
-                  placeholder="请详细描述车辆的故障现象，例如：&#10;- 启动困难、发动机异响&#10;- 刹车异常、方向盘抖动&#10;- 油耗增加、动力不足&#10;等等，描述越详细，诊断结果越准确。"
+                  placeholder="请详细描述车辆的故障现象，例如：
+- 启动困难、发动机异响
+- 刹车异常、方向盘抖动
+- 油耗增加、动力不足
+等等，描述越详细，诊断结果越准确。"
                   required
                   :disabled="diagnosisLoading"
                 ></textarea>
@@ -1180,7 +1184,11 @@ export default {
       
       // 将诊断结果填入描述字段
       if (this.diagnosisResult) {
-        this.repairOrderForm.description = `${this.diagnosisForm.problemDescription}\n\nAI诊断结果：\n故障类型：${this.diagnosisResult.faultType}\n建议：${this.diagnosisResult.suggestion}`;
+        const diagnosisText = `${this.diagnosisForm.problemDescription}\n\n` +
+          `AI诊断结果：\n` +
+          `故障类型：${this.diagnosisResult.faultType}\n` +
+          `建议：${this.diagnosisResult.suggestion}`;
+        this.repairOrderForm.description = diagnosisText;
       }
     },
     loadDiagnosisHistory() {
@@ -1190,7 +1198,9 @@ export default {
         try {
           this.diagnosisHistory = JSON.parse(history);
         } catch (error) {
-          console.error('加载诊断历史失败:', error);
+          console.error('加载诊断历史失败，数据可能已损坏:', error);
+          // 清除损坏的数据
+          localStorage.removeItem('diagnosisHistory');
           this.diagnosisHistory = [];
         }
       }
@@ -2160,6 +2170,7 @@ export default {
   margin-bottom: 0.5rem;
   font-size: 0.875rem;
   line-height: 1.5;
+  white-space: pre-line;
 }
 
 .history-problem strong,
