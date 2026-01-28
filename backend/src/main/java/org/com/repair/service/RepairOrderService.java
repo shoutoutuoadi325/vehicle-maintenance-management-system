@@ -23,28 +23,32 @@ import org.com.repair.repository.TechnicianRepository;
 import org.com.repair.repository.UserRepository;
 import org.com.repair.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RepairOrderService {
-    
     private final RepairOrderRepository repairOrderRepository;
     private final UserRepository userRepository;
     private final VehicleRepository vehicleRepository;
     private final TechnicianRepository technicianRepository;
     private final AutoAssignmentService autoAssignmentService;
-    
+    private final EmissionCalculatorService emissionCalculatorService;
+
+    @Autowired
     public RepairOrderService(
             RepairOrderRepository repairOrderRepository,
             UserRepository userRepository,
             VehicleRepository vehicleRepository,
             TechnicianRepository technicianRepository,
-            AutoAssignmentService autoAssignmentService) {
+            AutoAssignmentService autoAssignmentService,
+            EmissionCalculatorService emissionCalculatorService) {
         this.repairOrderRepository = repairOrderRepository;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.technicianRepository = technicianRepository;
         this.autoAssignmentService = autoAssignmentService;
+        this.emissionCalculatorService = emissionCalculatorService;
     }
     
     @Transactional
@@ -93,6 +97,17 @@ public class RepairOrderService {
             repairOrder.setStatus(RepairOrder.RepairStatus.ASSIGNED);
         }
         
+        // 设置绿色导向相关字段（可根据request补充）
+        repairOrder.setEcoMaterial(request.ecoMaterial() != null ? request.ecoMaterial() : false);
+        repairOrder.setReworkCount(request.reworkCount() != null ? request.reworkCount() : 0);
+        repairOrder.setRepairType(request.repairType() != null ? request.repairType() : "repair");
+        // 以estimatedHours为工时，若无则用1
+        double workHours = repairOrder.getEstimatedHours() != null ? repairOrder.getEstimatedHours() : 1.0;
+        // 计算碳排放
+        repairOrder.setEstimatedEmission(
+            emissionCalculatorService.calculate(repairOrder)
+        );
+
         RepairOrder savedOrder = repairOrderRepository.save(repairOrder);
         return new RepairOrderResponse(savedOrder);
     }

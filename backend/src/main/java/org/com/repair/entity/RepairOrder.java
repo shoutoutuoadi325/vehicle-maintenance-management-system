@@ -59,6 +59,19 @@ public class RepairOrder {
     @Column
     private Double laborCost;
 
+    // 绿色导向：碳排放评估相关字段
+    @Column
+    private Double estimatedEmission;
+
+    @Column
+    private Boolean ecoMaterial; // 是否环保材料
+
+    @Column
+    private Integer reworkCount; // 返工次数
+
+    @Column
+    private String repairType; // "repair" or "replace"
+
     @Column
     private Double materialCost;
 
@@ -125,6 +138,38 @@ public class RepairOrder {
     // Getters and Setters
     public Long getId() {
         return id;
+    }
+
+    public Double getEstimatedEmission() {
+        return estimatedEmission;
+    }
+
+    public void setEstimatedEmission(Double estimatedEmission) {
+        this.estimatedEmission = estimatedEmission;
+    }
+
+    public Boolean isEcoMaterial() {
+        return ecoMaterial != null ? ecoMaterial : false;
+    }
+
+    public void setEcoMaterial(Boolean ecoMaterial) {
+        this.ecoMaterial = ecoMaterial;
+    }
+
+    public Integer getReworkCount() {
+        return reworkCount != null ? reworkCount : 0;
+    }
+
+    public void setReworkCount(Integer reworkCount) {
+        this.reworkCount = reworkCount;
+    }
+
+    public String getRepairType() {
+        return repairType;
+    }
+
+    public void setRepairType(String repairType) {
+        this.repairType = repairType;
     }
 
     public void setId(Long id) {

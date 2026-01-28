@@ -21,6 +21,9 @@ public record NewRepairOrderRequest(
     Long userId,
     Long vehicleId,
     Set<Long> technicianIds,
-    SkillType requiredSkillType
+    SkillType requiredSkillType,
+    Boolean ecoMaterial, // 是否环保材料
+    Integer reworkCount, // 返工次数
+    String repairType // "repair" or "replace"
 ) {
 }
