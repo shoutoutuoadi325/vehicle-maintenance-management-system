@@ -532,6 +532,37 @@
               </div>
             </div>
           </div>
+          
+          <div class="detail-section" v-if="selectedTask.estimatedEmission !== null && selectedTask.estimatedEmission !== undefined">
+            <h3>绿色导向 - 碳排放评估</h3>
+            <div class="emission-info">
+              <div class="emission-badge">
+                <i class="fas fa-leaf"></i>
+                <div>
+                  <div class="emission-value">{{ selectedTask.estimatedEmission.toFixed(2) }} kg CO₂</div>
+                  <div class="emission-label">预估碳排放量</div>
+                </div>
+              </div>
+              <div class="emission-details">
+                <div class="emission-detail-item">
+                  <span class="detail-label">维修方案:</span>
+                  <span class="detail-value">{{ selectedTask.repairType === 'repair' ? '修复' : '更换' }}</span>
+                </div>
+                <div class="emission-detail-item">
+                  <span class="detail-label">环保材料:</span>
+                  <span class="detail-value">{{ selectedTask.ecoMaterial ? '是' : '否' }}</span>
+                </div>
+                <div class="emission-detail-item">
+                  <span class="detail-label">返工次数:</span>
+                  <span class="detail-value">{{ selectedTask.reworkCount || 0 }} 次</span>
+                </div>
+              </div>
+              <div class="emission-tips">
+                <i class="fas fa-info-circle"></i>
+                <span>优先使用修复方案和环保材料，减少返工可降低碳排放</span>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="modal-footer">
           <button v-if="selectedTask.status === 'ASSIGNED'" @click="startTask(selectedTask)" class="btn btn-primary">
@@ -1896,5 +1927,85 @@ export default {
 .info-item.urge {
   color: #f59e0b;
   font-weight: bold;
+}
+
+/* 碳排放评估样式 */
+.emission-info {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  border-left: 4px solid #10b981;
+}
+
+.emission-badge {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.emission-badge i {
+  font-size: 2rem;
+  color: #10b981;
+}
+
+.emission-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #059669;
+}
+
+.emission-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.emission-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.emission-detail-item {
+  background: white;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.emission-detail-item .detail-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.emission-detail-item .detail-value {
+  font-size: 1rem;
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.emission-tips {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #047857;
+}
+
+.emission-tips i {
+  color: #10b981;
 }
 </style>

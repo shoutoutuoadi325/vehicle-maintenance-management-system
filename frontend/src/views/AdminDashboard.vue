@@ -682,6 +682,36 @@
               </div>
             </div>
             
+            <div class="detail-section" v-if="selectedOrderDetail.estimatedEmission !== null && selectedOrderDetail.estimatedEmission !== undefined">
+              <h3>绿色导向 - 碳排放评估</h3>
+              <div class="emission-info">
+                <div class="emission-badge">
+                  <i class="fas fa-leaf"></i>
+                  <div>
+                    <div class="emission-value">{{ selectedOrderDetail.estimatedEmission.toFixed(2) }} kg CO₂</div>
+                    <div class="emission-label">预估碳排放量</div>
+                  </div>
+                </div>
+                <div class="emission-details">
+                  <div class="emission-detail-item">
+                    <span class="detail-label">维修方案:</span>
+                    <span class="detail-value">{{ selectedOrderDetail.repairType === 'repair' ? '修复' : '更换' }}</span>
+                  </div>
+                  <div class="emission-detail-item">
+                    <span class="detail-label">环保材料:</span>
+                    <span class="detail-value">{{ selectedOrderDetail.ecoMaterial ? '是' : '否' }}</span>
+                  </div>
+                  <div class="emission-detail-item">
+                    <span class="detail-label">返工次数:</span>
+                    <span class="detail-value">{{ selectedOrderDetail.reworkCount || 0 }} 次</span>
+                  </div>
+                </div>
+                <div class="emission-tips">
+                  <i class="fas fa-info-circle"></i>
+                  <span>该工单的碳排放评估基于维修工时、材料类型和维修方案自动计算</span>
+                </div>
+              </div>
+            </div>
 
           </div>
         </div>
@@ -2586,5 +2616,85 @@ export default {
 
 .info-item.urge i {
   color: #f59e0b;
+}
+
+/* 碳排放评估样式 */
+.emission-info {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  border-left: 4px solid #10b981;
+}
+
+.emission-badge {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.emission-badge i {
+  font-size: 2rem;
+  color: #10b981;
+}
+
+.emission-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #059669;
+}
+
+.emission-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.emission-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.emission-detail-item {
+  background: white;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.emission-detail-item .detail-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.emission-detail-item .detail-value {
+  font-size: 1rem;
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.emission-tips {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #047857;
+}
+
+.emission-tips i {
+  color: #10b981;
 }
 </style>

@@ -502,6 +502,36 @@
             <input v-model="repairOrderForm.contactPhone" type="tel" class="form-input" 
                    :placeholder="user.phone">
           </div>
+          <div class="form-group">
+            <label class="form-label">维修方案类型 <span class="required">*</span></label>
+            <select v-model="repairOrderForm.repairType" class="form-input" required>
+              <option value="repair">修复</option>
+              <option value="replace">更换</option>
+            </select>
+            <small class="form-help">
+              <i class="fas fa-leaf"></i> 
+              选择"修复"通常比"更换"产生更低的碳排放
+            </small>
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <input type="checkbox" v-model="repairOrderForm.ecoMaterial" style="margin-right: 0.5rem;">
+              使用环保材料
+            </label>
+            <small class="form-help">
+              <i class="fas fa-leaf"></i> 
+              环保材料可显著降低维修过程的碳排放
+            </small>
+          </div>
+          <div class="form-group">
+            <label class="form-label">返工次数</label>
+            <input v-model.number="repairOrderForm.reworkCount" type="number" min="0" class="form-input" 
+                   placeholder="如果是返工，请填写返工次数">
+            <small class="form-help">
+              <i class="fas fa-info-circle"></i> 
+              返工会增加碳排放，首次维修请填0
+            </small>
+          </div>
           <div class="modal-footer">
             <button type="button" @click="showCreateOrder = false" class="btn btn-outline">
               取消
@@ -580,6 +610,37 @@
               <div class="cost-item total">
                 <span>总计:</span>
                 <span>¥{{ selectedOrder.totalCost || selectedOrder.laborCost + selectedOrder.materialCost || 0 }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-section" v-if="selectedOrder.estimatedEmission !== null && selectedOrder.estimatedEmission !== undefined">
+            <h4>绿色导向 - 碳排放评估</h4>
+            <div class="emission-info">
+              <div class="emission-badge">
+                <i class="fas fa-leaf"></i>
+                <div>
+                  <div class="emission-value">{{ selectedOrder.estimatedEmission.toFixed(2) }} kg CO₂</div>
+                  <div class="emission-label">预估碳排放量</div>
+                </div>
+              </div>
+              <div class="emission-details">
+                <div class="emission-detail-item">
+                  <span class="detail-label">维修方案:</span>
+                  <span class="detail-value">{{ selectedOrder.repairType === 'repair' ? '修复' : '更换' }}</span>
+                </div>
+                <div class="emission-detail-item">
+                  <span class="detail-label">环保材料:</span>
+                  <span class="detail-value">{{ selectedOrder.ecoMaterial ? '是' : '否' }}</span>
+                </div>
+                <div class="emission-detail-item">
+                  <span class="detail-label">返工次数:</span>
+                  <span class="detail-value">{{ selectedOrder.reworkCount || 0 }} 次</span>
+                </div>
+              </div>
+              <div class="emission-tips">
+                <i class="fas fa-info-circle"></i>
+                <span>选择修复方案和环保材料可以有效降低碳排放</span>
               </div>
             </div>
           </div>
@@ -682,7 +743,10 @@ export default {
         description: '',
         preferredDate: '',
         contactPhone: '',
-        requiredSkillType: ''
+        requiredSkillType: '',
+        ecoMaterial: false,
+        reworkCount: 0,
+        repairType: 'repair'
       },
       feedbackForm: {
         comment: '',
@@ -983,13 +1047,25 @@ export default {
           userId: this.user.id,
           vehicleId: this.repairOrderForm.vehicleId,
           technicianIds: [],
-          requiredSkillType: this.repairOrderForm.requiredSkillType
+          requiredSkillType: this.repairOrderForm.requiredSkillType,
+          ecoMaterial: this.repairOrderForm.ecoMaterial,
+          reworkCount: this.repairOrderForm.reworkCount || 0,
+          repairType: this.repairOrderForm.repairType
         };
         
         const response = await this.$axios.post('/repair-orders', orderData);
         this.repairOrders.push(response.data);
         this.showCreateOrder = false;
-        this.repairOrderForm = { vehicleId: '', description: '', preferredDate: '', contactPhone: '', requiredSkillType: '' };
+        this.repairOrderForm = { 
+          vehicleId: '', 
+          description: '', 
+          preferredDate: '', 
+          contactPhone: '', 
+          requiredSkillType: '',
+          ecoMaterial: false,
+          reworkCount: 0,
+          repairType: 'repair'
+        };
         this.calculateStatistics();
         
         // 检查订单状态，给出相应提示
@@ -2197,5 +2273,85 @@ export default {
   .result-actions button {
     width: 100%;
   }
+}
+
+/* 碳排放评估样式 */
+.emission-info {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  border-left: 4px solid #10b981;
+}
+
+.emission-badge {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.emission-badge i {
+  font-size: 2rem;
+  color: #10b981;
+}
+
+.emission-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #059669;
+}
+
+.emission-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.emission-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.emission-detail-item {
+  background: white;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.emission-detail-item .detail-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.emission-detail-item .detail-value {
+  font-size: 1rem;
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.emission-tips {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #047857;
+}
+
+.emission-tips i {
+  color: #10b981;
 }
 </style>
