@@ -148,12 +148,12 @@ export default {
       lastCorrect: false,
       activeNodeIndex: -1,
       showConfetti: false,
-      checkedInMap: {}
+      nodeStateMap: {}
     };
   },
   computed: {
     checkedCount() {
-      return Object.values(this.checkedInMap).filter(Boolean).length;
+      return Object.values(this.nodeStateMap).filter(state => state === 'CHECKED_IN').length;
     },
     activeCityName() {
       return this.activeNodeIndex >= 0 ? this.cities[this.activeNodeIndex].name : '城市';
@@ -170,13 +170,7 @@ export default {
       }
     },
     latestUnlockedIndex() {
-      let latest = -1;
-      this.cities.forEach((city, index) => {
-        if (this.currentMileage >= city.mileage) {
-          latest = index;
-        }
-      });
-      return latest;
+      return this.cities.findIndex((city, index) => this.nodeState(index) === 'UNLOCKED');
     }
   },
   async mounted() {
@@ -187,39 +181,40 @@ export default {
     }
 
     this.userId = user.id;
-    this.loadCheckins();
-    await this.loadEnergyAccount();
+    await this.loadJourneyState();
   },
   methods: {
     goBack() {
       this.$router.back();
     },
+    nodeState(index) {
+      return this.nodeStateMap[index] || 'LOCKED';
+    },
     isReached(city) {
-      return this.currentMileage >= city.mileage;
+      const index = this.cities.findIndex(item => item.id === city.id);
+      return this.nodeState(index) !== 'LOCKED';
     },
     isCheckedIn(index) {
-      return !!this.checkedInMap[index];
+      return this.nodeState(index) === 'CHECKED_IN';
     },
     isLatestUnlockAndUnchecked(index) {
       return index === this.latestUnlockedIndex && !this.isCheckedIn(index);
     },
-    checkinStorageKey() {
-      return `journey-checkins-${this.userId}`;
-    },
-    loadCheckins() {
-      const raw = localStorage.getItem(this.checkinStorageKey());
-      this.checkedInMap = raw ? JSON.parse(raw) : {};
-    },
-    persistCheckins() {
-      localStorage.setItem(this.checkinStorageKey(), JSON.stringify(this.checkedInMap));
-    },
-    async loadEnergyAccount() {
+    async loadJourneyState() {
       try {
-        const response = await this.$axios.get(`/gamification/account/${this.userId}`);
-        this.totalEnergy = response.data.totalEnergy || 0;
-        this.currentMileage = response.data.currentMileage || 0;
+        const response = await this.$axios.get(`/gamification/journey/state/${this.userId}`);
+        const data = response.data || {};
+
+        this.totalEnergy = data.totalEnergy || 0;
+        this.currentMileage = data.currentMileage || 0;
+
+        const map = {};
+        (data.nodes || []).forEach(node => {
+          map[node.cityIndex] = node.nodeState;
+        });
+        this.nodeStateMap = map;
       } catch (error) {
-        console.error('加载零碳账户失败:', error);
+        console.error('加载零碳状态失败:', error);
       }
     },
     async fetchQuiz() {
@@ -259,35 +254,35 @@ export default {
       }
 
       this.selectedKey = optionKey;
-      const isCorrect = String(optionKey).trim() === String(this.quiz.correctAnswer).trim();
-      this.lastCorrect = isCorrect;
-
-      if (!isCorrect) {
-        this.feedbackMsg = '回答不正确，再试试下一座城市挑战吧。';
-        return;
-      }
 
       this.answering = true;
-      this.feedbackMsg = '回答正确！能量与里程已更新';
-      this.showConfetti = true;
 
       try {
-        await this.$axios.post('/gamification/quiz/answer', {
+        const response = await this.$axios.post('/gamification/journey/checkin', {
           userId: this.userId,
+          cityIndex: this.activeNodeIndex,
           quizId: this.quiz.id,
-          isCorrect: true
+          selectedAnswer: optionKey
         });
 
-        this.$set(this.checkedInMap, this.activeNodeIndex, true);
-        this.persistCheckins();
-        await this.loadEnergyAccount();
+        const result = response.data || {};
+        this.lastCorrect = !!result.correct;
+
+        if (!result.correct) {
+          this.feedbackMsg = '回答不正确，再试试下一座城市挑战吧。';
+          return;
+        }
+
+        this.feedbackMsg = '回答正确！能量与里程已更新';
+        this.showConfetti = true;
+        await this.loadJourneyState();
 
         setTimeout(() => {
           this.closeModal();
           this.showConfetti = false;
         }, 1100);
       } catch (error) {
-        this.feedbackMsg = '奖励结算失败，请稍后重试';
+        this.feedbackMsg = error?.response?.data?.message || '奖励结算失败，请稍后重试';
         this.showConfetti = false;
       } finally {
         this.answering = false;

@@ -2,8 +2,10 @@ package org.com.repair.controller;
 
 import org.com.repair.DTO.QuizAnswerRequest;
 import org.com.repair.DTO.QuizAnswerResultResponse;
+import org.com.repair.DTO.JourneyCheckinRequest;
+import org.com.repair.DTO.JourneyStateResponse;
+import org.com.repair.DTO.QuizQuestionResponse;
 import org.com.repair.entity.GreenEnergyAccount;
-import org.com.repair.entity.GreenQuiz;
 import org.com.repair.service.GamificationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -41,19 +43,37 @@ public class GamificationController {
 
     @GetMapping("/quiz/random")
     @Operation(summary = "随机获取一道环保问答题")
-    public ResponseEntity<GreenQuiz> getRandomQuiz() {
-        GreenQuiz quiz = gamificationService.getRandomQuiz();
+    public ResponseEntity<QuizQuestionResponse> getRandomQuiz() {
+        QuizQuestionResponse quiz = gamificationService.getRandomQuizQuestion();
         return new ResponseEntity<>(quiz, HttpStatus.OK);
     }
 
+    @GetMapping("/journey/state/{userId}")
+    @Operation(summary = "获取零碳公路旅程状态（服务端权威状态）")
+    public ResponseEntity<JourneyStateResponse> getJourneyState(
+            @Parameter(description = "用户ID", required = true)
+            @PathVariable Long userId) {
+        JourneyStateResponse state = gamificationService.getJourneyState(userId);
+        return new ResponseEntity<>(state, HttpStatus.OK);
+    }
+
+    @PostMapping("/journey/checkin")
+    @Operation(summary = "城市节点答题打卡并结算奖励")
+    public ResponseEntity<QuizAnswerResultResponse> checkinAndAnswer(
+            @Valid @RequestBody JourneyCheckinRequest request) {
+        QuizAnswerResultResponse result = gamificationService.checkinAndAnswer(request);
+        return new ResponseEntity<>(result, HttpStatus.OK);
+    }
+
     @PostMapping("/quiz/answer")
-    @Operation(summary = "答题并结算能量")
+    @Operation(summary = "通用答题结算（兼容接口）")
     public ResponseEntity<QuizAnswerResultResponse> answerQuizAndReward(
             @Valid @RequestBody QuizAnswerRequest request) {
-        QuizAnswerResultResponse result = gamificationService.answerQuizAndReward(
+        QuizAnswerResultResponse result = gamificationService.checkinAndAnswer(new JourneyCheckinRequest(
                 request.userId(),
+                request.cityIndex(),
                 request.quizId(),
-                request.isCorrect());
+                request.selectedAnswer()));
         return new ResponseEntity<>(result, HttpStatus.OK);
     }
 }
