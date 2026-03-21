@@ -25,6 +25,8 @@ import org.com.repair.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
+import org.com.repair.event.EmissionReducedEvent;
 
 @Service
 public class RepairOrderService {
@@ -34,6 +36,7 @@ public class RepairOrderService {
     private final TechnicianRepository technicianRepository;
     private final AutoAssignmentService autoAssignmentService;
     private final EmissionCalculatorService emissionCalculatorService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Autowired
     public RepairOrderService(
@@ -42,13 +45,15 @@ public class RepairOrderService {
             VehicleRepository vehicleRepository,
             TechnicianRepository technicianRepository,
             AutoAssignmentService autoAssignmentService,
-            EmissionCalculatorService emissionCalculatorService) {
+            EmissionCalculatorService emissionCalculatorService,
+            ApplicationEventPublisher eventPublisher) {
         this.repairOrderRepository = repairOrderRepository;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.technicianRepository = technicianRepository;
         this.autoAssignmentService = autoAssignmentService;
         this.emissionCalculatorService = emissionCalculatorService;
+        this.eventPublisher = eventPublisher;
     }
     
     @Transactional
@@ -333,6 +338,18 @@ public class RepairOrderService {
                     technician.setCompletedOrders((technician.getCompletedOrders() != null ? technician.getCompletedOrders() : 0) + 1);
                     technicianRepository.save(technician);
                 }
+            }
+            
+            // 发布减排事件，触发游戏化模块的能量奖励
+            Double emissionReduction = repairOrder.getEstimatedEmission();
+            if (emissionReduction != null && emissionReduction > 0 && repairOrder.getUser() != null) {
+                EmissionReducedEvent event = new EmissionReducedEvent(
+                    this,
+                    repairOrder.getId(),
+                    repairOrder.getUser().getId(),
+                    emissionReduction
+                );
+                eventPublisher.publishEvent(event);
             }
         }
         

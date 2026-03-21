@@ -3,6 +3,7 @@ import VueRouter from 'vue-router'
 import IdentitySelection from '../components/IdentitySelection.vue'
 import AuthForm from '../components/AuthForm.vue'
 import CustomerDashboard from '../views/CustomerDashboard.vue'
+import ZeroCarbonJourney from '../views/ZeroCarbonJourney.vue'
 import TechnicianDashboard from '../views/TechnicianDashboard.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
 
@@ -24,6 +25,12 @@ const routes = [
     path: '/customer',
     name: 'CustomerDashboard',
     component: CustomerDashboard,
+    meta: { requiresAuth: true, role: 'customer' }
+  },
+  {
+    path: '/customer/journey',
+    name: 'ZeroCarbonJourney',
+    component: ZeroCarbonJourney,
     meta: { requiresAuth: true, role: 'customer' }
   },
   {

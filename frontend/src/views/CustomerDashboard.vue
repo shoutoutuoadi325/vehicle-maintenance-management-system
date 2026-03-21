@@ -113,6 +113,10 @@
               <i class="fas fa-star"></i>
               <span>评价反馈</span>
             </button>
+            <button class="action-card" @click="goToZeroCarbonJourney">
+              <i class="fas fa-seedling"></i>
+              <span>🌱 零碳之旅</span>
+            </button>
           </div>
         </div>
 
@@ -927,6 +931,9 @@ export default {
     
     toggleUserMenu() {
       this.showUserMenu = !this.showUserMenu;
+    },
+    goToZeroCarbonJourney() {
+      this.$router.push('/customer/journey');
     },
     async addVehicle() {
       try {
