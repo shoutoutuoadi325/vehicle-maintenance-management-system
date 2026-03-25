@@ -1186,7 +1186,18 @@ export default {
       
       return `未知车辆 (ID: ${vehicleId || 'null'})`;
     },
-    logout() {
+    async logout() {
+      const refreshToken = localStorage.getItem('refreshToken');
+      try {
+        if (refreshToken) {
+          await this.$axios.post('/auth/logout', { refreshToken });
+        }
+      } catch (e) {
+        // Keep client logout resilient even if server revoke fails.
+      }
+
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
       localStorage.removeItem('userRole');
       this.$router.push('/');

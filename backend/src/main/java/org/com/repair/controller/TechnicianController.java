@@ -2,9 +2,11 @@ package org.com.repair.controller;
 
 import java.util.List;
 
+import org.com.repair.DTO.AuthLoginResponse;
 import org.com.repair.DTO.NewTechnicianRequest;
 import org.com.repair.DTO.TechnicianResponse;
 import org.com.repair.entity.Technician.SkillType;
+import org.com.repair.service.AuthTokenService;
 import org.com.repair.service.TechnicianService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,14 +20,18 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 @RestController
 @RequestMapping("/api/technicians")
 public class TechnicianController {
     
     private final TechnicianService technicianService;
+    private final AuthTokenService authTokenService;
     
-    public TechnicianController(TechnicianService technicianService) {
+    public TechnicianController(TechnicianService technicianService, AuthTokenService authTokenService) {
         this.technicianService = technicianService;
+        this.authTokenService = authTokenService;
     }
     
     @PostMapping
@@ -123,11 +129,12 @@ public class TechnicianController {
     }
     
     @PostMapping("/login")
-    public ResponseEntity<TechnicianResponse> login(
+    public ResponseEntity<AuthLoginResponse<TechnicianResponse>> login(
             @RequestParam String username, 
-            @RequestParam String password) {
+            @RequestParam String password,
+            HttpServletRequest servletRequest) {
         return technicianService.login(username, password)
-                .map(technician -> new ResponseEntity<>(technician, HttpStatus.OK))
+                .map(technician -> new ResponseEntity<>(authTokenService.issueLoginTokens(technician.id(), technician.username(), "technician", technician, servletRequest), HttpStatus.OK))
                 .orElse(new ResponseEntity<>(HttpStatus.UNAUTHORIZED));
     }
     

@@ -7,10 +7,6 @@ import jakarta.validation.constraints.NotNull;
 @Schema(description = "城市节点打卡请求")
 public record JourneyCheckinRequest(
         @NotNull
-        @Schema(description = "用户ID", example = "1001")
-        Long userId,
-
-        @NotNull
         @Schema(description = "城市节点索引", example = "1")
         Integer cityIndex,
 

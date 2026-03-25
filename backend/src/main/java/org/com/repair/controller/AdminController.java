@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.Map;
 
 import org.com.repair.DTO.AdminResponse;
+import org.com.repair.DTO.AuthLoginResponse;
 import org.com.repair.DTO.NewAdminRequest;
 import org.com.repair.service.AdminService;
+import org.com.repair.service.AuthTokenService;
 import org.com.repair.service.RepairOrderService;
 import org.com.repair.service.TechnicianService;
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 
 @RestController
 @RequestMapping("/api/admins")
@@ -30,11 +34,16 @@ public class AdminController {
     private final AdminService adminService;
     private final RepairOrderService repairOrderService;
     private final TechnicianService technicianService;
+    private final AuthTokenService authTokenService;
     
-    public AdminController(AdminService adminService, RepairOrderService repairOrderService, TechnicianService technicianService) {
+    public AdminController(AdminService adminService,
+                           RepairOrderService repairOrderService,
+                           TechnicianService technicianService,
+                           AuthTokenService authTokenService) {
         this.adminService = adminService;
         this.repairOrderService = repairOrderService;
         this.technicianService = technicianService;
+        this.authTokenService = authTokenService;
     }
     
     @PostMapping
@@ -93,11 +102,12 @@ public class AdminController {
     }
     
     @PostMapping("/login")
-    public ResponseEntity<AdminResponse> login(
+    public ResponseEntity<AuthLoginResponse<AdminResponse>> login(
             @RequestParam String username, 
-            @RequestParam String password) {
+            @RequestParam String password,
+            HttpServletRequest servletRequest) {
         return adminService.login(username, password)
-                .map(admin -> new ResponseEntity<>(admin, HttpStatus.OK))
+                .map(admin -> new ResponseEntity<>(authTokenService.issueLoginTokens(admin.id(), admin.username(), "admin", admin, servletRequest), HttpStatus.OK))
                 .orElse(new ResponseEntity<>(HttpStatus.UNAUTHORIZED));
     }
     

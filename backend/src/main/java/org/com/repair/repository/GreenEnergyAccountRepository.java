@@ -17,7 +17,7 @@ public interface GreenEnergyAccountRepository extends JpaRepository<GreenEnergyA
      */
     Optional<GreenEnergyAccount> findByUserId(Long userId);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update GreenEnergyAccount a set a.totalEnergy = a.totalEnergy + :energyDelta, " +
             "a.currentMileage = a.currentMileage + :mileageDelta where a.userId = :userId")
     int atomicIncrease(@Param("userId") Long userId,

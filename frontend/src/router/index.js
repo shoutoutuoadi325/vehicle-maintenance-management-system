@@ -63,6 +63,8 @@ router.beforeEach((to, from, next) => {
   if (requiresAuth) {
     if (!user || !userRole) {
       // 用户未登录，重定向到身份选择页面
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
       next('/');
     } else if (requiredRole && userRole !== requiredRole) {
       // 用户角色不匹配，重定向到对应的dashboard
@@ -71,6 +73,8 @@ router.beforeEach((to, from, next) => {
         'technician': '/technician',
         'admin': '/admin'
       };
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
       next(dashboardMap[userRole] || '/');
     } else {
       // 用户已登录且角色匹配

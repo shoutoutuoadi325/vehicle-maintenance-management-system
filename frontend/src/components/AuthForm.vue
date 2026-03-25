@@ -365,9 +365,22 @@ export default {
       });
       
       if (response.data) {
-        localStorage.setItem('user', JSON.stringify(response.data));
-        localStorage.setItem('userRole', this.role);
-        this.$emit('auth-success', { ...response.data, role: this.role });
+        const payload = response.data;
+        const user = payload.user || payload;
+        const role = payload.role || this.role;
+
+        localStorage.setItem('user', JSON.stringify(user));
+        localStorage.setItem('userRole', role);
+        if (payload.accessToken) {
+          localStorage.setItem('accessToken', payload.accessToken);
+        }
+        if (payload.refreshToken) {
+          localStorage.setItem('refreshToken', payload.refreshToken);
+        } else {
+          localStorage.removeItem('refreshToken');
+        }
+
+        this.$emit('auth-success', { ...user, role });
       }
     },
     async handleRegister() {

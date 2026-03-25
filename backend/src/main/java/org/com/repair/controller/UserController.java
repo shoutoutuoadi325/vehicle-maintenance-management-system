@@ -2,9 +2,11 @@ package org.com.repair.controller;
 
 import java.util.List;
 
+import org.com.repair.DTO.AuthLoginResponse;
 import org.com.repair.DTO.NewUserRequest;
 import org.com.repair.DTO.UserResponse;
 import org.com.repair.DTO.UserWithStatsResponse;
+import org.com.repair.service.AuthTokenService;
 import org.com.repair.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,14 +20,18 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
     
     private final UserService userService;
+    private final AuthTokenService authTokenService;
     
-    public UserController(UserService userService) {
+    public UserController(UserService userService, AuthTokenService authTokenService) {
         this.userService = userService;
+        this.authTokenService = authTokenService;
     }
     
     @PostMapping
@@ -87,9 +93,11 @@ public class UserController {
     }
     
     @PostMapping("/login")
-    public ResponseEntity<UserResponse> login(@RequestParam String username, @RequestParam String password) {
+    public ResponseEntity<AuthLoginResponse<UserResponse>> login(@RequestParam String username,
+                                                                 @RequestParam String password,
+                                                                 HttpServletRequest servletRequest) {
         return userService.login(username, password)
-                .map(user -> new ResponseEntity<>(user, HttpStatus.OK))
+                .map(user -> new ResponseEntity<>(authTokenService.issueLoginTokens(user.id(), user.username(), "customer", user, servletRequest), HttpStatus.OK))
                 .orElse(new ResponseEntity<>(HttpStatus.UNAUTHORIZED));
     }
     

@@ -1,22 +1,19 @@
 package org.com.repair.service;
 
-import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
+import org.com.repair.config.CacheConfig;
 import org.com.repair.entity.GreenRuleConfig;
 import org.com.repair.repository.GreenRuleConfigRepository;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 @Service
 public class GamificationRuleService {
 
-    private static final long CACHE_TTL_SECONDS = 15;
-
     private final GreenRuleConfigRepository greenRuleConfigRepository;
-    private final Map<String, String> cache = new ConcurrentHashMap<>();
-    private volatile LocalDateTime latestDbUpdateTime = LocalDateTime.MIN;
-    private volatile long cacheRefreshedAtEpoch = 0L;
 
     public GamificationRuleService(GreenRuleConfigRepository greenRuleConfigRepository) {
         this.greenRuleConfigRepository = greenRuleConfigRepository;
@@ -41,36 +38,21 @@ public class GamificationRuleService {
     }
 
     public String getString(String key, String defaultValue) {
-        refreshCacheIfNeeded();
-        return cache.getOrDefault(key, defaultValue);
+        return getEnabledRuleMap().getOrDefault(key, defaultValue);
     }
 
-    private void refreshCacheIfNeeded() {
-        long now = System.currentTimeMillis();
-        if ((now - cacheRefreshedAtEpoch) < CACHE_TTL_SECONDS * 1000) {
-            return;
-        }
+    @Cacheable(cacheNames = CacheConfig.GAMIFICATION_RULES_CACHE, key = "'enabledRuleMap'")
+    public Map<String, String> getEnabledRuleMap() {
+        return greenRuleConfigRepository.findAll().stream()
+                .filter(config -> Boolean.TRUE.equals(config.getEnabled()))
+                .collect(Collectors.toUnmodifiableMap(
+                        GreenRuleConfig::getRuleKey,
+                        GreenRuleConfig::getRuleValue,
+                        (left, right) -> right));
+    }
 
-        synchronized (this) {
-            now = System.currentTimeMillis();
-            if ((now - cacheRefreshedAtEpoch) < CACHE_TTL_SECONDS * 1000) {
-                return;
-            }
-
-            LocalDateTime latest = greenRuleConfigRepository.findLatestEnabledUpdateTime();
-            if (latest != null && !latest.isAfter(latestDbUpdateTime)) {
-                cacheRefreshedAtEpoch = now;
-                return;
-            }
-
-            for (GreenRuleConfig config : greenRuleConfigRepository.findAll()) {
-                if (Boolean.TRUE.equals(config.getEnabled())) {
-                    cache.put(config.getRuleKey(), config.getRuleValue());
-                }
-            }
-
-            latestDbUpdateTime = latest == null ? LocalDateTime.now() : latest;
-            cacheRefreshedAtEpoch = now;
-        }
+    @CacheEvict(cacheNames = CacheConfig.GAMIFICATION_RULES_CACHE, allEntries = true)
+    public void evictRuleCache() {
+        // Used by management flows that update green_rule_config.
     }
 }

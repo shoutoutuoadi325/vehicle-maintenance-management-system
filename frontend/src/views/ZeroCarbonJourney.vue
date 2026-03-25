@@ -28,11 +28,11 @@
           </defs>
 
           <path
-            d="M 70 470 C 210 390, 260 340, 360 300 C 480 250, 560 260, 650 200 C 760 130, 820 170, 940 95"
+            :d="roadPath"
             class="road-base"
           />
           <path
-            d="M 70 470 C 210 390, 260 340, 360 300 C 480 250, 560 260, 650 200 C 760 130, 820 170, 940 95"
+            :d="roadPath"
             class="road-dash"
           />
 
@@ -132,13 +132,7 @@ export default {
       userId: null,
       totalEnergy: 0,
       currentMileage: 0,
-      cities: [
-        { id: 1, name: '成都', mileage: 0, x: 70, y: 470 },
-        { id: 2, name: '康定', mileage: 120, x: 285, y: 345 },
-        { id: 3, name: '理塘', mileage: 260, x: 470, y: 270 },
-        { id: 4, name: '林芝', mileage: 420, x: 680, y: 195 },
-        { id: 5, name: '拉萨', mileage: 580, x: 940, y: 95 }
-      ],
+      cities: [],
       showModal: false,
       quizLoading: false,
       answering: false,
@@ -148,7 +142,10 @@ export default {
       lastCorrect: false,
       activeNodeIndex: -1,
       showConfetti: false,
-      nodeStateMap: {}
+      confettiTimer: null,
+      nodeStateMap: {},
+      lastSubmitAt: 0,
+      submitDebounceMs: 800
     };
   },
   computed: {
@@ -156,7 +153,8 @@ export default {
       return Object.values(this.nodeStateMap).filter(state => state === 'CHECKED_IN').length;
     },
     activeCityName() {
-      return this.activeNodeIndex >= 0 ? this.cities[this.activeNodeIndex].name : '城市';
+      const activeCity = this.activeNodeIndex >= 0 ? this.cities[this.activeNodeIndex] : null;
+      return activeCity ? activeCity.name : '城市';
     },
     parsedOptions() {
       if (!this.quiz || !this.quiz.options) {
@@ -171,6 +169,17 @@ export default {
     },
     latestUnlockedIndex() {
       return this.cities.findIndex((city, index) => this.nodeState(index) === 'UNLOCKED');
+    },
+    roadPath() {
+      if (!this.cities.length) {
+        return 'M 70 470 L 940 95';
+      }
+
+      const points = this.cities
+        .map(city => `${Number(city.x) || 0} ${Number(city.y) || 0}`)
+        .join(' L ');
+
+      return `M ${points}`;
     }
   },
   async mounted() {
@@ -181,9 +190,17 @@ export default {
     }
 
     this.userId = user.id;
+    await this.loadJourneyConfig();
     await this.loadJourneyState();
   },
   methods: {
+    gamificationApi(path) {
+      const baseURL = this.$axios?.defaults?.baseURL || '';
+      if (baseURL.endsWith('/api')) {
+        return `/gamification${path}`;
+      }
+      return `/api/gamification${path}`;
+    },
     goBack() {
       this.$router.back();
     },
@@ -200,9 +217,29 @@ export default {
     isLatestUnlockAndUnchecked(index) {
       return index === this.latestUnlockedIndex && !this.isCheckedIn(index);
     },
+    async loadJourneyConfig() {
+      try {
+        const response = await this.$axios.get(this.gamificationApi('/journey/config'));
+        const data = response.data || {};
+        const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+        this.cities = nodes
+          .slice()
+          .sort((a, b) => (a.cityIndex || 0) - (b.cityIndex || 0))
+          .map(node => ({
+            id: (node.cityIndex || 0) + 1,
+            name: node.cityName || '',
+            mileage: node.requiredMileage || 0,
+            x: node.x || 0,
+            y: node.y || 0,
+            cityIndex: node.cityIndex || 0
+          }));
+      } catch (error) {
+        console.error('加载零碳路线配置失败:', error);
+      }
+    },
     async loadJourneyState() {
       try {
-        const response = await this.$axios.get(`/gamification/journey/state/${this.userId}`);
+        const response = await this.$axios.get(this.gamificationApi('/journey/state/me'));
         const data = response.data || {};
 
         this.totalEnergy = data.totalEnergy || 0;
@@ -220,7 +257,7 @@ export default {
     async fetchQuiz() {
       this.quizLoading = true;
       try {
-        const response = await this.$axios.get('/gamification/quiz/random');
+        const response = await this.$axios.get(this.gamificationApi('/quiz/random'));
         this.quiz = response.data;
       } catch (error) {
         console.error('获取随机题目失败:', error);
@@ -253,14 +290,19 @@ export default {
         return;
       }
 
+      const now = Date.now();
+      if (now - this.lastSubmitAt < this.submitDebounceMs) {
+        return;
+      }
+      this.lastSubmitAt = now;
+
       this.selectedKey = optionKey;
 
       this.answering = true;
 
       try {
-        const response = await this.$axios.post('/gamification/journey/checkin', {
-          userId: this.userId,
-          cityIndex: this.activeNodeIndex,
+        const response = await this.$axios.post(this.gamificationApi('/journey/checkin'), {
+          cityIndex: this.cities[this.activeNodeIndex]?.cityIndex ?? this.activeNodeIndex,
           quizId: this.quiz.id,
           selectedAnswer: optionKey
         });
@@ -277,13 +319,15 @@ export default {
         this.showConfetti = true;
         await this.loadJourneyState();
 
-        setTimeout(() => {
+        this.confettiTimer = setTimeout(() => {
           this.closeModal();
           this.showConfetti = false;
+          this.confettiTimer = null;
         }, 1100);
       } catch (error) {
         this.feedbackMsg = error?.response?.data?.message || '奖励结算失败，请稍后重试';
         this.showConfetti = false;
+        this.selectedKey = '';
       } finally {
         this.answering = false;
       }
@@ -299,6 +343,13 @@ export default {
         animationDuration: `${dur}s`,
         background: `hsl(${hue}, 90%, 58%)`
       };
+    }
+  }
+  ,
+  beforeDestroy() {
+    if (this.confettiTimer) {
+      clearTimeout(this.confettiTimer);
+      this.confettiTimer = null;
     }
   }
 };

@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.com.repair.exception.GamificationErrorCode;
+import org.com.repair.exception.GamificationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +15,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(GamificationException.class)
+    public ResponseEntity<Map<String, Object>> handleGamificationException(GamificationException ex) {
+        HttpStatus status = mapGamificationStatus(ex.getErrorCode());
+        return buildResponse(status, ex.getMessage(), ex.getErrorCode().name());
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
@@ -44,10 +52,24 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<Map<String, Object>> buildResponse(HttpStatus status, String message) {
+        return buildResponse(status, message, null);
+    }
+
+    private ResponseEntity<Map<String, Object>> buildResponse(HttpStatus status, String message, String errorCode) {
         Map<String, Object> body = new HashMap<>();
         body.put("timestamp", LocalDateTime.now().toString());
         body.put("status", status.value());
         body.put("message", message);
+        if (errorCode != null) {
+            body.put("errorCode", errorCode);
+        }
         return new ResponseEntity<>(body, status);
+    }
+
+    private HttpStatus mapGamificationStatus(GamificationErrorCode errorCode) {
+        return switch (errorCode) {
+            case INVALID_CITY_INDEX, QUIZ_NOT_FOUND -> HttpStatus.BAD_REQUEST;
+            default -> HttpStatus.CONFLICT;
+        };
     }
 }
