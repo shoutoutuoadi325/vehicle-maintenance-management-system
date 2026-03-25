@@ -30,10 +30,12 @@ import org.com.repair.repository.GreenEnergyAccountRepository;
 import org.com.repair.repository.GreenJourneyNodeStateRepository;
 import org.com.repair.repository.GreenQuizRepository;
 import org.com.repair.repository.GreenRewardLedgerRepository;
+import org.com.repair.service.GreenEnergyAccountProvisioningService.ConcurrentAccountCreationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -65,6 +67,7 @@ public class GamificationService {
     private final GreenJourneyNodeStateRepository greenJourneyNodeStateRepository;
     private final GreenRewardLedgerRepository greenRewardLedgerRepository;
     private final GamificationRuleService gamificationRuleService;
+    private final GreenEnergyAccountProvisioningService greenEnergyAccountProvisioningService;
 
     public GamificationService(
             GreenEnergyAccountRepository greenEnergyAccountRepository,
@@ -72,13 +75,15 @@ public class GamificationService {
             GreenQuizRepository greenQuizRepository,
             GreenJourneyNodeStateRepository greenJourneyNodeStateRepository,
             GreenRewardLedgerRepository greenRewardLedgerRepository,
-            GamificationRuleService gamificationRuleService) {
+            GamificationRuleService gamificationRuleService,
+            GreenEnergyAccountProvisioningService greenEnergyAccountProvisioningService) {
         this.greenEnergyAccountRepository = greenEnergyAccountRepository;
         this.greenDailyQuotaRepository = greenDailyQuotaRepository;
         this.greenQuizRepository = greenQuizRepository;
         this.greenJourneyNodeStateRepository = greenJourneyNodeStateRepository;
         this.greenRewardLedgerRepository = greenRewardLedgerRepository;
         this.gamificationRuleService = gamificationRuleService;
+        this.greenEnergyAccountProvisioningService = greenEnergyAccountProvisioningService;
     }
 
     @Transactional
@@ -225,8 +230,8 @@ public class GamificationService {
                 grant.currentMileage());
     }
 
-    @TransactionalEventListener
-    @Transactional
+    @TransactionalEventListener(fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleEmissionReduced(EmissionReducedEvent event) {
         Long userId = event.getUserId();
         Double emissionReduction = event.getEmissionReduction();
@@ -278,13 +283,8 @@ public class GamificationService {
         }
 
         try {
-            GreenEnergyAccount newAccount = GreenEnergyAccount.builder()
-                    .userId(userId)
-                    .totalEnergy(0)
-                    .currentMileage(0)
-                    .build();
-            return greenEnergyAccountRepository.save(newAccount);
-        } catch (DataIntegrityViolationException duplicate) {
+            return greenEnergyAccountProvisioningService.createAccountInNewTransaction(userId);
+        } catch (ConcurrentAccountCreationException duplicate) {
             return greenEnergyAccountRepository.findByUserId(userId)
                     .orElseThrow(() -> new GamificationException(
                             GamificationErrorCode.ACCOUNT_INIT_FAILED,

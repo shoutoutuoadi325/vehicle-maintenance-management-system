@@ -144,6 +144,8 @@ export default {
       showConfetti: false,
       confettiTimer: null,
       nodeStateMap: {},
+      openingQuiz: false,
+      quizRequestSeq: 0,
       lastSubmitAt: 0,
       submitDebounceMs: 800
     };
@@ -175,11 +177,7 @@ export default {
         return 'M 70 470 L 940 95';
       }
 
-      const points = this.cities
-        .map(city => `${Number(city.x) || 0} ${Number(city.y) || 0}`)
-        .join(' L ');
-
-      return `M ${points}`;
+      return this.buildSmoothRoadPath(this.cities);
     }
   },
   async mounted() {
@@ -194,6 +192,37 @@ export default {
     await this.loadJourneyState();
   },
   methods: {
+    buildSmoothRoadPath(cities) {
+      const points = cities.map(city => ({
+        x: Number(city.x) || 0,
+        y: Number(city.y) || 0
+      }));
+
+      if (points.length === 1) {
+        return `M ${points[0].x} ${points[0].y}`;
+      }
+
+      if (points.length === 2) {
+        return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+      }
+
+      let path = `M ${points[0].x} ${points[0].y}`;
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const p0 = points[i - 1] || points[i];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[i + 2] || points[i + 1];
+
+        const cp1x = p1.x + (p2.x - p0.x) / 6;
+        const cp1y = p1.y + (p2.y - p0.y) / 6;
+        const cp2x = p2.x - (p3.x - p1.x) / 6;
+        const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+        path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+      }
+
+      return path;
+    },
     gamificationApi(path) {
       const baseURL = this.$axios?.defaults?.baseURL || '';
       if (baseURL.endsWith('/api')) {
@@ -255,28 +284,40 @@ export default {
       }
     },
     async fetchQuiz() {
+      const requestSeq = ++this.quizRequestSeq;
       this.quizLoading = true;
       try {
         const response = await this.$axios.get(this.gamificationApi('/quiz/random'));
-        this.quiz = response.data;
+        if (requestSeq === this.quizRequestSeq) {
+          this.quiz = response.data;
+        }
       } catch (error) {
         console.error('获取随机题目失败:', error);
-        this.quiz = null;
+        if (requestSeq === this.quizRequestSeq) {
+          this.quiz = null;
+        }
       } finally {
-        this.quizLoading = false;
+        if (requestSeq === this.quizRequestSeq) {
+          this.quizLoading = false;
+        }
       }
     },
     async handleNodeClick(index) {
-      if (!this.isLatestUnlockAndUnchecked(index)) {
+      if (!this.isLatestUnlockAndUnchecked(index) || this.showModal || this.quizLoading || this.openingQuiz) {
         return;
       }
 
+      this.openingQuiz = true;
       this.activeNodeIndex = index;
       this.selectedKey = '';
       this.feedbackMsg = '';
       this.lastCorrect = false;
       this.showModal = true;
-      await this.fetchQuiz();
+      try {
+        await this.fetchQuiz();
+      } finally {
+        this.openingQuiz = false;
+      }
     },
     closeModal() {
       this.showModal = false;
