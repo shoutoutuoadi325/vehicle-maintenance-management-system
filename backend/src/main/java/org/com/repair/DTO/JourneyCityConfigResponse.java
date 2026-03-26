@@ -17,6 +17,15 @@ public record JourneyCityConfigResponse(
         Integer x,
 
         @Schema(description = "SVG纵坐标", example = "345")
-        Integer y
+        Integer y,
+
+        @Schema(description = "是否为合作品牌服务区", example = "true")
+        Boolean brandServiceArea,
+
+        @Schema(description = "品牌名称", example = "壳牌")
+        String brandName,
+
+        @Schema(description = "品牌Logo", example = "/assets/brands/shell.svg")
+        String brandLogoUrl
 ) {
 }

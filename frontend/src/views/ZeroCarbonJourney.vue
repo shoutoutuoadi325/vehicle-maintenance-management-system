@@ -39,6 +39,11 @@
           <g v-for="(city, idx) in cities" :key="city.id">
             <line :x1="city.x" :x2="city.x" :y1="city.y" :y2="city.y + 42" class="city-guide" />
 
+            <g v-if="city.brandServiceArea" class="brand-service-marker" :transform="`translate(${city.x + 18}, ${city.y - 30})`">
+              <rect x="0" y="0" width="88" height="24" rx="12" class="brand-pill" />
+              <text x="44" y="16" text-anchor="middle" class="brand-pill-text">{{ brandTag(city.brandName) }}</text>
+            </g>
+
             <circle
               :cx="city.x"
               :cy="city.y"
@@ -82,6 +87,10 @@
         <span class="status-label">已打卡城市</span>
         <strong class="status-value">{{ checkedCount }}/{{ cities.length }}</strong>
       </div>
+      <div class="status-item">
+        <span class="status-label">终极奖励状态</span>
+        <strong class="status-value reward-state">{{ rewardShippingStatusText }}</strong>
+      </div>
     </footer>
 
     <div v-if="showModal" class="modal-mask" @click.self="closeModal">
@@ -94,6 +103,14 @@
         <div v-if="quizLoading" class="quiz-loading">题目加载中...</div>
 
         <template v-else-if="quiz">
+          <div class="event-card" :class="eventThemeClass">
+            <div class="event-icon">{{ eventThemeIcon }}</div>
+            <div class="event-content">
+              <h4>{{ eventTitle }}</h4>
+              <p>{{ eventDescription }}</p>
+            </div>
+          </div>
+
           <p class="question">{{ quiz.question }}</p>
 
           <div class="options">
@@ -119,6 +136,67 @@
 
       <div v-if="showConfetti" class="confetti-layer">
         <span v-for="n in 24" :key="n" class="confetti" :style="confettiStyle(n)" />
+      </div>
+    </div>
+
+    <div v-if="showDrawModal" class="modal-mask" @click.self="dismissDrawModal">
+      <div class="draw-modal-card" :class="{ won: drawResult?.won }">
+        <h3>{{ drawResult?.won ? '恭喜获得品牌福利' : '本次盲盒未中奖' }}</h3>
+        <p class="draw-subtitle">
+          {{ drawResult?.won ? `${drawResult.brandName || '合作品牌'} 服务区专属权益已发放` : '再前往下一座合作服务区，中奖概率更高' }}
+        </p>
+
+        <div v-if="drawResult?.won" class="draw-prize-card">
+          <div class="draw-brand-logo">{{ brandTag(drawResult.brandName) }}</div>
+          <div class="draw-prize-content">
+            <strong>{{ drawResult.couponTitle }}</strong>
+            <p>{{ drawResult.couponDescription }}</p>
+          </div>
+        </div>
+
+        <div class="draw-actions">
+          <button class="wallet-btn" @click="putIntoWallet">
+            {{ drawResult?.won ? '放入卡包' : '继续挑战' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showGrandPrizeModal" class="grand-prize-mask" @click.self="dismissGrandPrizeModal">
+      <div class="grand-prize-certificate">
+        <div class="certificate-header">
+          <span>Annual Green Driver Award</span>
+          <h2>年度环保车主 荣誉证书</h2>
+          <p>恭喜你完成零碳公路之旅，成功解锁终极商业大奖与实体车贴权益</p>
+        </div>
+
+        <form class="claim-form" @submit.prevent="submitGrandPrizeClaim">
+          <label>
+            收货人姓名
+            <input v-model.trim="grandPrizeForm.consigneeName" maxlength="100" required />
+          </label>
+          <label>
+            联系电话
+            <input v-model.trim="grandPrizeForm.consigneePhone" maxlength="30" required />
+          </label>
+          <label>
+            详细收货地址
+            <textarea v-model.trim="grandPrizeForm.shippingAddress" maxlength="500" rows="3" required />
+          </label>
+
+          <p v-if="grandPrizeMsg" class="grand-prize-msg">{{ grandPrizeMsg }}</p>
+
+          <div class="certificate-actions">
+            <button type="button" class="ghost-btn" @click="dismissGrandPrizeModal">稍后填写</button>
+            <button type="submit" class="claim-btn" :disabled="claimingGrandPrize">
+              {{ claimingGrandPrize ? '提交中...' : '提交领奖信息' }}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="confetti-layer">
+        <span v-for="n in 24" :key="`g-${n}`" class="confetti" :style="confettiStyle(n + 7)" />
       </div>
     </div>
   </div>
@@ -147,7 +225,19 @@ export default {
       openingQuiz: false,
       quizRequestSeq: 0,
       lastSubmitAt: 0,
-      submitDebounceMs: 800
+      submitDebounceMs: 800,
+      showDrawModal: false,
+      drawResult: null,
+      pendingGrandPrize: false,
+      showGrandPrizeModal: false,
+      claimingGrandPrize: false,
+      grandPrizeMsg: '',
+      rewardShippingStatus: 'NOT_CLAIMED',
+      grandPrizeForm: {
+        consigneeName: '',
+        consigneePhone: '',
+        shippingAddress: ''
+      }
     };
   },
   computed: {
@@ -169,6 +259,29 @@ export default {
         return {};
       }
     },
+    eventTitle() {
+      return this.quiz?.eventTitle || `抵达${this.activeCityName}`;
+    },
+    eventDescription() {
+      return this.quiz?.eventDescription || '完成本次绿色知识挑战即可打卡前进。';
+    },
+    eventThemeClass() {
+      const theme = String(this.quiz?.eventTheme || 'default').toLowerCase();
+      const supported = ['sandstorm', 'rain', 'coldwave', 'mountain', 'traffic', 'default'];
+      return `theme-${supported.includes(theme) ? theme : 'default'}`;
+    },
+    eventThemeIcon() {
+      const theme = String(this.quiz?.eventTheme || 'default').toLowerCase();
+      const iconMap = {
+        sandstorm: 'SA',
+        rain: 'RN',
+        coldwave: 'CW',
+        mountain: 'MT',
+        traffic: 'TF',
+        default: 'EV'
+      };
+      return iconMap[theme] || iconMap.default;
+    },
     latestUnlockedIndex() {
       return this.cities.findIndex((city, index) => this.nodeState(index) === 'UNLOCKED');
     },
@@ -178,6 +291,15 @@ export default {
       }
 
       return this.buildSmoothRoadPath(this.cities);
+    },
+    rewardShippingStatusText() {
+      const map = {
+        NOT_CLAIMED: '待申领',
+        PREPARING: '奖励已准备发货',
+        SHIPPED: '已发货',
+        DELIVERED: '已签收'
+      };
+      return map[this.rewardShippingStatus] || '待申领';
     }
   },
   async mounted() {
@@ -260,7 +382,10 @@ export default {
             mileage: node.requiredMileage || 0,
             x: node.x || 0,
             y: node.y || 0,
-            cityIndex: node.cityIndex || 0
+            cityIndex: node.cityIndex || 0,
+            brandServiceArea: !!node.brandServiceArea,
+            brandName: node.brandName || '',
+            brandLogoUrl: node.brandLogoUrl || ''
           }));
       } catch (error) {
         console.error('加载零碳路线配置失败:', error);
@@ -283,16 +408,18 @@ export default {
         console.error('加载零碳状态失败:', error);
       }
     },
-    async fetchQuiz() {
+    async fetchQuiz(cityIndex) {
       const requestSeq = ++this.quizRequestSeq;
       this.quizLoading = true;
       try {
-        const response = await this.$axios.get(this.gamificationApi('/quiz/random'));
+        const response = await this.$axios.get(this.gamificationApi('/journey/quiz'), {
+          params: { cityIndex }
+        });
         if (requestSeq === this.quizRequestSeq) {
           this.quiz = response.data;
         }
       } catch (error) {
-        console.error('获取随机题目失败:', error);
+        console.error('获取城市事件题失败:', error);
         if (requestSeq === this.quizRequestSeq) {
           this.quiz = null;
         }
@@ -314,7 +441,8 @@ export default {
       this.lastCorrect = false;
       this.showModal = true;
       try {
-        await this.fetchQuiz();
+        const cityIndex = this.cities[index]?.cityIndex ?? index;
+        await this.fetchQuiz(cityIndex);
       } finally {
         this.openingQuiz = false;
       }
@@ -325,6 +453,62 @@ export default {
       this.selectedKey = '';
       this.feedbackMsg = '';
       this.lastCorrect = false;
+    },
+    dismissDrawModal() {
+      this.showDrawModal = false;
+      if (this.pendingGrandPrize) {
+        this.showGrandPrizeModal = true;
+      }
+    },
+    dismissGrandPrizeModal() {
+      this.showGrandPrizeModal = false;
+      this.pendingGrandPrize = false;
+      this.closeModal();
+    },
+    putIntoWallet() {
+      this.showDrawModal = false;
+      if (this.pendingGrandPrize) {
+        this.showGrandPrizeModal = true;
+        this.grandPrizeMsg = '';
+        return;
+      }
+      this.closeModal();
+      this.drawResult = null;
+    },
+    async submitGrandPrizeClaim() {
+      if (this.claimingGrandPrize) {
+        return;
+      }
+
+      this.claimingGrandPrize = true;
+      this.grandPrizeMsg = '';
+      try {
+        const response = await this.$axios.post(this.gamificationApi('/journey/claim-grand-prize'), {
+          consigneeName: this.grandPrizeForm.consigneeName,
+          consigneePhone: this.grandPrizeForm.consigneePhone,
+          shippingAddress: this.grandPrizeForm.shippingAddress
+        });
+        const data = response.data || {};
+        this.rewardShippingStatus = data.shippingStatus || 'PREPARING';
+        this.grandPrizeMsg = '领奖成功，奖励已准备发货。';
+        this.pendingGrandPrize = false;
+
+        setTimeout(() => {
+          this.showGrandPrizeModal = false;
+          this.drawResult = null;
+          this.closeModal();
+        }, 700);
+      } catch (error) {
+        this.grandPrizeMsg = error?.response?.data?.message || '领奖信息提交失败，请稍后重试';
+      } finally {
+        this.claimingGrandPrize = false;
+      }
+    },
+    brandTag(brandName) {
+      if (!brandName) {
+        return 'BRAND';
+      }
+      return String(brandName).slice(0, 6).toUpperCase();
     },
     async submitAnswer(optionKey) {
       if (!this.quiz || this.answering || this.selectedKey) {
@@ -358,11 +542,14 @@ export default {
 
         this.feedbackMsg = '回答正确！能量与里程已更新';
         this.showConfetti = true;
+        this.drawResult = result.couponDrawResult || { won: false };
+        this.pendingGrandPrize = !!result.journeyCompleted && !result.grandPrizeStickerClaimed;
+        this.rewardShippingStatus = result.grandPrizeShipmentStatus || this.rewardShippingStatus;
         await this.loadJourneyState();
 
         this.confettiTimer = setTimeout(() => {
-          this.closeModal();
           this.showConfetti = false;
+          this.showDrawModal = true;
           this.confettiTimer = null;
         }, 1100);
       } catch (error) {
@@ -569,6 +756,23 @@ export default {
   fill: #64748b;
 }
 
+.brand-service-marker {
+  pointer-events: none;
+}
+
+.brand-pill {
+  fill: rgba(16, 185, 129, 0.92);
+  stroke: rgba(5, 150, 105, 1);
+  stroke-width: 1;
+}
+
+.brand-pill-text {
+  font-size: 11px;
+  fill: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .status-bar {
   position: fixed;
   left: 16px;
@@ -580,7 +784,7 @@ export default {
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   align-items: center;
   z-index: 18;
 }
@@ -609,6 +813,11 @@ export default {
   color: #0f766e;
 }
 
+.status-value.reward-state {
+  font-size: 16px;
+  color: #0ea5a3;
+}
+
 .modal-mask {
   position: fixed;
   inset: 0;
@@ -627,6 +836,194 @@ export default {
   border: 1px solid #e5e7eb;
   padding: 18px 18px 20px;
   position: relative;
+}
+
+.draw-modal-card {
+  width: min(520px, calc(100vw - 28px));
+  border-radius: 18px;
+  background: linear-gradient(160deg, #f8fafc, #ecfeff);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.25);
+  border: 1px solid #cbd5e1;
+  padding: 22px;
+}
+
+.grand-prize-mask {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 20% 20%, rgba(16, 185, 129, 0.3), rgba(15, 23, 42, 0.8));
+  display: grid;
+  place-items: center;
+  z-index: 88;
+}
+
+.grand-prize-certificate {
+  width: min(760px, calc(100vw - 24px));
+  border-radius: 22px;
+  border: 1px solid #86efac;
+  background: linear-gradient(160deg, #f0fdf4, #ecfeff);
+  box-shadow: 0 24px 64px rgba(2, 44, 34, 0.45);
+  padding: 24px;
+  position: relative;
+  z-index: 89;
+}
+
+.certificate-header span {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.certificate-header h2 {
+  margin: 10px 0 6px;
+  font-size: 30px;
+  color: #14532d;
+}
+
+.certificate-header p {
+  margin: 0;
+  color: #334155;
+}
+
+.claim-form {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.claim-form label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.claim-form input,
+.claim-form textarea {
+  border: 1px solid #86efac;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 14px;
+}
+
+.claim-form input:focus,
+.claim-form textarea:focus {
+  outline: 0;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+}
+
+.grand-prize-msg {
+  margin: 0;
+  color: #166534;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.certificate-actions {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ghost-btn {
+  border: 1px solid #a7f3d0;
+  background: #ffffff;
+  color: #065f46;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.claim-btn {
+  border: 0;
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.claim-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.draw-modal-card.won {
+  background: linear-gradient(160deg, #fef9c3, #dcfce7);
+  border-color: #84cc16;
+}
+
+.draw-modal-card h3 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.draw-subtitle {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #334155;
+}
+
+.draw-prize-card {
+  margin-top: 14px;
+  border: 1px solid #a7f3d0;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 12px;
+}
+
+.draw-brand-logo {
+  border-radius: 10px;
+  background: #0f766e;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  letter-spacing: 0.05em;
+}
+
+.draw-prize-content strong {
+  font-size: 16px;
+}
+
+.draw-prize-content p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.draw-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.wallet-btn {
+  border: 0;
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.wallet-btn:hover {
+  filter: brightness(1.05);
 }
 
 .modal-head {
@@ -669,6 +1066,70 @@ export default {
   border-radius: 12px;
   font-size: 15px;
   line-height: 1.6;
+}
+
+.event-card {
+  margin-top: 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 12px;
+}
+
+.event-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.event-content h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.event-content p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.event-card.theme-sandstorm {
+  background: linear-gradient(135deg, #fff8e1, #ffe9b3);
+  border-color: #f59e0b;
+}
+
+.event-card.theme-rain {
+  background: linear-gradient(135deg, #e0f2fe, #dbeafe);
+  border-color: #38bdf8;
+}
+
+.event-card.theme-coldwave {
+  background: linear-gradient(135deg, #ecfeff, #e0e7ff);
+  border-color: #60a5fa;
+}
+
+.event-card.theme-mountain {
+  background: linear-gradient(135deg, #ecfccb, #dcfce7);
+  border-color: #65a30d;
+}
+
+.event-card.theme-traffic {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border-color: #d97706;
+}
+
+.event-card.theme-default {
+  background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+  border-color: #94a3b8;
 }
 
 .options {

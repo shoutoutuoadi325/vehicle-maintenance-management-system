@@ -8,7 +8,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
+import org.com.repair.DTO.CouponDrawResultResponse;
+import org.com.repair.DTO.ClaimGrandPrizeRequest;
+import org.com.repair.DTO.ClaimGrandPrizeResponse;
 import org.com.repair.DTO.JourneyCheckinRequest;
 import org.com.repair.DTO.JourneyCityConfigResponse;
 import org.com.repair.DTO.JourneyConfigResponse;
@@ -16,20 +20,28 @@ import org.com.repair.DTO.JourneyNodeResponse;
 import org.com.repair.DTO.JourneyStateResponse;
 import org.com.repair.DTO.QuizAnswerResultResponse;
 import org.com.repair.DTO.QuizQuestionResponse;
+import org.com.repair.entity.BrandPartner;
+import org.com.repair.entity.Coupon;
 import org.com.repair.entity.GreenDailyQuota;
 import org.com.repair.entity.GreenEnergyAccount;
 import org.com.repair.entity.GreenJourneyNodeState;
 import org.com.repair.entity.GreenJourneyNodeState.NodeState;
 import org.com.repair.entity.GreenQuiz;
 import org.com.repair.entity.GreenRewardLedger;
+import org.com.repair.entity.JourneyCompletionRecord;
+import org.com.repair.entity.UserCouponWallet;
 import org.com.repair.event.EmissionReducedEvent;
 import org.com.repair.exception.GamificationErrorCode;
 import org.com.repair.exception.GamificationException;
+import org.com.repair.repository.BrandPartnerRepository;
+import org.com.repair.repository.CouponRepository;
 import org.com.repair.repository.GreenDailyQuotaRepository;
 import org.com.repair.repository.GreenEnergyAccountRepository;
 import org.com.repair.repository.GreenJourneyNodeStateRepository;
 import org.com.repair.repository.GreenQuizRepository;
 import org.com.repair.repository.GreenRewardLedgerRepository;
+import org.com.repair.repository.JourneyCompletionRecordRepository;
+import org.com.repair.repository.UserCouponWalletRepository;
 import org.com.repair.service.GreenEnergyAccountProvisioningService.ConcurrentAccountCreationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,12 +72,17 @@ public class GamificationService {
     private static final int DEFAULT_DAILY_ENERGY_CAP = 1200;
     private static final int DEFAULT_ORDER_REWARD_CAP = 600;
     private static final int DEFAULT_DAILY_QUIZ_CHECKIN_LIMIT = 8;
+    private static final int FINAL_CITY_INDEX = 4;
 
     private final GreenEnergyAccountRepository greenEnergyAccountRepository;
     private final GreenDailyQuotaRepository greenDailyQuotaRepository;
     private final GreenQuizRepository greenQuizRepository;
     private final GreenJourneyNodeStateRepository greenJourneyNodeStateRepository;
     private final GreenRewardLedgerRepository greenRewardLedgerRepository;
+    private final BrandPartnerRepository brandPartnerRepository;
+    private final CouponRepository couponRepository;
+    private final UserCouponWalletRepository userCouponWalletRepository;
+    private final JourneyCompletionRecordRepository journeyCompletionRecordRepository;
     private final GamificationRuleService gamificationRuleService;
     private final GreenEnergyAccountProvisioningService greenEnergyAccountProvisioningService;
 
@@ -75,6 +92,10 @@ public class GamificationService {
             GreenQuizRepository greenQuizRepository,
             GreenJourneyNodeStateRepository greenJourneyNodeStateRepository,
             GreenRewardLedgerRepository greenRewardLedgerRepository,
+            BrandPartnerRepository brandPartnerRepository,
+            CouponRepository couponRepository,
+            UserCouponWalletRepository userCouponWalletRepository,
+            JourneyCompletionRecordRepository journeyCompletionRecordRepository,
             GamificationRuleService gamificationRuleService,
             GreenEnergyAccountProvisioningService greenEnergyAccountProvisioningService) {
         this.greenEnergyAccountRepository = greenEnergyAccountRepository;
@@ -82,8 +103,35 @@ public class GamificationService {
         this.greenQuizRepository = greenQuizRepository;
         this.greenJourneyNodeStateRepository = greenJourneyNodeStateRepository;
         this.greenRewardLedgerRepository = greenRewardLedgerRepository;
+        this.brandPartnerRepository = brandPartnerRepository;
+        this.couponRepository = couponRepository;
+        this.userCouponWalletRepository = userCouponWalletRepository;
+        this.journeyCompletionRecordRepository = journeyCompletionRecordRepository;
         this.gamificationRuleService = gamificationRuleService;
         this.greenEnergyAccountProvisioningService = greenEnergyAccountProvisioningService;
+    }
+
+    @Transactional
+    public ClaimGrandPrizeResponse claimGrandPrize(Long userId, ClaimGrandPrizeRequest request) {
+        JourneyCompletionRecord record = journeyCompletionRecordRepository.findByUserId(userId)
+                .orElseThrow(() -> new GamificationException(
+                        GamificationErrorCode.JOURNEY_NOT_COMPLETED,
+                        "尚未完成全程，暂不可申领奖励"));
+
+        record.setConsigneeName(request.consigneeName().trim());
+        record.setConsigneePhone(request.consigneePhone().trim());
+        record.setShippingAddress(request.shippingAddress().trim());
+        record.setStickerClaimed(true);
+        record.setGrandPrizeGranted(true);
+        record.setShippingStatus("PREPARING");
+
+        JourneyCompletionRecord saved = journeyCompletionRecordRepository.save(record);
+        return new ClaimGrandPrizeResponse(
+                userId,
+                true,
+                Boolean.TRUE.equals(saved.getStickerClaimed()),
+                Boolean.TRUE.equals(saved.getGrandPrizeGranted()),
+                saved.getShippingStatus());
     }
 
     @Transactional
@@ -96,14 +144,46 @@ public class GamificationService {
 
     public JourneyConfigResponse getJourneyConfig() {
         List<JourneyCityConfigResponse> nodes = JOURNEY_NODES.stream()
-                .map(node -> new JourneyCityConfigResponse(
-                        node.cityIndex(),
-                        node.cityName(),
-                        node.requiredMileage(),
-                        node.x(),
-                        node.y()))
+            .map(node -> {
+                Optional<Coupon> cityCoupon = couponRepository.findTopByCityIndexAndEnabledTrueOrderByIdAsc(node.cityIndex());
+                if (cityCoupon.isEmpty()) {
+                return new JourneyCityConfigResponse(
+                    node.cityIndex(),
+                    node.cityName(),
+                    node.requiredMileage(),
+                    node.x(),
+                    node.y(),
+                    false,
+                    null,
+                    null);
+                }
+
+                Coupon coupon = cityCoupon.get();
+                BrandPartner brand = brandPartnerRepository.findById(coupon.getBrandPartnerId()).orElse(null);
+                return new JourneyCityConfigResponse(
+                    node.cityIndex(),
+                    node.cityName(),
+                    node.requiredMileage(),
+                    node.x(),
+                    node.y(),
+                    true,
+                    brand != null ? brand.getBrandName() : null,
+                    brand != null ? brand.getLogoUrl() : null);
+            })
                 .toList();
         return new JourneyConfigResponse(nodes);
+    }
+
+    public QuizQuestionResponse getQuizQuestionForCity(Integer cityIndex) {
+        validateCityIndex(cityIndex);
+
+        GreenQuiz quiz = greenQuizRepository.findRandomScenarioQuizByCityIndex(cityIndex)
+                .or(() -> greenQuizRepository.findDefaultQuizByCityIndex(cityIndex))
+                .orElseThrow(() -> new GamificationException(
+                        GamificationErrorCode.QUIZ_NOT_AVAILABLE,
+                        "当前城市暂无可用题目"));
+
+        return toQuizQuestionResponse(quiz, cityIndex);
     }
 
     public QuizQuestionResponse getRandomQuizQuestion() {
@@ -111,7 +191,8 @@ public class GamificationService {
                 .orElseThrow(() -> new GamificationException(
                         GamificationErrorCode.QUIZ_NOT_AVAILABLE,
                         "环保题库暂无可用题目"));
-        return new QuizQuestionResponse(quiz.getId(), quiz.getQuestion(), quiz.getOptions());
+        Integer cityIndex = quiz.getCityIndex();
+        return toQuizQuestionResponse(quiz, cityIndex);
     }
 
     @Transactional
@@ -186,8 +267,16 @@ public class GamificationService {
             .orElseThrow(() -> new GamificationException(
                 GamificationErrorCode.QUIZ_NOT_FOUND,
                 "题目不存在"));
+
+        if (quiz.getCityIndex() != null && !cityIndex.equals(quiz.getCityIndex())) {
+            throw new GamificationException(
+                    GamificationErrorCode.QUIZ_CITY_MISMATCH,
+                    "题目与城市节点不匹配，请重新获取题目");
+        }
+
         String correctAnswer = normalizeOption(quiz.getCorrectAnswer());
         boolean isCorrect = correctAnswer.equals(selectedAnswer);
+        JourneyCompletionRecord existingCompletion = journeyCompletionRecordRepository.findByUserId(userId).orElse(null);
 
         if (!isCorrect) {
             return new QuizAnswerResultResponse(
@@ -196,7 +285,11 @@ public class GamificationService {
                     false,
                     0,
                     account.getTotalEnergy(),
-                    account.getCurrentMileage());
+                    account.getCurrentMileage(),
+                    null,
+                    existingCompletion != null,
+                    existingCompletion != null && Boolean.TRUE.equals(existingCompletion.getStickerClaimed()),
+                    existingCompletion != null ? existingCompletion.getShippingStatus() : "NOT_CLAIMED");
         }
 
         String sourceId = userId + "-" + cityIndex;
@@ -221,13 +314,20 @@ public class GamificationService {
 
         reconcileNodeStates(userId, grant.currentMileage());
 
+        CouponDrawResultResponse couponDrawResult = drawCouponForCity(userId, cityIndex, sourceId);
+        JourneyCompletionRecord completionRecord = ensureJourneyCompletionIfFinished(userId, cityIndex);
+
         return new QuizAnswerResultResponse(
                 userId,
                 quizId,
                 true,
                 grant.rewardEnergy(),
                 grant.totalEnergy(),
-                grant.currentMileage());
+            grant.currentMileage(),
+            couponDrawResult,
+            completionRecord != null,
+            completionRecord != null && Boolean.TRUE.equals(completionRecord.getStickerClaimed()),
+            completionRecord != null ? completionRecord.getShippingStatus() : "NOT_CLAIMED");
     }
 
     @TransactionalEventListener(fallbackExecution = true)
@@ -439,11 +539,134 @@ public class GamificationService {
         return JOURNEY_NODES.get(cityIndex);
     }
 
+    private QuizQuestionResponse toQuizQuestionResponse(GreenQuiz quiz, Integer fallbackCityIndex) {
+        Integer resolvedCityIndex = quiz.getCityIndex() != null ? quiz.getCityIndex() : fallbackCityIndex;
+        JourneyNodeConfig nodeConfig = (resolvedCityIndex != null && resolvedCityIndex >= 0 && resolvedCityIndex < JOURNEY_NODES.size())
+                ? getJourneyNodeConfig(resolvedCityIndex)
+                : null;
+
+        String eventTitle = quiz.getEventTitle();
+        String eventDescription = quiz.getEventDescription();
+        String eventTheme = quiz.getEventTheme();
+
+        if (eventTitle == null || eventTitle.isBlank()) {
+            eventTitle = nodeConfig != null ? ("抵达" + nodeConfig.cityName() + "补给站") : "低碳突发事件";
+        }
+        if (eventDescription == null || eventDescription.isBlank()) {
+            eventDescription = nodeConfig != null
+                    ? ("你已到达" + nodeConfig.cityName() + "，完成本次绿色知识挑战即可打卡前进。")
+                    : "完成本次绿色知识挑战即可继续前进。";
+        }
+        if (eventTheme == null || eventTheme.isBlank()) {
+            eventTheme = "default";
+        }
+
+        return new QuizQuestionResponse(
+                quiz.getId(),
+                resolvedCityIndex,
+                eventTitle,
+                eventDescription,
+                eventTheme,
+                quiz.getQuestion(),
+                quiz.getOptions());
+    }
+
     private String normalizeOption(String value) {
         if (value == null) {
             return "";
         }
         return value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private JourneyCompletionRecord ensureJourneyCompletionIfFinished(Long userId, Integer cityIndex) {
+        if (cityIndex == null || cityIndex != FINAL_CITY_INDEX) {
+            return journeyCompletionRecordRepository.findByUserId(userId).orElse(null);
+        }
+
+        GreenJourneyNodeState finalNode = greenJourneyNodeStateRepository.findByUserIdAndCityIndex(userId, FINAL_CITY_INDEX)
+                .orElse(null);
+        if (finalNode == null || !NodeState.CHECKED_IN.name().equals(finalNode.getNodeState())) {
+            return journeyCompletionRecordRepository.findByUserId(userId).orElse(null);
+        }
+
+        return journeyCompletionRecordRepository.findByUserId(userId)
+                .orElseGet(() -> journeyCompletionRecordRepository.save(JourneyCompletionRecord.builder()
+                        .userId(userId)
+                        .completedAt(LocalDateTime.now())
+                        .grandPrizeGranted(false)
+                        .stickerClaimed(false)
+                        .shippingStatus("NOT_CLAIMED")
+                        .build()));
+    }
+
+    private CouponDrawResultResponse drawCouponForCity(Long userId, Integer cityIndex, String sourceId) {
+        List<Coupon> cityCoupons = couponRepository.findActiveByCityIndex(cityIndex, LocalDateTime.now());
+        if (cityCoupons.isEmpty()) {
+            return new CouponDrawResultResponse(false, null, null, null, null, null, cityIndex);
+        }
+
+        Coupon selected = selectCouponByProbability(cityCoupons);
+        if (selected == null) {
+            return new CouponDrawResultResponse(false, null, null, null, null, null, cityIndex);
+        }
+
+        int updated = couponRepository.tryIssueCoupon(selected.getId());
+        if (updated <= 0) {
+            return new CouponDrawResultResponse(false, null, null, null, null, null, cityIndex);
+        }
+
+        BrandPartner brand = brandPartnerRepository.findById(selected.getBrandPartnerId()).orElse(null);
+        UserCouponWallet wallet = UserCouponWallet.builder()
+                .userId(userId)
+                .couponId(selected.getId())
+                .brandPartnerId(selected.getBrandPartnerId())
+                .cityIndex(cityIndex)
+                .couponTitle(selected.getCouponTitle())
+                .couponDescription(selected.getCouponDescription())
+                .couponStatus("NEW")
+                .sourceAction("JOURNEY_COUPON_DRAW_" + sourceId)
+                .drawTime(LocalDateTime.now())
+                .expireTime(selected.getExpireTime())
+                .build();
+        userCouponWalletRepository.save(wallet);
+
+        return new CouponDrawResultResponse(
+                true,
+                selected.getId(),
+                brand != null ? brand.getBrandName() : null,
+                brand != null ? brand.getLogoUrl() : null,
+                selected.getCouponTitle(),
+                selected.getCouponDescription(),
+                cityIndex);
+    }
+
+    private Coupon selectCouponByProbability(List<Coupon> coupons) {
+        double totalCouponProbability = coupons.stream()
+                .map(Coupon::getWinProbability)
+                .filter(value -> value != null)
+                .mapToDouble(value -> Math.max(0.0, value.doubleValue()))
+                .sum();
+
+        if (totalCouponProbability <= 0) {
+            return null;
+        }
+
+        double noWinWeight = Math.max(0.0, 1.0 - totalCouponProbability);
+        double range = totalCouponProbability + noWinWeight;
+        double r = ThreadLocalRandom.current().nextDouble(0.0, range);
+        if (r > totalCouponProbability) {
+            return null;
+        }
+
+        double cumulative = 0.0;
+        for (Coupon coupon : coupons) {
+            double weight = coupon.getWinProbability() == null ? 0.0 : Math.max(0.0, coupon.getWinProbability().doubleValue());
+            cumulative += weight;
+            if (r <= cumulative) {
+                return coupon;
+            }
+        }
+        return null;
     }
 
     private record RewardGrantResult(boolean granted, int rewardEnergy, int totalEnergy, int currentMileage) {

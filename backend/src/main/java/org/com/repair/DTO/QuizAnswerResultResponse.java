@@ -20,6 +20,18 @@ public record QuizAnswerResultResponse(
     int totalEnergy,
 
     @Schema(description = "当前公路里程进度", example = "55")
-    int currentMileage
+    int currentMileage,
+
+    @Schema(description = "抽奖结果")
+    CouponDrawResultResponse couponDrawResult,
+
+    @Schema(description = "是否已完成全程", example = "true")
+    boolean journeyCompleted,
+
+    @Schema(description = "是否已申领实体车贴", example = "false")
+    boolean grandPrizeStickerClaimed,
+
+    @Schema(description = "终极奖励发货状态", example = "NOT_CLAIMED")
+    String grandPrizeShipmentStatus
 ) {
 }

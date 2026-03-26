@@ -45,12 +45,16 @@ test('double click answer should only submit one checkin request', async ({ page
     });
   });
 
-  await page.route('**/api/gamification/quiz/random', async route => {
+  await page.route('**/api/gamification/journey/quiz?cityIndex=*', async route => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
         id: 1,
+        cityIndex: 0,
+        eventTitle: '遭遇早高峰拥堵',
+        eventDescription: '成都城区车流缓慢，如何通过驾驶方式减少不必要的油耗与排放？',
+        eventTheme: 'traffic',
         question: '以下哪种行为更环保？',
         options: JSON.stringify({ A: '急加速', B: '平稳驾驶', C: '长怠速', D: '频繁急刹' })
       })

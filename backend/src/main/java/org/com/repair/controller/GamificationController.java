@@ -2,6 +2,8 @@ package org.com.repair.controller;
 
 import org.com.repair.DTO.QuizAnswerRequest;
 import org.com.repair.DTO.QuizAnswerResultResponse;
+import org.com.repair.DTO.ClaimGrandPrizeRequest;
+import org.com.repair.DTO.ClaimGrandPrizeResponse;
 import org.com.repair.DTO.JourneyCheckinRequest;
 import org.com.repair.DTO.JourneyConfigResponse;
 import org.com.repair.DTO.JourneyStateResponse;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -59,10 +62,14 @@ public class GamificationController {
         return new ResponseEntity<>(account, HttpStatus.OK);
     }
 
-    @GetMapping("/quiz/random")
-    @Operation(summary = "随机获取一道环保问答题")
-    public ResponseEntity<QuizQuestionResponse> getRandomQuiz() {
-        QuizQuestionResponse quiz = gamificationService.getRandomQuizQuestion();
+    @GetMapping("/journey/quiz")
+    @Operation(summary = "按城市节点获取专属情景事件题")
+    public ResponseEntity<QuizQuestionResponse> getJourneyQuizByCity(
+            @Parameter(description = "城市节点索引", required = true)
+            @RequestParam Integer cityIndex,
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        QuizQuestionResponse quiz = gamificationService.getQuizQuestionForCity(cityIndex);
         return new ResponseEntity<>(quiz, HttpStatus.OK);
     }
 
@@ -103,6 +110,17 @@ public class GamificationController {
         requestUserContextResolver.requireCustomerRole(servletRequest);
         Long userId = requestUserContextResolver.requireUserId(servletRequest);
         QuizAnswerResultResponse result = gamificationService.checkinAndAnswer(userId, request);
+        return new ResponseEntity<>(result, HttpStatus.OK);
+    }
+
+    @PostMapping("/journey/claim-grand-prize")
+    @Operation(summary = "申领年度环保车主终极奖励")
+    public ResponseEntity<ClaimGrandPrizeResponse> claimGrandPrize(
+            @Valid @RequestBody ClaimGrandPrizeRequest request,
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        ClaimGrandPrizeResponse result = gamificationService.claimGrandPrize(userId, request);
         return new ResponseEntity<>(result, HttpStatus.OK);
     }
 
