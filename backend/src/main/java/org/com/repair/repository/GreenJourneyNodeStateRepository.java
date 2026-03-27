@@ -10,7 +10,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface GreenJourneyNodeStateRepository extends JpaRepository<GreenJourneyNodeState, Long> {
 
-    List<GreenJourneyNodeState> findByUserIdOrderByCityIndexAsc(Long userId);
+    List<GreenJourneyNodeState> findByUserIdAndMapIdOrderByCityIndexAsc(Long userId, Long mapId);
 
-    Optional<GreenJourneyNodeState> findByUserIdAndCityIndex(Long userId, Integer cityIndex);
+    Optional<GreenJourneyNodeState> findByUserIdAndMapIdAndCityIndex(Long userId, Long mapId, Integer cityIndex);
+
+    boolean existsByUserIdAndMapIdAndNodeState(Long userId, Long mapId, String nodeState);
 }

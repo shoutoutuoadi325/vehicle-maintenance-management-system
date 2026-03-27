@@ -12,7 +12,6 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -24,29 +23,19 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Entity
 @Table(
-        name = "green_journey_node_state",
+        name = "journey_map_node",
         uniqueConstraints = {
-        @UniqueConstraint(name = "uk_green_journey_user_map_city", columnNames = {"user_id", "map_id", "city_index"})
+                @UniqueConstraint(name = "uk_journey_map_node", columnNames = {"map_id", "city_index"})
         },
         indexes = {
-        @Index(name = "idx_green_journey_user", columnList = "user_id"),
-        @Index(name = "idx_green_journey_user_map", columnList = "user_id, map_id")
+                @Index(name = "idx_journey_map_node_map", columnList = "map_id")
         }
 )
-public class GreenJourneyNodeState {
-
-    public enum NodeState {
-        LOCKED,
-        UNLOCKED,
-        CHECKED_IN
-    }
+public class JourneyMapNode {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(name = "user_id", nullable = false)
-    private Long userId;
 
     @Column(name = "map_id", nullable = false)
     private Long mapId;
@@ -54,22 +43,20 @@ public class GreenJourneyNodeState {
     @Column(name = "city_index", nullable = false)
     private Integer cityIndex;
 
-    @Column(name = "node_state", nullable = false, length = 20)
-    private String nodeState;
+    @Column(name = "city_name", nullable = false, length = 120)
+    private String cityName;
 
-    @Column(name = "checkin_at")
-    private LocalDateTime checkinAt;
+    @Column(name = "required_mileage", nullable = false)
+    private Integer requiredMileage;
 
-    @Column(name = "next_retry_time")
-    private LocalDateTime nextRetryTime;
+    @Column(name = "x", nullable = false)
+    private Integer x;
+
+    @Column(name = "y", nullable = false)
+    private Integer y;
 
     @Column(name = "update_time", nullable = false)
     private LocalDateTime updateTime;
-
-    @Version
-    @Column(name = "version", nullable = false)
-    @Builder.Default
-    private Long version = 0L;
 
     @PrePersist
     @PreUpdate

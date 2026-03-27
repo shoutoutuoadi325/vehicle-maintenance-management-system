@@ -61,6 +61,12 @@ public class UserCouponWallet {
     @Column(name = "redeem_time")
     private LocalDateTime redeemTime;
 
+    @Column(name = "redeem_shop_id")
+    private Long redeemShopId;
+
+    @Column(name = "redeem_technician_id")
+    private Long redeemTechnicianId;
+
     @Column(name = "update_time", nullable = false)
     private LocalDateTime updateTime;
 

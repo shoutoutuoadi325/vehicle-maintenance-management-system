@@ -68,7 +68,12 @@ public class GlobalExceptionHandler {
 
     private HttpStatus mapGamificationStatus(GamificationErrorCode errorCode) {
         return switch (errorCode) {
-            case INVALID_CITY_INDEX, QUIZ_NOT_FOUND, QUIZ_CITY_MISMATCH, JOURNEY_NOT_COMPLETED, INVALID_SHIPPING_STATUS -> HttpStatus.BAD_REQUEST;
+            case INVALID_CITY_INDEX, QUIZ_NOT_FOUND, QUIZ_CITY_MISMATCH, JOURNEY_NOT_COMPLETED, INVALID_SHIPPING_STATUS,
+                    MAP_NOT_FOUND, MAP_NOT_ACTIVE, MAP_SELECTION_LOCKED,
+                    RANDOM_EVENT_NOT_PENDING, RANDOM_EVENT_QUIZ_MISMATCH,
+                    COUPON_WALLET_NOT_FOUND, COUPON_NOT_REDEEMABLE, COUPON_EXPIRED,
+                    REDEEM_OPERATOR_MISSING, REDEEM_SHOP_NOT_FOUND, REDEEM_TECHNICIAN_NOT_FOUND,
+                    RETRY_COOLDOWN_ACTIVE -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.CONFLICT;
         };
     }

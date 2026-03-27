@@ -2,11 +2,16 @@ package org.com.repair.controller;
 
 import org.com.repair.DTO.QuizAnswerRequest;
 import org.com.repair.DTO.QuizAnswerResultResponse;
+import org.com.repair.DTO.RandomEventAnswerRequest;
 import org.com.repair.DTO.ClaimGrandPrizeRequest;
 import org.com.repair.DTO.ClaimGrandPrizeResponse;
+import org.com.repair.DTO.CouponRedeemRequest;
+import org.com.repair.DTO.CouponRedeemResponse;
 import org.com.repair.DTO.JourneyGrandPrizeStatusResponse;
 import org.com.repair.DTO.JourneyCheckinRequest;
 import org.com.repair.DTO.JourneyConfigResponse;
+import org.com.repair.DTO.JourneyMapSelectRequest;
+import org.com.repair.DTO.JourneyMapSelectResponse;
 import org.com.repair.DTO.JourneyStateResponse;
 import org.com.repair.DTO.QuizQuestionResponse;
 import org.com.repair.entity.GreenEnergyAccount;
@@ -70,7 +75,8 @@ public class GamificationController {
             @RequestParam Integer cityIndex,
             HttpServletRequest servletRequest) {
         requestUserContextResolver.requireCustomerRole(servletRequest);
-        QuizQuestionResponse quiz = gamificationService.getQuizQuestionForCity(cityIndex);
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        QuizQuestionResponse quiz = gamificationService.getQuizQuestionForCity(userId, cityIndex);
         return new ResponseEntity<>(quiz, HttpStatus.OK);
     }
 
@@ -99,8 +105,20 @@ public class GamificationController {
     @Operation(summary = "获取零碳公路路线节点配置")
     public ResponseEntity<JourneyConfigResponse> getJourneyConfig(HttpServletRequest servletRequest) {
         requestUserContextResolver.requireCustomerRole(servletRequest);
-        JourneyConfigResponse config = gamificationService.getJourneyConfig();
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        JourneyConfigResponse config = gamificationService.getJourneyConfig(userId);
         return new ResponseEntity<>(config, HttpStatus.OK);
+    }
+
+    @PostMapping("/journey/map/select")
+    @Operation(summary = "选择零碳公路路线（仅初始状态可切换）")
+    public ResponseEntity<JourneyMapSelectResponse> selectJourneyMap(
+            @Valid @RequestBody JourneyMapSelectRequest request,
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        JourneyMapSelectResponse response = gamificationService.selectJourneyMap(userId, request);
+        return new ResponseEntity<>(response, HttpStatus.OK);
     }
 
     @PostMapping("/journey/checkin")
@@ -112,6 +130,37 @@ public class GamificationController {
         Long userId = requestUserContextResolver.requireUserId(servletRequest);
         QuizAnswerResultResponse result = gamificationService.checkinAndAnswer(userId, request);
         return new ResponseEntity<>(result, HttpStatus.OK);
+    }
+
+    @GetMapping("/journey/random-event/quiz")
+    @Operation(summary = "获取当前待处理的路途随机突发事件题目")
+    public ResponseEntity<QuizQuestionResponse> getPendingRandomEventQuiz(HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        QuizQuestionResponse response = gamificationService.getPendingRandomEventQuiz(userId);
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    @PostMapping("/journey/random-event/answer")
+    @Operation(summary = "提交路途随机突发事件答案并解除里程冻结")
+    public ResponseEntity<QuizAnswerResultResponse> answerPendingRandomEvent(
+            @Valid @RequestBody RandomEventAnswerRequest request,
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        QuizAnswerResultResponse response = gamificationService.answerPendingRandomEvent(userId, request);
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    @PostMapping("/coupon/redeem")
+    @Operation(summary = "核销用户卡包优惠券")
+    public ResponseEntity<CouponRedeemResponse> redeemCoupon(
+            @Valid @RequestBody CouponRedeemRequest request,
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        CouponRedeemResponse response = gamificationService.redeemCoupon(userId, request);
+        return new ResponseEntity<>(response, HttpStatus.OK);
     }
 
     @PostMapping("/journey/claim-grand-prize")

@@ -45,6 +45,29 @@ public class GreenEnergyAccount {
     @Schema(description = "当前公路里程进度", example = "45")
     private Integer currentMileage = 0;
 
+    @Column(name = "current_map_id", nullable = false)
+    @Builder.Default
+    @Schema(description = "当前正在进行的路线ID", example = "1")
+    private Long currentMapId = 1L;
+
+    @Column(name = "journey_status", nullable = false, length = 40)
+    @Builder.Default
+    @Schema(description = "旅程状态：NORMAL/PENDING_RANDOM_EVENT", example = "NORMAL")
+    private String journeyStatus = "NORMAL";
+
+    @Column(name = "pending_random_quiz_id")
+    @Schema(description = "待完成的随机事件题目ID", example = "12")
+    private Long pendingRandomQuizId;
+
+    @Column(name = "frozen_mileage", nullable = false)
+    @Builder.Default
+    @Schema(description = "冻结中的里程累计值", example = "40")
+    private Integer frozenMileage = 0;
+
+    @Column(name = "random_event_next_retry_time")
+    @Schema(description = "随机事件下一次可重试时间")
+    private LocalDateTime randomEventNextRetryTime;
+
     @Column(name = "update_time", nullable = false)
     @Schema(description = "更新时间")
     private LocalDateTime updateTime;
