@@ -13,9 +13,11 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.com.repair.DTO.CouponDrawResultResponse;
 import org.com.repair.DTO.ClaimGrandPrizeRequest;
 import org.com.repair.DTO.ClaimGrandPrizeResponse;
+import org.com.repair.DTO.AdminUpdateJourneyShipmentRequest;
 import org.com.repair.DTO.JourneyCheckinRequest;
 import org.com.repair.DTO.JourneyCityConfigResponse;
 import org.com.repair.DTO.JourneyConfigResponse;
+import org.com.repair.DTO.JourneyGrandPrizeStatusResponse;
 import org.com.repair.DTO.JourneyNodeResponse;
 import org.com.repair.DTO.JourneyStateResponse;
 import org.com.repair.DTO.QuizAnswerResultResponse;
@@ -132,6 +134,35 @@ public class GamificationService {
                 Boolean.TRUE.equals(saved.getStickerClaimed()),
                 Boolean.TRUE.equals(saved.getGrandPrizeGranted()),
                 saved.getShippingStatus());
+    }
+
+    @Transactional(readOnly = true)
+    public JourneyGrandPrizeStatusResponse getGrandPrizeStatus(Long userId) {
+        return toGrandPrizeStatusResponse(userId, journeyCompletionRecordRepository.findByUserId(userId).orElse(null));
+    }
+
+    @Transactional
+    public JourneyGrandPrizeStatusResponse adminUpdateGrandPrizeShipment(Long userId, AdminUpdateJourneyShipmentRequest request) {
+        JourneyCompletionRecord record = journeyCompletionRecordRepository.findByUserId(userId)
+                .orElseThrow(() -> new GamificationException(
+                        GamificationErrorCode.JOURNEY_NOT_COMPLETED,
+                        "该用户尚未完成全程"));
+
+        String shippingStatus = normalizeShippingStatus(request.shippingStatus());
+        record.setShippingStatus(shippingStatus);
+
+        String trackingNo = request.shipmentTrackingNo();
+        if (trackingNo != null) {
+            String trimmed = trackingNo.trim();
+            record.setShipmentTrackingNo(trimmed.isBlank() ? null : trimmed);
+        }
+
+        if ("SHIPPED".equals(shippingStatus) && record.getShippedAt() == null) {
+            record.setShippedAt(LocalDateTime.now());
+        }
+
+        JourneyCompletionRecord saved = journeyCompletionRecordRepository.save(record);
+        return toGrandPrizeStatusResponse(userId, saved);
     }
 
     @Transactional
@@ -576,6 +607,46 @@ public class GamificationService {
             return "";
         }
         return value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeShippingStatus(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (!"PREPARING".equals(normalized) && !"SHIPPED".equals(normalized) && !"DELIVERED".equals(normalized)) {
+            throw new GamificationException(
+                    GamificationErrorCode.INVALID_SHIPPING_STATUS,
+                    "非法发货状态，仅支持 PREPARING/SHIPPED/DELIVERED");
+        }
+        return normalized;
+    }
+
+    private JourneyGrandPrizeStatusResponse toGrandPrizeStatusResponse(Long userId, JourneyCompletionRecord record) {
+        if (record == null) {
+            return new JourneyGrandPrizeStatusResponse(
+                    userId,
+                    false,
+                    false,
+                    false,
+                    "NOT_CLAIMED",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+
+        return new JourneyGrandPrizeStatusResponse(
+                userId,
+                true,
+                Boolean.TRUE.equals(record.getStickerClaimed()),
+                Boolean.TRUE.equals(record.getGrandPrizeGranted()),
+                record.getShippingStatus(),
+                record.getConsigneeName(),
+                record.getConsigneePhone(),
+                record.getShippingAddress(),
+                record.getShipmentTrackingNo(),
+                record.getCompletedAt() != null ? record.getCompletedAt().toString() : null,
+                record.getShippedAt() != null ? record.getShippedAt().toString() : null);
     }
 
     private JourneyCompletionRecord ensureJourneyCompletionIfFinished(Long userId, Integer cityIndex) {

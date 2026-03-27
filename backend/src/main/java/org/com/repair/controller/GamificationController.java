@@ -4,6 +4,7 @@ import org.com.repair.DTO.QuizAnswerRequest;
 import org.com.repair.DTO.QuizAnswerResultResponse;
 import org.com.repair.DTO.ClaimGrandPrizeRequest;
 import org.com.repair.DTO.ClaimGrandPrizeResponse;
+import org.com.repair.DTO.JourneyGrandPrizeStatusResponse;
 import org.com.repair.DTO.JourneyCheckinRequest;
 import org.com.repair.DTO.JourneyConfigResponse;
 import org.com.repair.DTO.JourneyStateResponse;
@@ -121,6 +122,15 @@ public class GamificationController {
         requestUserContextResolver.requireCustomerRole(servletRequest);
         Long userId = requestUserContextResolver.requireUserId(servletRequest);
         ClaimGrandPrizeResponse result = gamificationService.claimGrandPrize(userId, request);
+        return new ResponseEntity<>(result, HttpStatus.OK);
+    }
+
+    @GetMapping("/journey/grand-prize/me")
+    @Operation(summary = "获取当前用户通关奖励状态")
+    public ResponseEntity<JourneyGrandPrizeStatusResponse> getMyGrandPrizeStatus(HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        JourneyGrandPrizeStatusResponse result = gamificationService.getGrandPrizeStatus(userId);
         return new ResponseEntity<>(result, HttpStatus.OK);
     }
 

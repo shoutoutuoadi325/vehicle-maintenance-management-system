@@ -5,11 +5,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.com.repair.DTO.AdminUpdateJourneyShipmentRequest;
 import org.com.repair.DTO.AdminResponse;
 import org.com.repair.DTO.AuthLoginResponse;
+import org.com.repair.DTO.JourneyGrandPrizeStatusResponse;
 import org.com.repair.DTO.NewAdminRequest;
+import org.com.repair.security.RequestUserContextResolver;
 import org.com.repair.service.AdminService;
 import org.com.repair.service.AuthTokenService;
+import org.com.repair.service.GamificationService;
 import org.com.repair.service.RepairOrderService;
 import org.com.repair.service.TechnicianService;
 import org.springframework.http.HttpStatus;
@@ -35,15 +39,21 @@ public class AdminController {
     private final RepairOrderService repairOrderService;
     private final TechnicianService technicianService;
     private final AuthTokenService authTokenService;
+    private final GamificationService gamificationService;
+    private final RequestUserContextResolver requestUserContextResolver;
     
     public AdminController(AdminService adminService,
                            RepairOrderService repairOrderService,
                            TechnicianService technicianService,
-                           AuthTokenService authTokenService) {
+                           AuthTokenService authTokenService,
+                           GamificationService gamificationService,
+                           RequestUserContextResolver requestUserContextResolver) {
         this.adminService = adminService;
         this.repairOrderService = repairOrderService;
         this.technicianService = technicianService;
         this.authTokenService = authTokenService;
+        this.gamificationService = gamificationService;
+        this.requestUserContextResolver = requestUserContextResolver;
     }
     
     @PostMapping
@@ -211,6 +221,16 @@ public class AdminController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ArrayList<>());
         }
+    }
+
+    @PutMapping("/journey-rewards/{userId}/shipment")
+    public ResponseEntity<JourneyGrandPrizeStatusResponse> updateJourneyRewardShipment(
+            @PathVariable Long userId,
+            @RequestBody AdminUpdateJourneyShipmentRequest request,
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireAdminRole(servletRequest);
+        JourneyGrandPrizeStatusResponse response = gamificationService.adminUpdateGrandPrizeShipment(userId, request);
+        return ResponseEntity.ok(response);
     }
     
     // 错误响应类

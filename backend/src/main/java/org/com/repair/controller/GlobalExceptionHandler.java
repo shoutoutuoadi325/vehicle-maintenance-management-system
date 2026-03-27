@@ -68,7 +68,7 @@ public class GlobalExceptionHandler {
 
     private HttpStatus mapGamificationStatus(GamificationErrorCode errorCode) {
         return switch (errorCode) {
-            case INVALID_CITY_INDEX, QUIZ_NOT_FOUND, QUIZ_CITY_MISMATCH, JOURNEY_NOT_COMPLETED -> HttpStatus.BAD_REQUEST;
+            case INVALID_CITY_INDEX, QUIZ_NOT_FOUND, QUIZ_CITY_MISMATCH, JOURNEY_NOT_COMPLETED, INVALID_SHIPPING_STATUS -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.CONFLICT;
         };
     }

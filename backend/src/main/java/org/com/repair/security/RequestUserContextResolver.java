@@ -32,6 +32,13 @@ public class RequestUserContextResolver {
         }
     }
 
+    public void requireAdminRole(HttpServletRequest request) {
+        String role = requireRole(request);
+        if (!"admin".equals(role)) {
+            throw new IllegalStateException("仅管理员允许访问该功能");
+        }
+    }
+
     public void ensurePathUserMatch(HttpServletRequest request, Long userIdInPath) {
         Long actualUserId = requireUserId(request);
         if (!actualUserId.equals(userIdInPath)) {

@@ -117,6 +117,10 @@
               <i class="fas fa-seedling"></i>
               <span>🌱 零碳之旅</span>
             </button>
+            <button class="action-card" @click="goToGrandPrizeStatus">
+              <i class="fas fa-award"></i>
+              <span>🏅 我的通关奖励</span>
+            </button>
           </div>
         </div>
 
@@ -934,6 +938,9 @@ export default {
     },
     goToZeroCarbonJourney() {
       this.$router.push('/customer/journey');
+    },
+    goToGrandPrizeStatus() {
+      this.$router.push('/customer/grand-prize');
     },
     async addVehicle() {
       try {
