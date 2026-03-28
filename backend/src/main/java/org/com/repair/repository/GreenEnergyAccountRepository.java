@@ -1,5 +1,6 @@
 package org.com.repair.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.com.repair.entity.GreenEnergyAccount;
@@ -16,6 +17,10 @@ public interface GreenEnergyAccountRepository extends JpaRepository<GreenEnergyA
      * 按用户ID查询绿色能量账户
      */
     Optional<GreenEnergyAccount> findByUserId(Long userId);
+
+        List<GreenEnergyAccount> findTop20ByOrderByTotalEnergyDescIdAsc();
+
+        List<GreenEnergyAccount> findTop20ByOrderByCurrentMileageDescIdAsc();
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update GreenEnergyAccount a set a.totalEnergy = a.totalEnergy + :energyDelta, " +

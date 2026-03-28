@@ -30,3 +30,19 @@ parent.
 To prevent this, the project POM contains empty overrides for these elements.
 If you manually switch to a different parent and actually want the inheritance, you need to remove those overrides.
 
+### Local Environment Quick Check (Windows)
+
+Use the helper script before running backend tests:
+
+```powershell
+Set-Location .\backend
+.\scripts\verify-dev-env.ps1
+```
+
+Run full backend tests after the check:
+
+```powershell
+Set-Location .\backend
+.\scripts\verify-dev-env.ps1 -RunTests
+```
+

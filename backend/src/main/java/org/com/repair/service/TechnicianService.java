@@ -1,6 +1,12 @@
 package org.com.repair.service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -20,6 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class TechnicianService {
+
+    private static final double BASELINE_FATIGUE = 0.1;
+    private static final long CONTINUOUS_BREAK_MINUTES = 30;
     
     private final TechnicianRepository technicianRepository;
     private final RepairOrderRepository repairOrderRepository;
@@ -195,6 +204,195 @@ public class TechnicianService {
         
         return new TechnicianStatistics(totalTasks, completedTasks, pendingTasks, 
                                       averageRating, totalEarnings, monthlyEarnings);
+    }
+
+    public TechnicianFatigueSnapshot getTechnicianFatigueSnapshot(Long technicianId) {
+        List<RepairOrder> allTasks = repairOrderRepository.findByTechnicianId(technicianId);
+        LocalDate today = LocalDate.now();
+        LocalDateTime now = LocalDateTime.now();
+
+        List<RepairOrder> todayWorkedOrders = allTasks.stream()
+                .filter(order -> isWorkedToday(order, today))
+                .collect(Collectors.toList());
+
+        int completedToday = (int) todayWorkedOrders.stream()
+                .filter(order -> order.getStatus() == RepairOrder.RepairStatus.COMPLETED)
+                .filter(order -> order.getCompletedAt() != null)
+                .filter(order -> toLocalDateTime(order.getCompletedAt()).toLocalDate().isEqual(today))
+                .count();
+
+        double continuousWorkingHours = calculateContinuousWorkingHours(todayWorkedOrders, today, now);
+        int nightOrdersToday = (int) todayWorkedOrders.stream()
+                .filter(this::isNightOrder)
+                .count();
+
+        double completedFactor = Math.min(1.0, completedToday / 8.0);
+        double continuousFactor = Math.min(1.0, continuousWorkingHours / 6.0);
+        double nightFactor = Math.min(1.0, nightOrdersToday / 3.0);
+
+        double fatigueLevel = BASELINE_FATIGUE
+                + completedFactor * 0.4
+                + continuousFactor * 0.35
+                + nightFactor * 0.15;
+
+        double normalizedFatigue = Math.max(0.0, Math.min(1.0, fatigueLevel));
+
+        return new TechnicianFatigueSnapshot(
+                normalizedFatigue,
+                completedToday,
+                continuousWorkingHours,
+                nightOrdersToday);
+    }
+
+    private boolean isWorkedToday(RepairOrder order, LocalDate today) {
+        if (order == null) {
+            return false;
+        }
+
+        LocalDateTime start = resolveWorkStart(order);
+        LocalDateTime end = resolveWorkEnd(order, LocalDateTime.now());
+        if (start == null || end == null || end.isBefore(start)) {
+            return false;
+        }
+
+        LocalDate startDate = start.toLocalDate();
+        LocalDate endDate = end.toLocalDate();
+        return !today.isBefore(startDate) && !today.isAfter(endDate);
+    }
+
+    private double calculateContinuousWorkingHours(List<RepairOrder> orders, LocalDate today, LocalDateTime now) {
+        List<WorkInterval> intervals = new ArrayList<>();
+
+        for (RepairOrder order : orders) {
+            LocalDateTime start = resolveWorkStart(order);
+            LocalDateTime end = resolveWorkEnd(order, now);
+            if (start == null || end == null || end.isBefore(start)) {
+                continue;
+            }
+
+            LocalDateTime dayStart = today.atStartOfDay();
+            LocalDateTime dayEnd = today.plusDays(1).atStartOfDay();
+
+            LocalDateTime clippedStart = start.isBefore(dayStart) ? dayStart : start;
+            LocalDateTime clippedEnd = end.isAfter(dayEnd) ? dayEnd : end;
+
+            if (!clippedEnd.isAfter(clippedStart)) {
+                continue;
+            }
+
+            intervals.add(new WorkInterval(clippedStart, clippedEnd));
+        }
+
+        if (intervals.isEmpty()) {
+            return 0.0;
+        }
+
+        intervals.sort(Comparator.comparing(WorkInterval::start));
+
+        LocalDateTime currentStart = intervals.get(0).start();
+        LocalDateTime currentEnd = intervals.get(0).end();
+        double maxHours = durationHours(currentStart, currentEnd);
+
+        for (int i = 1; i < intervals.size(); i++) {
+            WorkInterval next = intervals.get(i);
+            long gapMinutes = Duration.between(currentEnd, next.start()).toMinutes();
+            if (gapMinutes <= CONTINUOUS_BREAK_MINUTES) {
+                if (next.end().isAfter(currentEnd)) {
+                    currentEnd = next.end();
+                }
+            } else {
+                maxHours = Math.max(maxHours, durationHours(currentStart, currentEnd));
+                currentStart = next.start();
+                currentEnd = next.end();
+            }
+        }
+
+        maxHours = Math.max(maxHours, durationHours(currentStart, currentEnd));
+        return Math.round(maxHours * 100.0) / 100.0;
+    }
+
+    private boolean isNightOrder(RepairOrder order) {
+        LocalDateTime start = resolveWorkStart(order);
+        LocalDateTime end = resolveWorkEnd(order, LocalDateTime.now());
+        return isNightTime(start) || isNightTime(end);
+    }
+
+    private boolean isNightTime(LocalDateTime time) {
+        if (time == null) {
+            return false;
+        }
+        int hour = time.getHour();
+        return hour >= 22 || hour < 6;
+    }
+
+    private LocalDateTime resolveWorkStart(RepairOrder order) {
+        if (order.getStartedAt() != null) {
+            return toLocalDateTime(order.getStartedAt());
+        }
+        if (order.getCreatedAt() != null) {
+            return toLocalDateTime(order.getCreatedAt());
+        }
+        return null;
+    }
+
+    private LocalDateTime resolveWorkEnd(RepairOrder order, LocalDateTime now) {
+        if (order.getCompletedAt() != null) {
+            return toLocalDateTime(order.getCompletedAt());
+        }
+        if (order.getStatus() == RepairOrder.RepairStatus.IN_PROGRESS) {
+            return now;
+        }
+        LocalDateTime updatedAt = order.getUpdatedAt() != null ? toLocalDateTime(order.getUpdatedAt()) : null;
+        if (updatedAt != null) {
+            return updatedAt;
+        }
+        return resolveWorkStart(order);
+    }
+
+    private LocalDateTime toLocalDateTime(Date date) {
+        Instant instant = date.toInstant();
+        return LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+    }
+
+    private double durationHours(LocalDateTime start, LocalDateTime end) {
+        long minutes = Duration.between(start, end).toMinutes();
+        return Math.max(0.0, minutes / 60.0);
+    }
+
+    private record WorkInterval(LocalDateTime start, LocalDateTime end) {
+    }
+
+    public static class TechnicianFatigueSnapshot {
+        private final double fatigueLevel;
+        private final int completedToday;
+        private final double continuousWorkingHours;
+        private final int nightOrdersToday;
+
+        public TechnicianFatigueSnapshot(double fatigueLevel,
+                                         int completedToday,
+                                         double continuousWorkingHours,
+                                         int nightOrdersToday) {
+            this.fatigueLevel = fatigueLevel;
+            this.completedToday = completedToday;
+            this.continuousWorkingHours = continuousWorkingHours;
+            this.nightOrdersToday = nightOrdersToday;
+        }
+
+        public double getFatigueLevel() {
+            return fatigueLevel;
+        }
+
+        public int getCompletedToday() {
+            return completedToday;
+        }
+
+        public double getContinuousWorkingHours() {
+            return continuousWorkingHours;
+        }
+
+        public int getNightOrdersToday() {
+            return nightOrdersToday;
+        }
     }
     
     public Double getTechnicianMonthlyEarnings(Long technicianId, Integer year, Integer month) {

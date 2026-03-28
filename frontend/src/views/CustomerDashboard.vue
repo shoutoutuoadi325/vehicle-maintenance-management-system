@@ -356,6 +356,20 @@
             </form>
           </div>
 
+          <div v-if="diagnosisLoading" class="diagnosis-loading-tips">
+            <div class="loading-header">
+              <i class="fas fa-spinner fa-spin"></i>
+              <span>专家会诊进行中，正在交叉验证诊断结论...</span>
+            </div>
+            <div class="eco-tip-card">
+              <div class="eco-tip-label">
+                <i class="fas fa-leaf"></i>
+                零碳公路小知识
+              </div>
+              <p>{{ currentEcoTip }}</p>
+            </div>
+          </div>
+
           <!-- 诊断结果显示 -->
           <div v-if="diagnosisResult" class="diagnosis-result">
             <div class="result-header">
@@ -778,18 +792,36 @@ export default {
       diagnosisResult: null,
       diagnosisError: null,
       diagnosisLoading: false,
-      diagnosisHistory: []
+      diagnosisHistory: [],
+      ecoTips: [
+        '平稳起步可减少约 15% 的能耗与碳排放。',
+        '提前观察路况减少急刹急加速，可显著降低油耗。',
+        '轮胎胎压保持在建议区间，有助于降低滚阻。',
+        '合理规划路线避开拥堵，通常更省时也更低碳。'
+      ],
+      ecoTipIndex: 0,
+      ecoTipTimer: null
     }
   },
   computed: {
     isValidFeedback() {
       return this.feedbackForm.rating > 0 && this.feedbackForm.comment.trim().length > 0;
+    },
+    currentEcoTip() {
+      if (!this.ecoTips.length) {
+        return '平稳驾驶和规范保养，有助于减少排放并提升安全性。';
+      }
+      return this.ecoTips[this.ecoTipIndex % this.ecoTips.length];
     }
   },
   created() {
     this.loadUserInfo();
     this.loadData();
     this.loadDiagnosisHistory();
+    this.loadEcoTips();
+  },
+  beforeDestroy() {
+    this.stopEcoTipRotation();
   },
   methods: {
     loadUserInfo() {
@@ -1228,10 +1260,34 @@ export default {
         this.$emit('message', '催单失败：' + (error.response?.data?.message || '未知错误'), 'error');
       }
     },
+    async loadEcoTips() {
+      try {
+        const response = await this.$axios.get('/gamification/journey/eco-tips');
+        if (Array.isArray(response.data) && response.data.length > 0) {
+          this.ecoTips = response.data;
+          this.ecoTipIndex = 0;
+        }
+      } catch (error) {
+        console.warn('加载环保贴士失败，使用前端默认文案', error);
+      }
+    },
+    startEcoTipRotation() {
+      this.stopEcoTipRotation();
+      this.ecoTipTimer = setInterval(() => {
+        this.ecoTipIndex = (this.ecoTipIndex + 1) % Math.max(1, this.ecoTips.length);
+      }, 3000);
+    },
+    stopEcoTipRotation() {
+      if (this.ecoTipTimer) {
+        clearInterval(this.ecoTipTimer);
+        this.ecoTipTimer = null;
+      }
+    },
     async submitDiagnosis() {
       this.diagnosisLoading = true;
       this.diagnosisError = null;
       this.diagnosisResult = null;
+      this.startEcoTipRotation();
 
       try {
         const response = await this.$axios.post('/ai-diagnosis/diagnose', {
@@ -1270,6 +1326,7 @@ export default {
         this.diagnosisError = error.response?.data?.errorMessage || 'AI诊断服务暂时不可用，请稍后再试';
         this.$emit('message', this.diagnosisError, 'error');
       } finally {
+        this.stopEcoTipRotation();
         this.diagnosisLoading = false;
       }
     },
@@ -2089,6 +2146,53 @@ export default {
   font-size: 1.125rem;
   font-weight: 600;
   margin-top: 1rem;
+}
+
+.diagnosis-loading-tips {
+  background: white;
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-left: 4px solid #22c55e;
+  margin-bottom: 1.5rem;
+}
+
+.loading-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #1f2937;
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+}
+
+.loading-header i {
+  color: #3b82f6;
+}
+
+.eco-tip-card {
+  background: linear-gradient(120deg, #ecfdf5, #f0fdf4);
+  border: 1px solid #bbf7d0;
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.eco-tip-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #047857;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.eco-tip-card p {
+  margin: 0;
+  color: #14532d;
+  line-height: 1.5;
 }
 
 .diagnosis-result {

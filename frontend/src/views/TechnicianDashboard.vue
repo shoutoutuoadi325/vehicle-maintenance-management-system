@@ -392,6 +392,40 @@
           </form>
         </div>
       </div>
+
+      <section class="ai-copilot-panel">
+        <div class="copilot-header">
+          <h3><i class="fas fa-robot"></i> AI 技师 Copilot</h3>
+          <span class="copilot-tag">TECH MODE</span>
+        </div>
+        <p class="copilot-desc">输入故障现象，获取面向技师的排查路径、检测建议与维修提示。</p>
+        <textarea
+          v-model="copilotProblemDescription"
+          class="copilot-input"
+          rows="4"
+          placeholder="例如：冷车启动抖动，怠速不稳，故障灯偶发点亮，P0301..."
+        ></textarea>
+        <div class="copilot-actions">
+          <button
+            class="btn btn-primary"
+            type="button"
+            :disabled="copilotLoading || !copilotProblemDescription.trim()"
+            @click="askTechnicianCopilot"
+          >
+            <i class="fas" :class="copilotLoading ? 'fa-spinner fa-spin' : 'fa-paper-plane'"></i>
+            {{ copilotLoading ? '分析中...' : '发送诊断' }}
+          </button>
+        </div>
+        <div v-if="copilotError" class="copilot-error">
+          <i class="fas fa-exclamation-circle"></i>
+          {{ copilotError }}
+        </div>
+        <div v-if="copilotSuggestion" class="copilot-result">
+          <h4>诊断建议</h4>
+          <p v-if="copilotFaultType" class="copilot-fault-type">故障类型：{{ copilotFaultType }}</p>
+          <div class="copilot-markdown" v-html="renderedCopilotSuggestion"></div>
+        </div>
+      </section>
     </main>
 
     <!-- 拒绝订单确认模态框 -->
@@ -633,6 +667,8 @@
 </template>
 
 <script>
+import { marked } from 'marked';
+
 export default {
   name: 'TechnicianDashboard',
   data() {
@@ -669,7 +705,12 @@ export default {
       materials: [],
       materialRows: [
         { materialId: null, quantity: 1 }
-      ]
+      ],
+      copilotProblemDescription: '',
+      copilotSuggestion: '',
+      copilotFaultType: '',
+      copilotError: '',
+      copilotLoading: false
     }
   },
   computed: {
@@ -691,6 +732,9 @@ export default {
         }
         return sum;
       }, 0).toFixed(2);
+    },
+    renderedCopilotSuggestion() {
+      return marked.parse(this.copilotSuggestion || '');
     }
   },
   created() {
@@ -727,6 +771,34 @@ export default {
       } catch (error) {
         console.error('加载数据失败:', error);
         this.$emit('message', '加载数据失败', 'error');
+      }
+    },
+    async askTechnicianCopilot() {
+      const problemDescription = this.copilotProblemDescription.trim();
+      if (!problemDescription || this.copilotLoading) {
+        return;
+      }
+
+      this.copilotLoading = true;
+      this.copilotError = '';
+
+      try {
+        const response = await this.$axios.post('/ai-diagnosis/diagnose', {
+          problemDescription,
+          role: 'technician',
+          technicianId: this.user?.id || null
+        });
+
+        const payload = response.data || {};
+        this.copilotFaultType = payload.faultType || '';
+        this.copilotSuggestion = payload.suggestion || '未返回诊断建议';
+      } catch (error) {
+        console.error('技师 Copilot 诊断失败:', error);
+        this.copilotFaultType = '';
+        this.copilotSuggestion = '';
+        this.copilotError = error.response?.data?.errorMessage || error.response?.data?.message || 'AI 诊断失败，请稍后重试';
+      } finally {
+        this.copilotLoading = false;
       }
     },
     async loadTasks() {
@@ -1205,6 +1277,124 @@ export default {
   padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
+  position: relative;
+}
+
+.ai-copilot-panel {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  width: min(420px, calc(100vw - 2rem));
+  background: linear-gradient(140deg, #111827, #1f2937);
+  color: #f9fafb;
+  border-radius: 1rem;
+  padding: 1rem;
+  box-shadow: 0 18px 40px rgba(17, 24, 39, 0.35);
+  z-index: 200;
+}
+
+.copilot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.copilot-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.copilot-tag {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: #fde68a;
+}
+
+.copilot-desc {
+  font-size: 0.85rem;
+  color: #d1d5db;
+  margin: 0 0 0.75rem;
+}
+
+.copilot-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f9fafb;
+  resize: vertical;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.copilot-input::placeholder {
+  color: #9ca3af;
+}
+
+.copilot-actions {
+  margin-top: 0.75rem;
+}
+
+.copilot-error {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #fca5a5;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.copilot-result {
+  margin-top: 0.75rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+
+.copilot-result h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.copilot-fault-type {
+  margin: 0 0 0.4rem;
+  color: #fde68a;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.copilot-markdown {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.copilot-markdown :deep(h1),
+.copilot-markdown :deep(h2),
+.copilot-markdown :deep(h3) {
+  margin: 0.6rem 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.copilot-markdown :deep(p) {
+  margin: 0.25rem 0;
+}
+
+.copilot-markdown :deep(ul),
+.copilot-markdown :deep(ol) {
+  margin: 0.3rem 0 0.4rem 1rem;
+  padding: 0;
+}
+
+.copilot-markdown :deep(code) {
+  background: rgba(255, 255, 255, 0.14);
+  padding: 0.05rem 0.25rem;
+  border-radius: 0.25rem;
 }
 
 .tab-content {
@@ -1679,6 +1869,12 @@ export default {
   
   .task-actions {
     justify-content: space-between;
+  }
+
+  .ai-copilot-panel {
+    right: 0.75rem;
+    bottom: 0.75rem;
+    width: calc(100vw - 1.5rem);
   }
 }
 

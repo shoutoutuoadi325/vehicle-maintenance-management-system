@@ -19,15 +19,22 @@ import org.com.repair.DTO.CouponRedeemResponse;
 import org.com.repair.DTO.JourneyCheckinRequest;
 import org.com.repair.DTO.JourneyCityConfigResponse;
 import org.com.repair.DTO.JourneyConfigResponse;
+import org.com.repair.DTO.JourneyFootprintPageResponse;
+import org.com.repair.DTO.JourneyFootprintResponse;
 import org.com.repair.DTO.JourneyGrandPrizeStatusResponse;
 import org.com.repair.DTO.JourneyMapSelectRequest;
 import org.com.repair.DTO.JourneyMapSelectResponse;
 import org.com.repair.DTO.JourneyMapSummaryResponse;
 import org.com.repair.DTO.JourneyNodeResponse;
+import org.com.repair.DTO.JourneyGameplayOverviewResponse;
 import org.com.repair.DTO.JourneyStateResponse;
+import org.com.repair.DTO.LeaderboardItemResponse;
+import org.com.repair.DTO.LeaderboardResponse;
+import org.com.repair.DTO.LeaderboardType;
 import org.com.repair.DTO.QuizAnswerResultResponse;
 import org.com.repair.DTO.QuizQuestionResponse;
 import org.com.repair.DTO.RandomEventAnswerRequest;
+import org.com.repair.config.CacheConfig;
 import org.com.repair.entity.BrandPartner;
 import org.com.repair.entity.Coupon;
 import org.com.repair.entity.GreenDailyQuota;
@@ -37,10 +44,17 @@ import org.com.repair.entity.GreenJourneyNodeState.NodeState;
 import org.com.repair.entity.GreenQuiz;
 import org.com.repair.entity.GreenRewardLedger;
 import org.com.repair.entity.JourneyCompletionRecord;
+import org.com.repair.entity.JourneyFootprint;
 import org.com.repair.entity.JourneyMap;
 import org.com.repair.entity.JourneyMapNode;
+import org.com.repair.entity.User;
 import org.com.repair.entity.UserCouponWallet;
 import org.com.repair.event.EmissionReducedEvent;
+import org.com.repair.event.JourneyFootprintEvent;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.com.repair.exception.GamificationErrorCode;
 import org.com.repair.exception.GamificationException;
 import org.com.repair.repository.BrandPartnerRepository;
@@ -51,8 +65,10 @@ import org.com.repair.repository.GreenJourneyNodeStateRepository;
 import org.com.repair.repository.GreenQuizRepository;
 import org.com.repair.repository.GreenRewardLedgerRepository;
 import org.com.repair.repository.JourneyCompletionRecordRepository;
+import org.com.repair.repository.JourneyFootprintRepository;
 import org.com.repair.repository.JourneyMapNodeRepository;
 import org.com.repair.repository.JourneyMapRepository;
+import org.com.repair.repository.UserRepository;
 import org.com.repair.repository.UserCouponWalletRepository;
 import org.com.repair.repository.TechnicianRepository;
 import org.com.repair.service.GreenEnergyAccountProvisioningService.ConcurrentAccountCreationException;
@@ -60,6 +76,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -74,6 +92,10 @@ public class GamificationService {
     private static final String ACTION_EMISSION_REWARD = "EMISSION_REWARD";
     private static final String ACTION_CITY_CHECKIN_REWARD = "CITY_CHECKIN_REWARD";
     private static final String ACTION_RANDOM_EVENT_TRIGGER = "RANDOM_EVENT_TRIGGER";
+    private static final String FOOTPRINT_EVENT_CHECKIN_CITY = "CHECKIN_CITY";
+    private static final String FOOTPRINT_EVENT_TRIGGER_RANDOM_EVENT = "TRIGGER_RANDOM_EVENT";
+    private static final String FOOTPRINT_EVENT_DRAW_COUPON = "DRAW_COUPON";
+    private static final String FOOTPRINT_EVENT_REACH_DESTINATION = "REACH_DESTINATION";
     private static final String JOURNEY_STATUS_NORMAL = "NORMAL";
     private static final String JOURNEY_STATUS_PENDING_RANDOM_EVENT = "PENDING_RANDOM_EVENT";
 
@@ -98,7 +120,10 @@ public class GamificationService {
     private final JourneyMapRepository journeyMapRepository;
     private final JourneyMapNodeRepository journeyMapNodeRepository;
     private final GamificationRuleService gamificationRuleService;
+    private final JourneyFootprintRepository journeyFootprintRepository;
+    private final UserRepository userRepository;
     private final GreenEnergyAccountProvisioningService greenEnergyAccountProvisioningService;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     public GamificationService(
             GreenEnergyAccountRepository greenEnergyAccountRepository,
@@ -114,7 +139,10 @@ public class GamificationService {
             JourneyMapRepository journeyMapRepository,
             JourneyMapNodeRepository journeyMapNodeRepository,
             GamificationRuleService gamificationRuleService,
-            GreenEnergyAccountProvisioningService greenEnergyAccountProvisioningService) {
+            JourneyFootprintRepository journeyFootprintRepository,
+            UserRepository userRepository,
+            GreenEnergyAccountProvisioningService greenEnergyAccountProvisioningService,
+            ApplicationEventPublisher applicationEventPublisher) {
         this.greenEnergyAccountRepository = greenEnergyAccountRepository;
         this.greenDailyQuotaRepository = greenDailyQuotaRepository;
         this.greenQuizRepository = greenQuizRepository;
@@ -128,7 +156,10 @@ public class GamificationService {
         this.journeyMapRepository = journeyMapRepository;
         this.journeyMapNodeRepository = journeyMapNodeRepository;
         this.gamificationRuleService = gamificationRuleService;
+        this.journeyFootprintRepository = journeyFootprintRepository;
+        this.userRepository = userRepository;
         this.greenEnergyAccountProvisioningService = greenEnergyAccountProvisioningService;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     @Transactional
@@ -222,6 +253,70 @@ public class GamificationService {
     }
 
     @Transactional(readOnly = true)
+    public JourneyFootprintPageResponse getJourneyFootprints(Long userId, int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(100, Math.max(1, size));
+
+        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<JourneyFootprint> footprintPage = journeyFootprintRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
+
+        List<JourneyFootprintResponse> items = footprintPage.getContent().stream()
+            .map(item -> new JourneyFootprintResponse(
+                item.getId(),
+                item.getMapId(),
+                item.getEventType(),
+                item.getEventDescription(),
+                item.getCreatedAt() != null ? item.getCreatedAt().toString() : null))
+            .toList();
+
+        return new JourneyFootprintPageResponse(
+            footprintPage.getNumber(),
+            footprintPage.getSize(),
+            footprintPage.getTotalElements(),
+            footprintPage.getTotalPages(),
+            items);
+    }
+
+    @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheConfig.GAMIFICATION_LEADERBOARD_CACHE, key = "#type.name()")
+    public LeaderboardResponse getLeaderboard(LeaderboardType type) {
+        if (type == null) {
+            throw new IllegalArgumentException("排行榜类型不能为空");
+        }
+
+        List<GreenEnergyAccount> rankingAccounts = switch (type) {
+            case TOTAL_ENERGY -> greenEnergyAccountRepository.findTop20ByOrderByTotalEnergyDescIdAsc();
+            case CURRENT_MILEAGE -> greenEnergyAccountRepository.findTop20ByOrderByCurrentMileageDescIdAsc();
+        };
+
+        List<Long> userIds = rankingAccounts.stream().map(GreenEnergyAccount::getUserId).toList();
+        List<Long> mapIds = rankingAccounts.stream().map(GreenEnergyAccount::getCurrentMapId).distinct().toList();
+
+        Map<Long, User> userMap = userRepository.findAllById(userIds).stream()
+                .collect(java.util.stream.Collectors.toMap(User::getId, user -> user));
+        Map<Long, JourneyMap> mapMap = journeyMapRepository.findAllById(mapIds).stream()
+                .collect(java.util.stream.Collectors.toMap(JourneyMap::getId, map -> map));
+
+        List<LeaderboardItemResponse> items = new ArrayList<>();
+        for (int i = 0; i < rankingAccounts.size(); i++) {
+            GreenEnergyAccount account = rankingAccounts.get(i);
+            User user = userMap.get(account.getUserId());
+            JourneyMap map = mapMap.get(account.getCurrentMapId());
+
+            items.add(new LeaderboardItemResponse(
+                    i + 1,
+                    account.getUserId(),
+                    maskUsername(user != null ? user.getUsername() : null),
+                    maskPhone(user != null ? user.getPhone() : null),
+                    map != null ? map.getMapName() : "未知路线",
+                    account.getTotalEnergy(),
+                    account.getCurrentMileage()));
+        }
+
+        return new LeaderboardResponse(type.name(), LocalDateTime.now().toString(), items);
+    }
+
+    @Transactional(readOnly = true)
     public JourneyConfigResponse getJourneyConfig(Long userId) {
         GreenEnergyAccount account = getOrCreateAccountInternal(userId);
         Long currentMapId = account.getCurrentMapId();
@@ -246,6 +341,40 @@ public class GamificationService {
 
         List<JourneyCityConfigResponse> nodes = buildJourneyCityConfig(currentMapId);
         return new JourneyConfigResponse(maps, currentMapId, nodes);
+    }
+
+    @Transactional(readOnly = true)
+    public JourneyGameplayOverviewResponse getJourneyGameplayOverview(Long userId) {
+        JourneyConfigResponse config = getJourneyConfig(userId);
+        JourneyStateResponse state = getJourneyState(userId);
+        JourneyGrandPrizeStatusResponse grandPrizeStatus = getGrandPrizeStatus(userId);
+
+        QuizQuestionResponse pendingRandomEvent = null;
+        try {
+            pendingRandomEvent = getPendingRandomEventQuiz(userId);
+        } catch (GamificationException ex) {
+            if (ex.getErrorCode() != GamificationErrorCode.RANDOM_EVENT_NOT_PENDING) {
+                throw ex;
+            }
+        }
+
+        return new JourneyGameplayOverviewResponse(
+                config,
+                state,
+                pendingRandomEvent,
+                grandPrizeStatus);
+    }
+
+    @Transactional(readOnly = true)
+    public List<String> getEcoWaitingTips() {
+        return List.of(
+                "平稳起步和缓慢加速通常可减少约 15% 的能耗与排放。",
+                "保持轮胎胎压在建议区间，可降低滚阻并延长轮胎寿命。",
+                "提前观察路况、减少急刹急加速，有助于节油并减少刹车磨损。",
+                "合理规划路线避开严重拥堵，可同时降低碳排放与通行时间。",
+                "定期保养空滤、机油与火花塞，能让发动机维持更高燃烧效率。",
+                "新能源车保持合理充电区间并管理温度，通常更利于综合效率。"
+        );
     }
 
     public QuizQuestionResponse getQuizQuestionForCity(Long userId, Integer cityIndex) {
@@ -566,9 +695,16 @@ public class GamificationService {
         targetNode.setNextRetryTime(null);
         greenJourneyNodeStateRepository.save(targetNode);
 
+        JourneyMapNode cityNode = getMapNodeOrThrow(mapId, cityIndex);
+        publishJourneyFootprint(
+            userId,
+            mapId,
+            FOOTPRINT_EVENT_CHECKIN_CITY,
+            "成功抵达" + cityNode.getCityName());
+
         reconcileNodeStates(userId, mapId, grant.currentMileage());
 
-        CouponDrawResultResponse couponDrawResult = drawCouponForCity(userId, cityIndex, sourceId);
+        CouponDrawResultResponse couponDrawResult = drawCouponForCity(userId, mapId, cityIndex, sourceId);
         JourneyCompletionRecord completionRecord = ensureJourneyCompletionIfFinished(userId, mapId, cityIndex);
 
         return new QuizAnswerResultResponse(
@@ -763,6 +899,12 @@ public class GamificationService {
         latest.setJourneyStatus(JOURNEY_STATUS_PENDING_RANDOM_EVENT);
         latest.setPendingRandomQuizId(randomQuiz.getId());
         greenEnergyAccountRepository.save(latest);
+
+        publishJourneyFootprint(
+            userId,
+            latest.getCurrentMapId(),
+            FOOTPRINT_EVENT_TRIGGER_RANDOM_EVENT,
+            "在路途中触发了随机问答事件");
 
         logger.info("工单 {} 触发随机突发事件: userId={}, quizId={}", repairOrderId, userId, randomQuiz.getId());
     }
@@ -1141,16 +1283,24 @@ public class GamificationService {
         }
 
         return journeyCompletionRecordRepository.findByUserId(userId)
-                .orElseGet(() -> journeyCompletionRecordRepository.save(JourneyCompletionRecord.builder()
+                .orElseGet(() -> {
+                    JourneyCompletionRecord created = journeyCompletionRecordRepository.save(JourneyCompletionRecord.builder()
                         .userId(userId)
                         .completedAt(LocalDateTime.now())
                         .grandPrizeGranted(false)
                         .stickerClaimed(false)
                         .shippingStatus("NOT_CLAIMED")
-                        .build()));
+                        .build());
+                    publishJourneyFootprint(
+                        userId,
+                        mapId,
+                        FOOTPRINT_EVENT_REACH_DESTINATION,
+                        "成功通关，抵达终点站");
+                    return created;
+                });
     }
 
-    private CouponDrawResultResponse drawCouponForCity(Long userId, Integer cityIndex, String sourceId) {
+    private CouponDrawResultResponse drawCouponForCity(Long userId, Long mapId, Integer cityIndex, String sourceId) {
         List<Coupon> cityCoupons = couponRepository.findActiveByCityIndex(cityIndex, LocalDateTime.now());
         if (cityCoupons.isEmpty()) {
             return new CouponDrawResultResponse(false, null, null, null, null, null, cityIndex);
@@ -1180,6 +1330,12 @@ public class GamificationService {
                 .expireTime(selected.getExpireTime())
                 .build();
         userCouponWalletRepository.save(wallet);
+
+    publishJourneyFootprint(
+        userId,
+        mapId,
+        FOOTPRINT_EVENT_DRAW_COUPON,
+        "抽中了优惠券：" + selected.getCouponTitle());
 
         return new CouponDrawResultResponse(
                 true,
@@ -1235,5 +1391,62 @@ public class GamificationService {
             double remainingToNextStationPercent,
             double currentX,
             double currentY) {
+    }
+
+    private void publishJourneyFootprint(Long userId, Long mapId, String eventType, String eventDescription) {
+        if (userId == null || mapId == null || eventType == null || eventDescription == null || eventDescription.isBlank()) {
+            return;
+        }
+        applicationEventPublisher.publishEvent(new JourneyFootprintEvent(userId, mapId, eventType, eventDescription));
+    }
+
+    private String maskUsername(String username) {
+        if (username == null || username.isBlank()) {
+            return "***";
+        }
+        String trimmed = username.trim();
+        if (trimmed.length() <= 1) {
+            return "*";
+        }
+        if (trimmed.length() == 2) {
+            return trimmed.charAt(0) + "*";
+        }
+        return trimmed.charAt(0) + "***" + trimmed.charAt(trimmed.length() - 1);
+    }
+
+    private String maskPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return "****";
+        }
+        String trimmed = phone.trim();
+        if (trimmed.length() < 7) {
+            return "****";
+        }
+        return trimmed.substring(0, 3) + "****" + trimmed.substring(trimmed.length() - 4);
+    }
+
+    private String maskUsername(String username) {
+        if (username == null || username.isBlank()) {
+            return "***";
+        }
+        String trimmed = username.trim();
+        if (trimmed.length() <= 1) {
+            return "*";
+        }
+        if (trimmed.length() == 2) {
+            return trimmed.charAt(0) + "*";
+        }
+        return trimmed.charAt(0) + "***" + trimmed.charAt(trimmed.length() - 1);
+    }
+
+    private String maskPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return "****";
+        }
+        String digits = phone.trim();
+        if (digits.length() < 7) {
+            return "****";
+        }
+        return digits.substring(0, 3) + "****" + digits.substring(digits.length() - 4);
     }
 }

@@ -15,10 +15,25 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 public class CacheConfig {
 
     public static final String GAMIFICATION_RULES_CACHE = "gamificationRules";
+    public static final String GAMIFICATION_LEADERBOARD_CACHE = "gamificationLeaderboard";
 
     @Bean
     public CacheManager cacheManager() {
-        CaffeineCacheManager cacheManager = new CaffeineCacheManager(GAMIFICATION_RULES_CACHE);
+    CaffeineCacheManager cacheManager = new CaffeineCacheManager();
+    cacheManager.registerCustomCache(
+        GAMIFICATION_RULES_CACHE,
+        Caffeine.newBuilder()
+            .expireAfterWrite(15, TimeUnit.SECONDS)
+            .initialCapacity(32)
+            .maximumSize(256)
+            .build());
+    cacheManager.registerCustomCache(
+        GAMIFICATION_LEADERBOARD_CACHE,
+        Caffeine.newBuilder()
+            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .initialCapacity(16)
+            .maximumSize(64)
+            .build());
         cacheManager.setCaffeine(Caffeine.newBuilder()
                 .expireAfterWrite(15, TimeUnit.SECONDS)
                 .initialCapacity(32)

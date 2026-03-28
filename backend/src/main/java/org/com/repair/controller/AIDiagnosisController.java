@@ -20,7 +20,10 @@ public class AIDiagnosisController {
 
     @PostMapping("/diagnose")
     public ResponseEntity<AIDiagnosisResponse> diagnoseFault(@Valid @RequestBody AIDiagnosisRequest request) {
-        AIDiagnosisResponse response = aiDiagnosisService.diagnoseFault(request.getProblemDescription());
+        AIDiagnosisResponse response = aiDiagnosisService.diagnoseFault(
+                request.getProblemDescription(),
+                request.getRole(),
+                request.getTechnicianId());
         
         if (response.isSuccess()) {
             return new ResponseEntity<>(response, HttpStatus.OK);

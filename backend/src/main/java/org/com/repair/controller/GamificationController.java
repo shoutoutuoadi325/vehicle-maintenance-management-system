@@ -1,5 +1,7 @@
 package org.com.repair.controller;
 
+import java.util.List;
+
 import org.com.repair.DTO.QuizAnswerRequest;
 import org.com.repair.DTO.QuizAnswerResultResponse;
 import org.com.repair.DTO.RandomEventAnswerRequest;
@@ -8,11 +10,15 @@ import org.com.repair.DTO.ClaimGrandPrizeResponse;
 import org.com.repair.DTO.CouponRedeemRequest;
 import org.com.repair.DTO.CouponRedeemResponse;
 import org.com.repair.DTO.JourneyGrandPrizeStatusResponse;
+import org.com.repair.DTO.JourneyFootprintPageResponse;
+import org.com.repair.DTO.JourneyGameplayOverviewResponse;
 import org.com.repair.DTO.JourneyCheckinRequest;
 import org.com.repair.DTO.JourneyConfigResponse;
 import org.com.repair.DTO.JourneyMapSelectRequest;
 import org.com.repair.DTO.JourneyMapSelectResponse;
 import org.com.repair.DTO.JourneyStateResponse;
+import org.com.repair.DTO.LeaderboardResponse;
+import org.com.repair.DTO.LeaderboardType;
 import org.com.repair.DTO.QuizQuestionResponse;
 import org.com.repair.entity.GreenEnergyAccount;
 import org.com.repair.security.RequestUserContextResolver;
@@ -101,6 +107,15 @@ public class GamificationController {
         return new ResponseEntity<>(state, HttpStatus.OK);
     }
 
+    @GetMapping("/journey/overview")
+    @Operation(summary = "获取零碳公路聚合玩法视图")
+    public ResponseEntity<JourneyGameplayOverviewResponse> getJourneyOverview(HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        JourneyGameplayOverviewResponse response = gamificationService.getJourneyGameplayOverview(userId);
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
     @GetMapping("/journey/config")
     @Operation(summary = "获取零碳公路路线节点配置")
     public ResponseEntity<JourneyConfigResponse> getJourneyConfig(HttpServletRequest servletRequest) {
@@ -108,6 +123,13 @@ public class GamificationController {
         Long userId = requestUserContextResolver.requireUserId(servletRequest);
         JourneyConfigResponse config = gamificationService.getJourneyConfig(userId);
         return new ResponseEntity<>(config, HttpStatus.OK);
+    }
+
+    @GetMapping("/journey/eco-tips")
+    @Operation(summary = "获取AI等待期间展示的绿色导向文案")
+    public ResponseEntity<List<String>> getEcoTips(HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        return new ResponseEntity<>(gamificationService.getEcoWaitingTips(), HttpStatus.OK);
     }
 
     @PostMapping("/journey/map/select")
@@ -160,6 +182,28 @@ public class GamificationController {
         requestUserContextResolver.requireCustomerRole(servletRequest);
         Long userId = requestUserContextResolver.requireUserId(servletRequest);
         CouponRedeemResponse response = gamificationService.redeemCoupon(userId, request);
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    @GetMapping("/journey/footprints")
+    @Operation(summary = "分页查询当前用户旅行足迹")
+    public ResponseEntity<JourneyFootprintPageResponse> getJourneyFootprints(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        Long userId = requestUserContextResolver.requireUserId(servletRequest);
+        JourneyFootprintPageResponse response = gamificationService.getJourneyFootprints(userId, page, size);
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    @GetMapping("/leaderboard")
+    @Operation(summary = "获取零碳先锋排行榜")
+    public ResponseEntity<LeaderboardResponse> getLeaderboard(
+            @RequestParam LeaderboardType type,
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireCustomerRole(servletRequest);
+        LeaderboardResponse response = gamificationService.getLeaderboard(type);
         return new ResponseEntity<>(response, HttpStatus.OK);
     }
 
