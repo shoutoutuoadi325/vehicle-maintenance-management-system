@@ -93,6 +93,32 @@
           </div>
         </div>
 
+        <!-- 爱车健康档案 -->
+        <div v-if="maintenanceAlerts.length > 0" class="health-banner">
+          <div class="health-banner-icon">
+            <i class="fas fa-exclamation-circle"></i>
+          </div>
+          <div class="health-banner-content">
+            <h3>
+              保养提醒
+              <span class="alert-badge">{{ maintenanceAlerts.length }}</span>
+            </h3>
+            <div class="health-alert-list">
+              <div
+                v-for="alert in maintenanceAlerts"
+                :key="alert.id"
+                class="health-alert-item"
+              >
+                <i :class="alert.alertType === 'MILEAGE_OVERDUE' ? 'fas fa-road' : 'fas fa-calendar-times'"></i>
+                <span>{{ alert.message }}</span>
+              </div>
+            </div>
+          </div>
+          <button @click="activeTab = 'ai-diagnosis'" class="btn btn-warning btn-small">
+            <i class="fas fa-brain"></i> AI问诊
+          </button>
+        </div>
+
         <!-- 快速操作 -->
         <div class="quick-actions">
           <h2>快速操作</h2>
@@ -312,110 +338,9 @@
       <!-- AI诊断页面 -->
       <div v-if="activeTab === 'ai-diagnosis'" class="tab-content">
         <div class="section-header">
-          <h2><i class="fas fa-brain"></i> AI智能故障诊断</h2>
+          <h2><i class="fas fa-brain"></i> AI智能故障问诊</h2>
         </div>
-        
-        <div class="ai-diagnosis-container">
-          <div class="diagnosis-intro">
-            <div class="intro-card">
-              <i class="fas fa-info-circle"></i>
-              <h3>智能诊断助手</h3>
-              <p>描述您车辆的故障现象，AI将为您分析可能的故障类型并提供维修建议</p>
-            </div>
-          </div>
-
-          <div class="diagnosis-form-section">
-            <form @submit.prevent="submitDiagnosis" class="diagnosis-form">
-              <div class="form-group">
-                <label class="form-label">
-                  <i class="fas fa-clipboard-list"></i> 故障描述 
-                  <span class="required">*</span>
-                </label>
-                <textarea 
-                  v-model="diagnosisForm.problemDescription" 
-                  class="form-input diagnosis-textarea" 
-                  rows="6"
-                  placeholder="请详细描述车辆的故障现象，例如：
-- 启动困难、发动机异响
-- 刹车异常、方向盘抖动
-- 油耗增加、动力不足
-等等，描述越详细，诊断结果越准确。"
-                  required
-                  :disabled="diagnosisLoading"
-                ></textarea>
-              </div>
-              
-              <button 
-                type="submit" 
-                class="btn btn-primary btn-large"
-                :disabled="diagnosisLoading || !diagnosisForm.problemDescription.trim()"
-              >
-                <i :class="diagnosisLoading ? 'fas fa-spinner fa-spin' : 'fas fa-search'"></i>
-                {{ diagnosisLoading ? 'AI诊断中...' : '开始诊断' }}
-              </button>
-            </form>
-          </div>
-
-          <!-- 诊断结果显示 -->
-          <div v-if="diagnosisResult" class="diagnosis-result">
-            <div class="result-header">
-              <i class="fas fa-check-circle"></i>
-              <h3>诊断结果</h3>
-            </div>
-            
-            <div class="result-content">
-              <div class="result-item">
-                <div class="result-label">
-                  <i class="fas fa-exclamation-triangle"></i> 故障类型
-                </div>
-                <div class="result-value fault-type">{{ diagnosisResult.faultType }}</div>
-              </div>
-              
-              <div class="result-item">
-                <div class="result-label">
-                  <i class="fas fa-lightbulb"></i> 维修建议
-                </div>
-                <div class="result-value suggestion">{{ diagnosisResult.suggestion }}</div>
-              </div>
-            </div>
-
-            <div class="result-actions">
-              <button @click="createOrderFromDiagnosis" class="btn btn-primary">
-                <i class="fas fa-plus"></i> 根据诊断创建维修单
-              </button>
-              <button @click="clearDiagnosis" class="btn btn-outline">
-                <i class="fas fa-redo"></i> 重新诊断
-              </button>
-            </div>
-          </div>
-
-          <!-- 错误提示 -->
-          <div v-if="diagnosisError" class="diagnosis-error">
-            <i class="fas fa-exclamation-circle"></i>
-            <p>{{ diagnosisError }}</p>
-            <button @click="diagnosisError = null" class="btn btn-outline btn-small">
-              关闭
-            </button>
-          </div>
-
-          <!-- 历史诊断记录 -->
-          <div v-if="diagnosisHistory.length > 0" class="diagnosis-history">
-            <h3><i class="fas fa-history"></i> 最近诊断记录</h3>
-            <div class="history-list">
-              <div v-for="(item, index) in diagnosisHistory" :key="index" class="history-item">
-                <div class="history-header">
-                  <span class="history-time">{{ formatDate(item.timestamp) }}</span>
-                </div>
-                <div class="history-problem">
-                  <strong>问题：</strong>{{ item.problemDescription }}
-                </div>
-                <div class="history-result">
-                  <strong>诊断：</strong>{{ item.faultType }}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <AIDiagnosisClient @create-order="handleCreateOrderFromDiagnosis" />
       </div>
     </main>
 
@@ -719,8 +644,11 @@
 </template>
 
 <script>
+import AIDiagnosisClient from '../components/AIDiagnosisClient.vue';
+
 export default {
   name: 'CustomerDashboard',
+  components: { AIDiagnosisClient },
   data() {
     return {
       user: null,
@@ -778,7 +706,8 @@ export default {
       diagnosisResult: null,
       diagnosisError: null,
       diagnosisLoading: false,
-      diagnosisHistory: []
+      diagnosisHistory: [],
+      maintenanceAlerts: []
     }
   },
   computed: {
@@ -825,6 +754,7 @@ export default {
           this.loadFeedbacks()
         ]);
         this.calculateStatistics();
+        await this.loadMaintenanceAlerts();
       } catch (error) {
         console.error('加载数据失败:', error);
         this.$emit('message', '加载数据失败', 'error');
@@ -1305,6 +1235,31 @@ export default {
           this.diagnosisHistory = [];
         }
       }
+    },
+    async loadMaintenanceAlerts() {
+      if (!this.user || !this.user.id) return;
+      try {
+        const token = localStorage.getItem('token');
+        // Fetch alerts for each of the user's vehicles
+        const allAlerts = [];
+        for (const v of this.vehicles) {
+          const resp = await this.$axios.get(`/maintenance-alerts/vehicle/${v.id}/unread`);
+          if (resp.data && resp.data.length) {
+            allAlerts.push(...resp.data);
+          }
+        }
+        this.maintenanceAlerts = allAlerts;
+      } catch (err) {
+        console.warn('加载保养提醒失败', err);
+      }
+    },
+    handleCreateOrderFromDiagnosis(result, problemDescription) {
+      this.activeTab = 'orders';
+      this.showCreateOrder = true;
+      const diagnosisText = `${problemDescription}\n\nAI诊断结果：\n故障类型：${result.faultType}\n` +
+        (result.severityLevel ? `严重等级：${result.severityLevel}\n` : '') +
+        (result.suggestion ? `建议：${result.suggestion}` : '');
+      this.repairOrderForm.description = diagnosisText;
     }
   }
 }
@@ -1502,6 +1457,82 @@ export default {
   font-size: 1.5rem;
   color: #1f2937;
   margin: 0;
+}
+
+.health-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border: 1px solid #f59e0b;
+  border-left: 4px solid #f59e0b;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.health-banner-icon {
+  color: #d97706;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.health-banner-content {
+  flex: 1;
+}
+
+.health-banner-content h3 {
+  margin: 0 0 0.5rem;
+  color: #92400e;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.alert-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef4444;
+  color: white;
+  border-radius: 999px;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0 0.3rem;
+}
+
+.health-alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.health-alert-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #78350f;
+}
+
+.health-alert-item i {
+  color: #d97706;
+  flex-shrink: 0;
+}
+
+.btn-warning {
+  background: #f59e0b;
+  color: white;
+  border: none;
+  flex-shrink: 0;
+}
+
+.btn-warning:hover {
+  background: #d97706;
 }
 
 .quick-actions {

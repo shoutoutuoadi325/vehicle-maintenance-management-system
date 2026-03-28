@@ -7,6 +7,7 @@ import ZeroCarbonJourney from '../views/ZeroCarbonJourney.vue'
 import GrandPrizeStatus from '../views/GrandPrizeStatus.vue'
 import TechnicianDashboard from '../views/TechnicianDashboard.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
+import DispatchBoard from '../views/DispatchBoard.vue'
 
 Vue.use(VueRouter)
 
@@ -50,6 +51,12 @@ const routes = [
     path: '/admin',
     name: 'AdminDashboard',
     component: AdminDashboard,
+    meta: { requiresAuth: true, role: 'admin' }
+  },
+  {
+    path: '/admin/dispatch',
+    name: 'DispatchBoard',
+    component: DispatchBoard,
     meta: { requiresAuth: true, role: 'admin' }
   }
 ]

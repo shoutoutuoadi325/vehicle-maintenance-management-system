@@ -563,6 +563,64 @@
               </div>
             </div>
           </div>
+
+          <!-- AI维修方案建议 -->
+          <div class="detail-section ai-suggestion-section">
+            <div class="ai-suggestion-header" @click="toggleAISuggestion">
+              <h3><i class="fas fa-robot"></i> AI 维修方案建议</h3>
+              <button class="btn btn-outline btn-small">
+                <i :class="aiSuggestionExpanded ? 'fas fa-chevron-up' : 'fas fa-chevron-down'"></i>
+                {{ aiSuggestionExpanded ? '收起' : '展开' }}
+              </button>
+            </div>
+            <div v-if="aiSuggestionExpanded" class="ai-suggestion-body">
+              <div v-if="!aiSuggestionResult && !aiSuggestionLoading" class="ai-suggestion-prompt">
+                <p>点击下方按钮，让AI根据故障描述和历史维修记录生成维修方案建议。</p>
+                <button @click="fetchAISuggestion" class="btn btn-primary btn-small">
+                  <i class="fas fa-magic"></i> 生成AI建议
+                </button>
+              </div>
+              <div v-if="aiSuggestionLoading" class="ai-suggestion-loading">
+                <i class="fas fa-spinner fa-spin"></i> AI分析中，请稍候...
+              </div>
+              <div v-if="aiSuggestionResult" class="ai-suggestion-result">
+                <div v-if="aiSuggestionResult.faultType" class="suggestion-item">
+                  <span class="suggestion-label"><i class="fas fa-exclamation-triangle"></i> 故障类型：</span>
+                  <span class="suggestion-value fault-type">{{ aiSuggestionResult.faultType }}</span>
+                </div>
+                <div v-if="aiSuggestionResult.severityLevel" class="suggestion-item">
+                  <span class="suggestion-label"><i class="fas fa-tachometer-alt"></i> 严重等级：</span>
+                  <span :class="['severity-tag', getSeverityClass(aiSuggestionResult.severityLevel)]">
+                    {{ aiSuggestionResult.severityLevel }}
+                  </span>
+                </div>
+                <div v-if="aiSuggestionResult.possibleCauses && aiSuggestionResult.possibleCauses.length" class="suggestion-item">
+                  <span class="suggestion-label"><i class="fas fa-search"></i> 可能原因：</span>
+                  <ul class="causes-list">
+                    <li v-for="(c, i) in aiSuggestionResult.possibleCauses" :key="i">{{ c }}</li>
+                  </ul>
+                </div>
+                <div v-if="aiSuggestionResult.estimatedCost" class="suggestion-item">
+                  <span class="suggestion-label"><i class="fas fa-dollar-sign"></i> 预估费用：</span>
+                  <span class="suggestion-value">{{ aiSuggestionResult.estimatedCost }}</span>
+                </div>
+                <div v-if="aiSuggestionResult.estimatedTime" class="suggestion-item">
+                  <span class="suggestion-label"><i class="fas fa-clock"></i> 预估工时：</span>
+                  <span class="suggestion-value">{{ aiSuggestionResult.estimatedTime }}</span>
+                </div>
+                <div v-if="aiSuggestionResult.suggestion" class="suggestion-item">
+                  <span class="suggestion-label"><i class="fas fa-lightbulb"></i> 维修步骤建议：</span>
+                  <div class="suggestion-text">{{ aiSuggestionResult.suggestion }}</div>
+                </div>
+                <button @click="aiSuggestionResult = null" class="btn btn-outline btn-small" style="margin-top:0.75rem">
+                  <i class="fas fa-redo"></i> 重新生成
+                </button>
+              </div>
+              <div v-if="aiSuggestionError" class="ai-suggestion-error">
+                <i class="fas fa-exclamation-circle"></i> {{ aiSuggestionError }}
+              </div>
+            </div>
+          </div>
         </div>
         <div class="modal-footer">
           <button v-if="selectedTask.status === 'ASSIGNED'" @click="startTask(selectedTask)" class="btn btn-primary">
@@ -649,6 +707,10 @@ export default {
       rejectTask: null,
       rejectReason: '',
       isRejectingOrder: false,
+      aiSuggestionExpanded: false,
+      aiSuggestionLoading: false,
+      aiSuggestionResult: null,
+      aiSuggestionError: null,
       completeTaskForm: {
         materialCost: '',
         workNotes: ''
@@ -916,6 +978,41 @@ export default {
     closeTaskDetail() {
       this.showTaskDetail = false;
       this.selectedTask = null;
+      this.aiSuggestionExpanded = false;
+      this.aiSuggestionResult = null;
+      this.aiSuggestionError = null;
+    },
+    toggleAISuggestion() {
+      this.aiSuggestionExpanded = !this.aiSuggestionExpanded;
+    },
+    async fetchAISuggestion() {
+      if (!this.selectedTask) return;
+      this.aiSuggestionLoading = true;
+      this.aiSuggestionError = null;
+      try {
+        const problem = this.selectedTask.description || '车辆需要维修检查';
+        const response = await this.$axios.post('/ai-diagnosis/diagnose', {
+          problemDescription: problem
+        });
+        if (response.data.success) {
+          this.aiSuggestionResult = response.data;
+        } else {
+          this.aiSuggestionError = response.data.errorMessage || 'AI建议获取失败';
+        }
+      } catch (err) {
+        this.aiSuggestionError = err.response?.data?.errorMessage || 'AI服务暂时不可用';
+      } finally {
+        this.aiSuggestionLoading = false;
+      }
+    },
+    getSeverityClass(level) {
+      if (!level) return '';
+      const l = level.trim();
+      if (l === '低') return 'severity-low';
+      if (l === '中') return 'severity-medium';
+      if (l === '高') return 'severity-high';
+      if (l === '紧急') return 'severity-critical';
+      return 'severity-medium';
     },
     getVehicleDisplay(task) {
       if (task.vehicle) {
@@ -2018,5 +2115,116 @@ export default {
 
 .emission-tips i {
   color: #10b981;
+}
+
+.ai-suggestion-section {
+  border-top: 2px solid #e5e7eb;
+  padding-top: 1rem;
+}
+
+.ai-suggestion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.ai-suggestion-header h3 {
+  margin: 0;
+  color: #4f46e5;
+}
+
+.ai-suggestion-header h3 i {
+  margin-right: 0.4rem;
+}
+
+.ai-suggestion-body {
+  margin-top: 1rem;
+}
+
+.ai-suggestion-prompt {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.ai-suggestion-prompt p {
+  margin-bottom: 0.75rem;
+}
+
+.ai-suggestion-loading {
+  color: #6366f1;
+  font-size: 0.9rem;
+  padding: 0.75rem 0;
+}
+
+.ai-suggestion-result {
+  background: #f8f9ff;
+  border: 1px solid #e0e7ff;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.suggestion-item {
+  margin-bottom: 0.75rem;
+}
+
+.suggestion-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4f46e5;
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.suggestion-label i {
+  margin-right: 0.25rem;
+}
+
+.suggestion-value {
+  color: #1e293b;
+  font-size: 0.95rem;
+}
+
+.fault-type {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.suggestion-text {
+  color: #374151;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  background: white;
+  border-left: 3px solid #6366f1;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0 6px 6px 0;
+}
+
+.causes-list {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.severity-tag {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.severity-low { background: #d1fae5; color: #065f46; }
+.severity-medium { background: #fef3c7; color: #92400e; }
+.severity-high { background: #fee2e2; color: #991b1b; }
+.severity-critical { background: #dc2626; color: white; }
+
+.ai-suggestion-error {
+  color: #dc2626;
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
 }
 </style>

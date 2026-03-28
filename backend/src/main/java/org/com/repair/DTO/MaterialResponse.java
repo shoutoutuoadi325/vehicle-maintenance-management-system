@@ -5,9 +5,14 @@ import org.com.repair.entity.Material;
 public record MaterialResponse(
     Long id,
     String name,
-    Double unitPrice
+    Double unitPrice,
+    Integer stockQuantity,
+    Integer minimumStockLevel,
+    boolean lowStock
 ) {
     public MaterialResponse(Material material) {
-        this(material.getId(), material.getName(), material.getUnitPrice());
+        this(material.getId(), material.getName(), material.getUnitPrice(),
+             material.getStockQuantity(), material.getMinimumStockLevel(),
+             material.isLowStock());
     }
 } 

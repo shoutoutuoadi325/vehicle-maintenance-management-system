@@ -23,6 +23,9 @@
           <a v-if="isSuperAdmin" href="#" @click="activeTab = 'users'" :class="{ active: activeTab === 'users' }">
             <i class="fas fa-users"></i> 用户管理
           </a>
+          <a v-if="isManager || isSuperAdmin" href="#" @click="goToDispatchBoard">
+            <i class="fas fa-tasks"></i> 调度看板
+          </a>
         </nav>
       </div>
       <div class="header-right">
@@ -105,6 +108,28 @@
           </div>
         </div>
 
+        <!-- 库存预警 -->
+        <div v-if="lowStockMaterials.length > 0" class="inventory-alert-banner">
+          <div class="inventory-alert-icon">
+            <i class="fas fa-exclamation-triangle"></i>
+          </div>
+          <div class="inventory-alert-content">
+            <h3>
+              库存预警
+              <span class="alert-count-badge">{{ lowStockMaterials.length }}</span>
+            </h3>
+            <div class="inventory-alert-list">
+              <div v-for="m in lowStockMaterials" :key="m.id" class="inventory-alert-item">
+                <i class="fas fa-box-open"></i>
+                <span>
+                  <strong>{{ m.name }}</strong>
+                  当前库存 {{ m.stockQuantity }}，低于警戒线 {{ m.minimumStockLevel }}，请及时补货。
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 快速操作 -->
         <div class="quick-actions">
           <h2>快速操作</h2>
@@ -118,6 +143,11 @@
               <i class="fas fa-user-plus"></i>
               <h3>管理技师</h3>
               <p>添加或编辑技师信息</p>
+            </div>
+            <div v-if="isManager || isSuperAdmin" class="action-card" @click="goToDispatchBoard">
+              <i class="fas fa-tasks"></i>
+              <h3>调度看板</h3>
+              <p>可视化技师工单分配</p>
             </div>
             <div v-if="isSuperAdmin" class="action-card" @click="activeTab = 'statistics'">
               <i class="fas fa-chart-line"></i>
@@ -920,7 +950,8 @@ export default {
       statisticsDateRange: {
         start: '',
         end: ''
-      }
+      },
+      lowStockMaterials: []
     }
   },
   computed: {
@@ -1070,6 +1101,9 @@ export default {
         
         // 然后基于基础数据计算统计信息
         await this.loadDashboardStats();
+        
+        // 加载库存预警
+        await this.loadLowStockMaterials();
         
         // 如果是超级管理员，初始化统计分析数据
         if (this.isSuperAdmin) {
@@ -1499,6 +1533,17 @@ export default {
     },
     formatDate(dateString) {
       return new Date(dateString).toLocaleDateString('zh-CN');
+    },
+    goToDispatchBoard() {
+      this.$router.push('/admin/dispatch');
+    },
+    async loadLowStockMaterials() {
+      try {
+        const response = await this.$axios.get('/materials/low-stock');
+        this.lowStockMaterials = response.data || [];
+      } catch (err) {
+        console.warn('加载库存预警失败', err);
+      }
     },
     async logout() {
       const refreshToken = localStorage.getItem('refreshToken');
@@ -2707,5 +2752,71 @@ export default {
 
 .emission-tips i {
   color: #10b981;
+}
+
+.inventory-alert-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  border: 1px solid #ef4444;
+  border-left: 4px solid #ef4444;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.inventory-alert-icon {
+  color: #dc2626;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.inventory-alert-content {
+  flex: 1;
+}
+
+.inventory-alert-content h3 {
+  margin: 0 0 0.5rem;
+  color: #7f1d1d;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.alert-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef4444;
+  color: white;
+  border-radius: 999px;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0 0.3rem;
+}
+
+.inventory-alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.inventory-alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #7f1d1d;
+}
+
+.inventory-alert-item i {
+  color: #dc2626;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
 }
 </style>

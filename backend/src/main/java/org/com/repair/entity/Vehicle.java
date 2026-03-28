@@ -16,6 +16,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.Temporal;
+import jakarta.persistence.TemporalType;
 
 @Entity
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
@@ -41,6 +43,13 @@ public class Vehicle {
 
     @Column
     private String vin;
+
+    @Column
+    private Integer mileage;
+
+    @Column
+    @Temporal(TemporalType.DATE)
+    private java.util.Date lastMaintenanceDate;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -114,6 +123,22 @@ public class Vehicle {
 
     public void setVin(String vin) {
         this.vin = vin;
+    }
+
+    public Integer getMileage() {
+        return mileage;
+    }
+
+    public void setMileage(Integer mileage) {
+        this.mileage = mileage;
+    }
+
+    public java.util.Date getLastMaintenanceDate() {
+        return lastMaintenanceDate;
+    }
+
+    public void setLastMaintenanceDate(java.util.Date lastMaintenanceDate) {
+        this.lastMaintenanceDate = lastMaintenanceDate;
     }
 
     public User getUser() {

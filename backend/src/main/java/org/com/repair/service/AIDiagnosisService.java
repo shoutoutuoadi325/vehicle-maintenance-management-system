@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -50,11 +52,15 @@ public class AIDiagnosisService {
     }
 
     private String buildPrompt(String problemDescription) {
-        return "你是一个汽车维修专家。请根据以下问题描述，诊断可能的故障类型并给出建议。\n\n" +
+        return "你是一个专业的汽车维修专家。请根据以下问题描述，进行全面的故障诊断分析。\n\n" +
                 "问题描述：" + problemDescription + "\n\n" +
-                "请用以下格式回复：\n" +
+                "请严格按照以下格式回复（每项单独一行，冒号后直接填写内容）：\n" +
                 "故障类型：[具体的故障类型]\n" +
-                "建议：[详细的维修建议]";
+                "可能原因：[原因1]|[原因2]|[原因3]\n" +
+                "严重等级：[低/中/高/紧急]\n" +
+                "预估费用：[费用范围，如 500-1000元]\n" +
+                "预估工时：[工时范围，如 2-4小时]\n" +
+                "维修建议：[详细的维修建议和操作步骤]";
     }
 
     private String callOpenAIAPI(String prompt) throws IOException {
@@ -86,26 +92,46 @@ public class AIDiagnosisService {
     }
 
     private AIDiagnosisResponse parseResponse(String responseText) {
-        // 解析AI返回的文本
         String faultType = "";
         String suggestion = "";
+        List<String> possibleCauses = null;
+        String severityLevel = "";
+        String estimatedCost = "";
+        String estimatedTime = "";
 
         String[] lines = responseText.split("\n");
         for (String line : lines) {
             line = line.trim();
             if (line.startsWith("故障类型：") || line.startsWith("故障类型:")) {
-                faultType = line.substring(5).trim();
-            } else if (line.startsWith("建议：") || line.startsWith("建议:")) {
-                suggestion = line.substring(3).trim();
+                faultType = line.substring(line.indexOf('：') != -1 ? line.indexOf('：') + 1 : line.indexOf(':') + 1).trim();
+            } else if (line.startsWith("可能原因：") || line.startsWith("可能原因:")) {
+                String causesStr = line.substring(line.indexOf('：') != -1 ? line.indexOf('：') + 1 : line.indexOf(':') + 1).trim();
+                possibleCauses = Arrays.stream(causesStr.split("\\|"))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toList();
+            } else if (line.startsWith("严重等级：") || line.startsWith("严重等级:")) {
+                severityLevel = line.substring(line.indexOf('：') != -1 ? line.indexOf('：') + 1 : line.indexOf(':') + 1).trim();
+            } else if (line.startsWith("预估费用：") || line.startsWith("预估费用:")) {
+                estimatedCost = line.substring(line.indexOf('：') != -1 ? line.indexOf('：') + 1 : line.indexOf(':') + 1).trim();
+            } else if (line.startsWith("预估工时：") || line.startsWith("预估工时:")) {
+                estimatedTime = line.substring(line.indexOf('：') != -1 ? line.indexOf('：') + 1 : line.indexOf(':') + 1).trim();
+            } else if (line.startsWith("维修建议：") || line.startsWith("维修建议:") || line.startsWith("建议：") || line.startsWith("建议:")) {
+                suggestion = line.substring(line.indexOf('：') != -1 ? line.indexOf('：') + 1 : line.indexOf(':') + 1).trim();
             }
         }
 
-        // 如果没有按格式返回，使用整个响应作为建议
+        // If format not followed, use entire response as suggestion
         if (faultType.isEmpty() && suggestion.isEmpty()) {
             suggestion = responseText;
             faultType = "综合诊断";
         }
 
-        return new AIDiagnosisResponse(faultType, suggestion);
+        AIDiagnosisResponse response = new AIDiagnosisResponse(faultType, suggestion);
+        response.setPossibleCauses(possibleCauses);
+        response.setSeverityLevel(severityLevel.isEmpty() ? null : severityLevel);
+        response.setEstimatedCost(estimatedCost.isEmpty() ? null : estimatedCost);
+        response.setEstimatedTime(estimatedTime.isEmpty() ? null : estimatedTime);
+        return response;
     }
 }

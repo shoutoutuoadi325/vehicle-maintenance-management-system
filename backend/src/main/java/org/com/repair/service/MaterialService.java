@@ -25,6 +25,12 @@ public class MaterialService {
         Material material = new Material();
         material.setName(request.name());
         material.setUnitPrice(request.unitPrice());
+        if (request.stockQuantity() != null) {
+            material.setStockQuantity(request.stockQuantity());
+        }
+        if (request.minimumStockLevel() != null) {
+            material.setMinimumStockLevel(request.minimumStockLevel());
+        }
         Material saved = materialRepository.save(material);
         return new MaterialResponse(saved);
     }
@@ -41,6 +47,12 @@ public class MaterialService {
         
         material.setName(request.name());
         material.setUnitPrice(request.unitPrice());
+        if (request.stockQuantity() != null) {
+            material.setStockQuantity(request.stockQuantity());
+        }
+        if (request.minimumStockLevel() != null) {
+            material.setMinimumStockLevel(request.minimumStockLevel());
+        }
         Material updated = materialRepository.save(material);
         return new MaterialResponse(updated);
     }
@@ -70,5 +82,25 @@ public class MaterialService {
         return materialRepository.findByUnitPriceBetween(minPrice, maxPrice).stream()
                 .map(MaterialResponse::new)
                 .collect(Collectors.toList());
+    }
+
+    public List<MaterialResponse> getLowStockMaterials() {
+        return materialRepository.findAll().stream()
+                .filter(m -> m.isLowStock())
+                .map(MaterialResponse::new)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public MaterialResponse deductStock(Long id, int quantity) {
+        Material material = materialRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("材料不存在"));
+        int newQty = (material.getStockQuantity() != null ? material.getStockQuantity() : 0) - quantity;
+        if (newQty < 0) {
+            newQty = 0;
+        }
+        material.setStockQuantity(newQty);
+        Material updated = materialRepository.save(material);
+        return new MaterialResponse(updated);
     }
 } 

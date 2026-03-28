@@ -48,6 +48,12 @@ public class VehicleService {
         vehicle.setColor(request.color());
         vehicle.setVin(request.vin());
         vehicle.setUser(user);
+        if (request.mileage() != null) {
+            vehicle.setMileage(request.mileage());
+        }
+        if (request.lastMaintenanceDate() != null) {
+            vehicle.setLastMaintenanceDate(request.lastMaintenanceDate());
+        }
         
         Vehicle savedVehicle = vehicleRepository.save(vehicle);
         return new VehicleResponse(savedVehicle);
@@ -110,7 +116,12 @@ public class VehicleService {
         vehicle.setYear(request.year());
         vehicle.setColor(request.color());
         vehicle.setVin(request.vin());
-        
+        if (request.mileage() != null) {
+            vehicle.setMileage(request.mileage());
+        }
+        if (request.lastMaintenanceDate() != null) {
+            vehicle.setLastMaintenanceDate(request.lastMaintenanceDate());
+        }
         Vehicle updatedVehicle = vehicleRepository.save(vehicle);
         return new VehicleResponse(updatedVehicle);
     }

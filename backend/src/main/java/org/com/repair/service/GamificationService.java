@@ -232,16 +232,17 @@ public class GamificationService {
                     "当前暂无可用路线");
         }
 
-        if (currentMapId == null || enabledMaps.stream().noneMatch(m -> m.getId().equals(currentMapId))) {
+        final Long capturedMapId = currentMapId;
+        if (capturedMapId == null || enabledMaps.stream().noneMatch(m -> m.getId().equals(capturedMapId))) {
             currentMapId = enabledMaps.get(0).getId();
         }
 
-        final Long selectedMapId = currentMapId;
+        final Long resolvedMapId = currentMapId;
         List<JourneyMapSummaryResponse> maps = enabledMaps.stream()
                 .map(map -> new JourneyMapSummaryResponse(
                         map.getId(),
                         map.getMapName(),
-                        map.getId().equals(selectedMapId)))
+                        map.getId().equals(resolvedMapId)))
                 .toList();
 
         List<JourneyCityConfigResponse> nodes = buildJourneyCityConfig(currentMapId);

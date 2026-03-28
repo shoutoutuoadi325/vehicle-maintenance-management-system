@@ -18,6 +18,8 @@ public record VehicleResponse(
     Integer year,
     String color,
     String vin,
+    Integer mileage,
+    java.util.Date lastMaintenanceDate,
     UserInfo user,
     Long userId,
     List<RepairOrderInfo> repairOrders
@@ -31,6 +33,8 @@ public record VehicleResponse(
             vehicle.getYear(),
             vehicle.getColor(),
             vehicle.getVin(),
+            vehicle.getMileage(),
+            vehicle.getLastMaintenanceDate(),
             vehicle.getUser() != null ? new UserInfo(vehicle.getUser()) : null,
             vehicle.getUserId(),
             vehicle.getRepairOrders() != null ? 
@@ -50,6 +54,8 @@ public record VehicleResponse(
             vehicle.getYear(),
             vehicle.getColor(),
             vehicle.getVin(),
+            vehicle.getMileage(),
+            vehicle.getLastMaintenanceDate(),
             vehicle.getUser() != null ? new UserInfo(vehicle.getUser()) : null,
             vehicle.getUserId(),
             repairOrders != null ? 

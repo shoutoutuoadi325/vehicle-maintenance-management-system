@@ -72,6 +72,24 @@ public class MaterialController {
         }
     }
     
+    @GetMapping("/low-stock")
+    public ResponseEntity<List<MaterialResponse>> getLowStockMaterials() {
+        List<MaterialResponse> materials = materialService.getLowStockMaterials();
+        return new ResponseEntity<>(materials, HttpStatus.OK);
+    }
+
+    @PutMapping("/{id}/deduct-stock")
+    public ResponseEntity<MaterialResponse> deductStock(
+            @PathVariable Long id,
+            @RequestParam int quantity) {
+        try {
+            MaterialResponse response = materialService.deductStock(id, quantity);
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } catch (RuntimeException e) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteMaterial(@PathVariable Long id) {
         boolean deleted = materialService.deleteMaterial(id);
