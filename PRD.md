@@ -78,7 +78,3 @@
 3. **数据库迁移**：所有对数据库表的修改或新增，必须生成对应的 Flyway SQL 脚本（如 V16\_\_add\_maintenance\_alerts.sql）。  
 4. **API 设计**：遵循 RESTful 风格，返回格式统包装为现有项目中的统一 Response 对象（如果有），请求和响应使用 DTO 类。  
 5. **权限控制**：新的 Controller 接口必须加上现有的拦截器或权限注解（如涉及到用户的校验需经过 JwtAuthenticationInterceptor）。
-
-*提示词示例（直接发给AI助手）：*
-
-“请作为高级全栈工程师，阅读以上 PRD。现在请先为我实现 **Epic 1.1**。首先请给出后端的实体类更新和 DTO，然后给出 Controller 和 Service 的代码，最后给我完整的 Vue3 组件 AIDiagnosisClient.vue 代码。请确保符合 Spring Boot 和 Vue3 的最佳实践。”
