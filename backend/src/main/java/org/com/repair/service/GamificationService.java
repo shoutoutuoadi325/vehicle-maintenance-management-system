@@ -232,7 +232,11 @@ public class GamificationService {
                     "当前暂无可用路线");
         }
 
-        if (currentMapId == null || enabledMaps.stream().noneMatch(m -> m.getId().equals(currentMapId))) {
+        final Long configuredMapId = currentMapId;
+        boolean hasConfiguredMap = configuredMapId != null
+            && enabledMaps.stream().anyMatch(m -> m.getId().equals(configuredMapId));
+
+        if (!hasConfiguredMap) {
             currentMapId = enabledMaps.get(0).getId();
         }
 
