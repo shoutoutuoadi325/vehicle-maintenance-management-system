@@ -484,7 +484,15 @@
             <i class="fas fa-times"></i>
           </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-tabs">
+          <button class="tab-btn" :class="{ active: taskDetailTab === 'detail' }" @click="taskDetailTab = 'detail'">
+            任务详情
+          </button>
+          <button class="tab-btn" :class="{ active: taskDetailTab === 'ai' }" @click="loadTaskAiSuggestion">
+            AI Suggestion
+          </button>
+        </div>
+        <div v-if="taskDetailTab === 'detail'" class="modal-body">
           <div class="detail-section">
             <h3>基本信息</h3>
             <div class="detail-grid">
@@ -598,6 +606,28 @@
             </div>
           </div>
         </div>
+        <div v-else class="modal-body">
+          <div class="detail-section">
+            <h3>AI 维修方案建议</h3>
+            <p class="muted-text">基于当前故障描述和工单上下文生成，供技师复核。</p>
+            <div v-if="taskAiSuggestionLoading" class="copilot-loading">
+              <i class="fas fa-spinner fa-spin"></i>
+              正在生成维修建议...
+            </div>
+            <div v-else-if="taskAiSuggestionError" class="copilot-error">
+              <i class="fas fa-exclamation-circle"></i>
+              {{ taskAiSuggestionError }}
+            </div>
+            <div v-else-if="taskAiSuggestion" class="copilot-result">
+              <p v-if="taskAiFaultType" class="copilot-fault-type">故障类型：{{ taskAiFaultType }}</p>
+              <div class="copilot-markdown" v-html="renderedTaskAiSuggestion"></div>
+            </div>
+            <div v-else class="empty-state">
+              <i class="fas fa-robot"></i>
+              <p>点击 AI Suggestion 标签页以生成建议</p>
+            </div>
+          </div>
+        </div>
         <div class="modal-footer">
           <button v-if="selectedTask.status === 'ASSIGNED'" @click="startTask(selectedTask)" class="btn btn-primary">
             <i class="fas fa-play"></i> 开始任务
@@ -638,7 +668,7 @@
                     {{ m.name }} (¥{{ m.unitPrice }})
                   </option>
                 </select>
-                <input type="number" v-model.number="row.quantity" min="0.1" step="0.1" placeholder="数量" style="flex:1;" required>
+                <input type="number" v-model.number="row.quantity" min="1" step="1" placeholder="数量" style="flex:1;" required>
                 <span style="flex:1;">¥{{ materialRowCost(row) }}</span>
                 <button type="button" @click="removeMaterialRow(idx)" v-if="materialRows.length>1" style="flex:0 0 auto;">删除</button>
               </div>
@@ -679,6 +709,12 @@ export default {
       showTaskDetail: false,
       showCompleteTask: false,
       showRejectModal: false,
+      taskDetailTab: 'detail',
+      taskAiSuggestionLoading: false,
+      taskAiSuggestionError: '',
+      taskAiFaultType: '',
+      taskAiSuggestion: '',
+      taskAiLastOrderId: null,
       taskFilter: '',
       allTasks: [],
       selectedTask: null,
@@ -735,6 +771,9 @@ export default {
     },
     renderedCopilotSuggestion() {
       return marked.parse(this.copilotSuggestion || '');
+    },
+    renderedTaskAiSuggestion() {
+      return marked.parse(this.taskAiSuggestion || '');
     }
   },
   created() {
@@ -969,6 +1008,7 @@ export default {
     },
     async completeTask(task) {
       this.selectedTask = task;
+      this.taskDetailTab = 'detail';
       this.completeTaskForm = {
         materialCost: '',
         workNotes: ''
@@ -979,15 +1019,55 @@ export default {
     },
     viewTask(task) {
       this.selectedTask = task;
+      this.taskDetailTab = 'detail';
       this.showTaskDetail = true;
     },
     viewTaskDetail(task) {
       this.selectedTask = task;
+      this.taskDetailTab = 'detail';
       this.showTaskDetail = true;
+    },
+    async loadTaskAiSuggestion() {
+      if (!this.selectedTask || !this.selectedTask.id) {
+        return;
+      }
+
+      this.taskDetailTab = 'ai';
+      if (this.taskAiLastOrderId === this.selectedTask.id && this.taskAiSuggestion) {
+        return;
+      }
+
+      this.taskAiSuggestionLoading = true;
+      this.taskAiSuggestionError = '';
+      this.taskAiFaultType = '';
+      this.taskAiSuggestion = '';
+
+      try {
+        const response = await this.$axios.post('/ai-diagnosis/diagnose', {
+          problemDescription: this.selectedTask.description || '工单故障待补充',
+          role: 'technician',
+          technicianId: this.user?.id || null
+        });
+
+        const payload = response.data || {};
+        this.taskAiFaultType = payload.faultType || '';
+        this.taskAiSuggestion = payload.suggestion || '未返回诊断建议';
+        this.taskAiLastOrderId = this.selectedTask.id;
+      } catch (error) {
+        this.taskAiSuggestionError = error.response?.data?.errorMessage || error.response?.data?.message || 'AI 建议生成失败，请稍后重试';
+      } finally {
+        this.taskAiSuggestionLoading = false;
+      }
     },
     closeTaskDetail() {
       this.showTaskDetail = false;
       this.selectedTask = null;
+      this.taskDetailTab = 'detail';
+      this.taskAiSuggestionLoading = false;
+      this.taskAiSuggestionError = '';
+      this.taskAiFaultType = '';
+      this.taskAiSuggestion = '';
+      this.taskAiLastOrderId = null;
     },
     getVehicleDisplay(task) {
       if (task.vehicle) {
@@ -1040,10 +1120,24 @@ export default {
       try {
         this.isSubmitting = true;
         console.log('提交完成任务:', this.selectedTask.id);
+        const selectedRows = this.materialRows
+          .filter(row => row.materialId && Number(row.quantity) > 0)
+          .map(row => ({
+            materialId: row.materialId,
+            quantity: Math.floor(Number(row.quantity))
+          }));
+
+        for (const row of selectedRows) {
+          await this.$axios.put(`/materials/${row.materialId}/consume`, {
+            quantity: row.quantity
+          });
+        }
+
+        const materialCost = Number(this.materialCostComputed);
         const response = await this.$axios.put(`/repair-orders/${this.selectedTask.id}/status`, null, {
           params: { 
             status: 'COMPLETED',
-            materialCost: this.completeTaskForm.materialCost
+            materialCost
           }
         });
         
@@ -1052,7 +1146,7 @@ export default {
         if (taskIndex !== -1) {
           this.allTasks[taskIndex].status = 'COMPLETED';
           this.allTasks[taskIndex].completedAt = new Date().toISOString();
-          this.allTasks[taskIndex].materialCost = this.completeTaskForm.materialCost;
+          this.allTasks[taskIndex].materialCost = materialCost;
           this.allTasks[taskIndex].updatedAt = new Date().toISOString();
         }
         
@@ -1078,7 +1172,8 @@ export default {
     async fetchMaterials() {
       try {
         const res = await this.$axios.get('/materials');
-        this.materials = res.data || [];
+        const payload = res.data?.data || res.data || [];
+        this.materials = Array.isArray(payload) ? payload : [];
       } catch (e) {
         console.error('加载材料列表失败', e);
         this.$emit('message', '加载材料列表失败', 'error');
@@ -1092,7 +1187,7 @@ export default {
     },
     materialRowCost(row) {
       const mat = this.materials.find(m => m.id === row.materialId);
-      return mat && row.quantity ? (mat.unitPrice * row.quantity).toFixed(2) : 0;
+      return mat && row.quantity ? (mat.unitPrice * Number(row.quantity)).toFixed(2) : 0;
     },
     
     // 拒绝订单相关方法
@@ -1935,6 +2030,49 @@ export default {
 
 .modal-body {
   padding: 1.5rem;
+}
+
+.modal-tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem 0;
+}
+
+.tab-btn {
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #4b5563;
+  border-radius: 9999px;
+  padding: 0.45rem 0.95rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  background: #fff7ed;
+  color: #b45309;
+  border-color: #fdba74;
+}
+
+.tab-btn.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.muted-text {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.copilot-loading {
+  margin-top: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #1f2937;
 }
 
 .modal-footer {

@@ -2,6 +2,7 @@ package org.com.repair.service;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -34,10 +35,13 @@ public class FeedbackService {
     
     @Transactional
     public FeedbackResponse addFeedback(NewFeedbackRequest request) {
-        RepairOrder repairOrder = repairOrderRepository.findById(request.repairOrderId())
+        Long repairOrderId = Objects.requireNonNull(request.repairOrderId(), "维修工单ID不能为空");
+        Long userId = Objects.requireNonNull(request.userId(), "用户ID不能为空");
+
+        RepairOrder repairOrder = repairOrderRepository.findById(repairOrderId)
                 .orElseThrow(() -> new RuntimeException("维修工单不存在"));
         
-        User user = userRepository.findById(request.userId())
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         
         // 验证用户是否是工单的所有者
@@ -47,7 +51,7 @@ public class FeedbackService {
         
         // 检查该订单是否已经被评价过
         boolean alreadyFeedback = feedbackRepository.existsByRepairOrderIdAndUserId(
-            request.repairOrderId(), request.userId());
+            repairOrderId, userId);
         if (alreadyFeedback) {
             throw new RuntimeException("该维修工单已经被评价过，不能重复评价");
         }
@@ -69,7 +73,7 @@ public class FeedbackService {
     }
     
     public Optional<FeedbackResponse> getFeedbackById(Long id) {
-        return feedbackRepository.findById(id)
+        return feedbackRepository.findById(Objects.requireNonNull(id, "反馈ID不能为空"))
                 .map(FeedbackResponse::new);
     }
     
@@ -87,7 +91,7 @@ public class FeedbackService {
     
     @Transactional
     public FeedbackResponse updateFeedback(Long id, NewFeedbackRequest request) {
-        Feedback feedback = feedbackRepository.findById(id)
+        Feedback feedback = feedbackRepository.findById(Objects.requireNonNull(id, "反馈ID不能为空"))
                 .orElseThrow(() -> new RuntimeException("反馈不存在"));
         
         // 验证用户是否是反馈的所有者
@@ -109,7 +113,8 @@ public class FeedbackService {
     
     @Transactional
     public boolean deleteFeedback(Long id, Long userId) {
-        Optional<Feedback> feedbackOpt = feedbackRepository.findById(id);
+        Long feedbackId = Objects.requireNonNull(id, "反馈ID不能为空");
+        Optional<Feedback> feedbackOpt = feedbackRepository.findById(feedbackId);
         if (feedbackOpt.isPresent()) {
             Feedback feedback = feedbackOpt.get();
             
@@ -118,7 +123,7 @@ public class FeedbackService {
                 throw new RuntimeException("您无权删除此反馈");
             }
             
-            feedbackRepository.deleteById(id);
+            feedbackRepository.deleteById(feedbackId);
             return true;
         }
         return false;

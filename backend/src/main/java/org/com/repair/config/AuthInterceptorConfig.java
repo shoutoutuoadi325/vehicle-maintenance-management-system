@@ -1,10 +1,13 @@
 package org.com.repair.config;
 
+import java.util.Objects;
+
 import org.com.repair.security.JwtAuthenticationInterceptor;
 import org.com.repair.security.OwnershipAuthorizationInterceptor;
 import org.com.repair.security.RoleAuthorizationInterceptor;
 import org.com.repair.security.SecurityAuditInterceptor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -27,11 +30,11 @@ public class AuthInterceptorConfig implements WebMvcConfigurer {
     }
 
     @Override
-    public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(securityAuditInterceptor)
+    public void addInterceptors(@NonNull InterceptorRegistry registry) {
+        registry.addInterceptor(Objects.requireNonNull(securityAuditInterceptor))
                 .addPathPatterns("/api/**");
 
-        registry.addInterceptor(jwtAuthenticationInterceptor)
+        registry.addInterceptor(Objects.requireNonNull(jwtAuthenticationInterceptor))
             .addPathPatterns("/api/**")
             .excludePathPatterns(
                 "/api/users/login",
@@ -47,7 +50,7 @@ public class AuthInterceptorConfig implements WebMvcConfigurer {
                 "/swagger-ui/**",
                 "/swagger-ui.html");
 
-        registry.addInterceptor(roleAuthorizationInterceptor)
+            registry.addInterceptor(Objects.requireNonNull(roleAuthorizationInterceptor))
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(
                         "/api/users/login",
@@ -63,7 +66,7 @@ public class AuthInterceptorConfig implements WebMvcConfigurer {
                         "/swagger-ui/**",
                         "/swagger-ui.html");
 
-                registry.addInterceptor(ownershipAuthorizationInterceptor)
+                registry.addInterceptor(Objects.requireNonNull(ownershipAuthorizationInterceptor))
                     .addPathPatterns("/api/**")
                     .excludePathPatterns(
                         "/api/users/login",

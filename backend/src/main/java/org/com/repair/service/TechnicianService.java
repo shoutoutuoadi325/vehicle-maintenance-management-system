@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -70,7 +71,7 @@ public class TechnicianService {
     }
     
     public Optional<TechnicianResponse> getTechnicianById(Long id) {
-        return technicianRepository.findById(id)
+        return technicianRepository.findById(Objects.requireNonNull(id, "技师ID不能为空"))
                 .map(TechnicianResponse::new);
     }
     
@@ -86,7 +87,7 @@ public class TechnicianService {
     
     @Transactional
     public TechnicianResponse updateTechnician(Long id, NewTechnicianRequest request) {
-        Technician technician = technicianRepository.findById(id)
+        Technician technician = technicianRepository.findById(Objects.requireNonNull(id, "技师ID不能为空"))
                 .orElseThrow(() -> new RuntimeException("技师不存在"));
         
         // 如果员工ID更改了，检查新员工ID是否已存在
@@ -118,16 +119,17 @@ public class TechnicianService {
     
     @Transactional
     public boolean deleteTechnician(Long id) {
-        if (!technicianRepository.existsById(id)) {
+        Long technicianId = Objects.requireNonNull(id, "技师ID不能为空");
+        if (!technicianRepository.existsById(technicianId)) {
             return false;
         }
         
         try {
             // 先清除技师与所有订单的关联关系
-            technicianRepository.removeFromAllOrders(id);
+            technicianRepository.removeFromAllOrders(technicianId);
             
             // 然后删除技师
-            technicianRepository.deleteById(id);
+            technicianRepository.deleteById(technicianId);
             return true;
         } catch (Exception e) {
             throw new RuntimeException("删除技师失败: " + e.getMessage(), e);
@@ -412,18 +414,20 @@ public class TechnicianService {
      */
     @Transactional
     public boolean rejectOrder(Long technicianId, Long orderId, String reason) {
+        Long safeTechnicianId = Objects.requireNonNull(technicianId, "技师ID不能为空");
+        Long safeOrderId = Objects.requireNonNull(orderId, "订单ID不能为空");
         // 1. 验证技师是否存在
-        Technician technician = technicianRepository.findById(technicianId)
+        Technician technician = technicianRepository.findById(safeTechnicianId)
                 .orElseThrow(() -> new RuntimeException("技师不存在"));
         
         // 2. 验证订单是否存在
-        RepairOrder order = repairOrderRepository.findById(orderId)
+        RepairOrder order = repairOrderRepository.findById(safeOrderId)
                 .orElseThrow(() -> new RuntimeException("维修订单不存在"));
         
         // 3. 验证订单是否分配给该技师
         boolean isAssignedToTechnician = order.getTechnicians() != null && 
                 order.getTechnicians().stream()
-                        .anyMatch(t -> t.getId().equals(technicianId));
+                    .anyMatch(t -> t.getId().equals(safeTechnicianId));
         
         if (!isAssignedToTechnician) {
             throw new RuntimeException("此订单未分配给您，无法拒绝");
@@ -435,11 +439,11 @@ public class TechnicianService {
         }
         
         // 5. 从订单的技师列表中移除当前技师
-        order.getTechnicians().removeIf(t -> t.getId().equals(technicianId));
+        order.getTechnicians().removeIf(t -> t.getId().equals(safeTechnicianId));
         
         // 6. 记录拒绝原因（可以在RepairOrder中添加拒绝记录字段，这里暂时在日志中记录）
         System.out.println(String.format("技师 %s (ID: %d) 拒绝了订单 %s (ID: %d)，原因：%s", 
-                technician.getName(), technicianId, order.getOrderNumber(), orderId, 
+            technician.getName(), safeTechnicianId, order.getOrderNumber(), safeOrderId, 
                 reason != null ? reason : "未提供原因"));
         
         // 7. 重新自动分配给其他技师
@@ -457,7 +461,7 @@ public class TechnicianService {
             if (requiredSkillType != null) {
                 // 排除已拒绝的技师，寻找其他技师
                 Technician newTechnician = autoAssignmentService.autoAssignBestTechnicianExcluding(
-                        requiredSkillType, technicianId);
+                    requiredSkillType, safeTechnicianId);
                 
                 if (newTechnician != null) {
                     // 分配给新技师
@@ -504,14 +508,15 @@ public class TechnicianService {
      * @return 订单列表
      */
     public List<Object> getAssignedOrders(Long technicianId) {
+        Long safeTechnicianId = Objects.requireNonNull(technicianId, "技师ID不能为空");
         // 验证技师是否存在
-        if (!technicianRepository.existsById(technicianId)) {
+        if (!technicianRepository.existsById(safeTechnicianId)) {
             throw new RuntimeException("技师不存在");
         }
         
         // 获取分配给该技师且状态为ASSIGNED的订单
         List<RepairOrder> assignedOrders = repairOrderRepository.findByTechnicianIdAndStatus(
-                technicianId, RepairOrder.RepairStatus.ASSIGNED);
+            safeTechnicianId, RepairOrder.RepairStatus.ASSIGNED);
         
         return assignedOrders.stream()
                 .map(order -> new RepairOrderResponse(order))

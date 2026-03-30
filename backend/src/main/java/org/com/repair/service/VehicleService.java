@@ -1,6 +1,7 @@
 package org.com.repair.service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -36,8 +37,10 @@ public class VehicleService {
         if (vehicleRepository.existsByLicensePlate(request.licensePlate())) {
             throw new RuntimeException("车牌号已存在");
         }
+
+        Long userId = Objects.requireNonNull(request.userId(), "用户ID不能为空");
         
-        User user = userRepository.findById(request.userId())
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         
         Vehicle vehicle = new Vehicle();
@@ -47,6 +50,9 @@ public class VehicleService {
         vehicle.setYear(request.year());
         vehicle.setColor(request.color());
         vehicle.setVin(request.vin());
+        vehicle.setCurrentMileage(request.currentMileage());
+        vehicle.setLastMaintenanceMileage(request.lastMaintenanceMileage());
+        vehicle.setLastMaintenanceAt(request.lastMaintenanceAt());
         vehicle.setUser(user);
         
         Vehicle savedVehicle = vehicleRepository.save(vehicle);
@@ -54,7 +60,7 @@ public class VehicleService {
     }
     
     public Optional<VehicleResponse> getVehicleById(Long id) {
-        return vehicleRepository.findById(id)
+        return vehicleRepository.findById(Objects.requireNonNull(id, "车辆ID不能为空"))
                 .map(VehicleResponse::new);
     }
     
@@ -90,16 +96,19 @@ public class VehicleService {
     
     @Transactional
     public VehicleResponse updateVehicle(Long id, NewVehicleRequest request) {
-        Vehicle vehicle = vehicleRepository.findById(id)
+        Long vehicleId = Objects.requireNonNull(id, "车辆ID不能为空");
+        Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new RuntimeException("车辆不存在"));
+
+        Long requestUserId = Objects.requireNonNull(request.userId(), "用户ID不能为空");
         
         if (!vehicle.getLicensePlate().equals(request.licensePlate()) &&
             vehicleRepository.existsByLicensePlate(request.licensePlate())) {
             throw new RuntimeException("车牌号已存在");
         }
         
-        if (!vehicle.getUser().getId().equals(request.userId())) {
-            User newUser = userRepository.findById(request.userId())
+        if (!vehicle.getUser().getId().equals(requestUserId)) {
+            User newUser = userRepository.findById(requestUserId)
                     .orElseThrow(() -> new RuntimeException("用户不存在"));
             vehicle.setUser(newUser);
         }
@@ -110,6 +119,9 @@ public class VehicleService {
         vehicle.setYear(request.year());
         vehicle.setColor(request.color());
         vehicle.setVin(request.vin());
+        vehicle.setCurrentMileage(request.currentMileage());
+        vehicle.setLastMaintenanceMileage(request.lastMaintenanceMileage());
+        vehicle.setLastMaintenanceAt(request.lastMaintenanceAt());
         
         Vehicle updatedVehicle = vehicleRepository.save(vehicle);
         return new VehicleResponse(updatedVehicle);
@@ -117,8 +129,9 @@ public class VehicleService {
     
     @Transactional
     public boolean deleteVehicle(Long id) {
-        if (vehicleRepository.existsById(id)) {
-            vehicleRepository.deleteById(id);
+        Long vehicleId = Objects.requireNonNull(id, "车辆ID不能为空");
+        if (vehicleRepository.existsById(vehicleId)) {
+            vehicleRepository.deleteById(vehicleId);
             return true;
         }
         return false;

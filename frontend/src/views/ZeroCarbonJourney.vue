@@ -1,20 +1,45 @@
 <template>
-  <div class="journey-root">
+  <div :class="['journey-root', routeThemeClass]">
     <header class="topbar">
       <button class="back-btn" @click="goBack">
         <span class="arrow">←</span>
         <span>返回上一页</span>
       </button>
       <h1 class="title">Zero-Carbon Road Trip</h1>
-      <div class="topbar-right">绿色公路挑战</div>
+      <div class="topbar-right">{{ selectedMapName || '绿色公路挑战' }}</div>
     </header>
 
     <main class="stage">
       <section class="map-card">
+        <div class="terrain-layer terrain-layer-a"></div>
+        <div class="terrain-layer terrain-layer-b"></div>
+        <div class="terrain-layer terrain-layer-c"></div>
+
         <div class="map-caption">
           <h2>零碳公路地图</h2>
           <p>解锁城市节点，完成环保问答，持续积累绿色能量</p>
+          <div class="caption-chips">
+            <span class="chip route">{{ selectedMapName || '默认路线' }}</span>
+            <span class="chip">站点 {{ cities.length }}</span>
+            <span class="chip">服务区 {{ serviceAreaCount }}</span>
+          </div>
         </div>
+
+        <aside class="route-legend">
+          <div class="legend-title">路线情报</div>
+          <div class="legend-row">
+            <span>当前路线</span>
+            <strong>{{ selectedMapName || '未选择' }}</strong>
+          </div>
+          <div class="legend-row">
+            <span>已完成站点</span>
+            <strong>{{ checkedCount }}/{{ cities.length }}</strong>
+          </div>
+          <div class="legend-row">
+            <span>合作服务区</span>
+            <strong>{{ serviceAreaCount }}</strong>
+          </div>
+        </aside>
 
         <svg class="road-map" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid meet">
           <defs>
@@ -25,6 +50,11 @@
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
+            <linearGradient id="roadSheen" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="rgba(255,255,255,0.55)" />
+              <stop offset="50%" stop-color="rgba(255,255,255,0.12)" />
+              <stop offset="100%" stop-color="rgba(255,255,255,0.55)" />
+            </linearGradient>
           </defs>
 
           <path
@@ -33,7 +63,15 @@
           />
           <path
             :d="roadPath"
+            class="road-theme-texture"
+          />
+          <path
+            :d="roadPath"
             class="road-dash"
+          />
+          <path
+            :d="roadPath"
+            class="road-sheen"
           />
 
           <g v-for="(city, idx) in cities" :key="city.id">
@@ -50,6 +88,7 @@
               r="14"
               :class="[
                 'city-node',
+                isFinalNode(idx) ? 'final-node' : '',
                 isReached(city) ? 'reached' : 'locked',
                 isLatestUnlockAndUnchecked(idx) ? 'unlocking' : '',
                 isCheckedIn(idx) ? 'checked' : ''
@@ -57,6 +96,34 @@
               :filter="isReached(city) ? 'url(#nodeGlow)' : null"
               @click="handleNodeClick(idx)"
             />
+
+            <g
+              class="node-symbol"
+              :transform="`translate(${city.x}, ${city.y})`"
+              @click="handleNodeClick(idx)"
+            >
+              <g v-if="nodeType(city, idx) === 'final'" class="symbol-final">
+                <path d="M -6 -3 L 6 -3 L 4 4 L -4 4 Z" />
+                <path d="M -3 -8 L -3 -3 M 3 -8 L 3 -3" />
+                <rect x="-3" y="5" width="6" height="2" rx="1" />
+              </g>
+              <g v-else-if="nodeType(city, idx) === 'service'" class="symbol-service">
+                <rect x="-6" y="-6" width="12" height="9" rx="1.8" />
+                <rect x="-1.5" y="3" width="3" height="5" rx="1" />
+              </g>
+              <g v-else-if="nodeType(city, idx) === 'mountain'" class="symbol-mountain">
+                <path d="M -7 6 L -1 -5 L 5 6 Z" />
+                <path d="M -1 6 L 3 -1 L 7 6 Z" />
+              </g>
+              <g v-else-if="nodeType(city, idx) === 'coast'" class="symbol-coast">
+                <path d="M -7 2 C -5 -1 -3 -1 -1 2 C 1 5 3 5 5 2" />
+                <path d="M -6 6 C -4 3 -2 3 0 6 C 2 9 4 9 6 6" />
+              </g>
+              <g v-else class="symbol-road">
+                <rect x="-2" y="-6" width="4" height="12" rx="1" />
+                <path d="M 0 -4 L 0 -2 M 0 0 L 0 2 M 0 4 L 0 5" />
+              </g>
+            </g>
 
             <circle
               v-if="isLatestUnlockAndUnchecked(idx)"
@@ -233,6 +300,7 @@ export default {
       claimingGrandPrize: false,
       grandPrizeMsg: '',
       rewardShippingStatus: 'NOT_CLAIMED',
+      selectedMapName: '',
       grandPrizeForm: {
         consigneeName: '',
         consigneePhone: '',
@@ -300,6 +368,19 @@ export default {
         DELIVERED: '已签收'
       };
       return map[this.rewardShippingStatus] || '待申领';
+    },
+    serviceAreaCount() {
+      return this.cities.filter(city => city.brandServiceArea).length;
+    },
+    routeThemeClass() {
+      const name = String(this.selectedMapName || '').toLowerCase();
+      if (name.includes('318') || name.includes('川藏')) {
+        return 'theme-sichuan-tibet';
+      }
+      if (name.includes('海南') || name.includes('环岛')) {
+        return 'theme-hainan-loop';
+      }
+      return 'theme-default-route';
     }
   },
   async mounted() {
@@ -365,14 +446,37 @@ export default {
     isCheckedIn(index) {
       return this.nodeState(index) === 'CHECKED_IN';
     },
+    isFinalNode(index) {
+      return index === this.cities.length - 1;
+    },
     isLatestUnlockAndUnchecked(index) {
       return index === this.latestUnlockedIndex && !this.isCheckedIn(index);
+    },
+    nodeType(city, index) {
+      if (this.isFinalNode(index)) {
+        return 'final';
+      }
+      if (city.brandServiceArea) {
+        return 'service';
+      }
+      const name = String(city.name || '');
+      if (name.includes('海') || name.includes('三亚')) {
+        return 'coast';
+      }
+      if (name.includes('拉萨') || name.includes('理塘') || name.includes('康定')) {
+        return 'mountain';
+      }
+      return 'road';
     },
     async loadJourneyConfig() {
       try {
         const response = await this.$axios.get(this.gamificationApi('/journey/config'));
         const data = response.data || {};
         const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+        const maps = Array.isArray(data.maps) ? data.maps : [];
+        const currentMapId = data.currentMapId;
+        const selected = maps.find(item => item.id === currentMapId) || maps.find(item => item.current);
+        this.selectedMapName = selected?.mapName || '';
         this.cities = nodes
           .slice()
           .sort((a, b) => (a.cityIndex || 0) - (b.cityIndex || 0))
@@ -595,6 +699,20 @@ export default {
   flex-direction: column;
 }
 
+.journey-root.theme-sichuan-tibet {
+  background:
+    radial-gradient(circle at 8% 10%, rgba(236, 253, 245, 0.8) 0%, transparent 36%),
+    radial-gradient(circle at 90% 24%, rgba(219, 234, 254, 0.75) 0%, transparent 34%),
+    linear-gradient(180deg, #edf7f1, #dceff0);
+}
+
+.journey-root.theme-hainan-loop {
+  background:
+    radial-gradient(circle at 10% 12%, rgba(186, 230, 253, 0.72) 0%, transparent 35%),
+    radial-gradient(circle at 88% 18%, rgba(167, 243, 208, 0.68) 0%, transparent 34%),
+    linear-gradient(180deg, #ecfeff, #d9f7ea);
+}
+
 .topbar {
   height: 68px;
   display: grid;
@@ -657,22 +775,123 @@ export default {
   border-radius: 20px;
   box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
   padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.terrain-layer {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.terrain-layer-a {
+  left: -6%;
+  right: 52%;
+  bottom: -16%;
+  height: 54%;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.16), rgba(21, 128, 61, 0.06));
+  clip-path: polygon(0 100%, 8% 72%, 18% 78%, 28% 60%, 40% 70%, 53% 46%, 67% 62%, 78% 40%, 90% 58%, 100% 44%, 100% 100%);
+}
+
+.terrain-layer-b {
+  left: 42%;
+  right: -10%;
+  bottom: -18%;
+  height: 52%;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.12), rgba(14, 116, 144, 0.06));
+  clip-path: polygon(0 100%, 10% 66%, 22% 80%, 34% 58%, 44% 70%, 56% 48%, 68% 66%, 80% 42%, 90% 56%, 100% 34%, 100% 100%);
+}
+
+.terrain-layer-c {
+  left: 0;
+  right: 0;
+  top: -12%;
+  height: 30%;
+  background: radial-gradient(circle at 30% 60%, rgba(255, 255, 255, 0.8) 0%, transparent 55%);
 }
 
 .map-caption h2 {
   margin: 0;
   font-size: 22px;
+  position: relative;
+  z-index: 1;
 }
 
 .map-caption p {
   margin: 8px 0 0;
   color: #6b7280;
+  position: relative;
+  z-index: 1;
+}
+
+.caption-chips {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #14532d;
+  background: rgba(220, 252, 231, 0.9);
+  border: 1px solid rgba(134, 239, 172, 0.9);
+}
+
+.chip.route {
+  color: #155e75;
+  background: rgba(207, 250, 254, 0.92);
+  border-color: rgba(103, 232, 249, 0.9);
+}
+
+.route-legend {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 236px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(3px);
+  padding: 12px;
+  z-index: 2;
+}
+
+.legend-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.legend-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: #475569;
+  margin-top: 6px;
+}
+
+.legend-row strong {
+  color: #0f172a;
 }
 
 .road-map {
   width: 100%;
   height: 460px;
   margin-top: 14px;
+  position: relative;
+  z-index: 1;
 }
 
 .road-base {
@@ -682,6 +901,15 @@ export default {
   stroke-linecap: round;
 }
 
+.road-theme-texture {
+  fill: none;
+  stroke: rgba(15, 23, 42, 0.18);
+  stroke-width: 18;
+  stroke-linecap: round;
+  stroke-dasharray: 2 22;
+  opacity: 0.5;
+}
+
 .road-dash {
   fill: none;
   stroke: #64748b;
@@ -689,6 +917,24 @@ export default {
   stroke-dasharray: 12 11;
   stroke-linecap: round;
   opacity: 0.75;
+}
+
+.road-sheen {
+  fill: none;
+  stroke: url(#roadSheen);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.journey-root.theme-sichuan-tibet .road-theme-texture {
+  stroke: rgba(30, 64, 175, 0.22);
+  stroke-dasharray: 3 20;
+}
+
+.journey-root.theme-hainan-loop .road-theme-texture {
+  stroke: rgba(14, 116, 144, 0.24);
+  stroke-dasharray: 1 16;
 }
 
 .city-guide {
@@ -724,6 +970,47 @@ export default {
 
 .city-node.checked {
   fill: #10b981;
+}
+
+.city-node.final-node {
+  stroke-width: 3;
+}
+
+.city-node.final-node.reached {
+  fill: #f59e0b;
+  stroke: #d97706;
+}
+
+.node-symbol {
+  pointer-events: none;
+}
+
+.node-symbol > g {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.symbol-final {
+  fill: rgba(255, 255, 255, 0.22);
+}
+
+.symbol-service {
+  fill: rgba(255, 255, 255, 0.2);
+}
+
+.symbol-mountain {
+  fill: rgba(255, 255, 255, 0.16);
+}
+
+.symbol-coast {
+  stroke-width: 1.4;
+}
+
+.symbol-road {
+  fill: rgba(255, 255, 255, 0.22);
 }
 
 .pulse-ring {
@@ -1236,6 +1523,12 @@ export default {
 
   .road-map {
     height: 380px;
+  }
+
+  .route-legend {
+    position: static;
+    width: 100%;
+    margin-top: 12px;
   }
 
   .status-value {

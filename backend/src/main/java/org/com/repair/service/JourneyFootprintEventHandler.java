@@ -20,12 +20,11 @@ public class JourneyFootprintEventHandler {
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handle(JourneyFootprintEvent event) {
-        JourneyFootprint footprint = JourneyFootprint.builder()
-                .userId(event.userId())
-                .mapId(event.mapId())
-                .eventType(event.eventType())
-                .eventDescription(event.eventDescription())
-                .build();
+        JourneyFootprint footprint = new JourneyFootprint();
+        footprint.setUserId(event.userId());
+        footprint.setMapId(event.mapId());
+        footprint.setEventType(event.eventType());
+        footprint.setEventDescription(event.eventDescription());
         journeyFootprintRepository.save(footprint);
     }
 }

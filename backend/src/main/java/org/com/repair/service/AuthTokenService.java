@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 
 import org.com.repair.DTO.AuthLoginResponse;
 import org.com.repair.entity.AuthRefreshToken;
@@ -130,7 +131,7 @@ public class AuthTokenService {
                 .expiresAt(expiresAt)
                 .revoked(false)
                 .build();
-        authRefreshTokenRepository.save(entity);
+            authRefreshTokenRepository.save(Objects.requireNonNull(entity));
     }
 
     private String extractDeviceId(HttpServletRequest request) {

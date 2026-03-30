@@ -1,5 +1,6 @@
 package org.com.repair.entity;
 
+import java.util.Date;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
@@ -16,6 +17,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.Temporal;
+import jakarta.persistence.TemporalType;
 
 @Entity
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
@@ -41,6 +44,16 @@ public class Vehicle {
 
     @Column
     private String vin;
+
+    @Column(name = "current_mileage")
+    private Integer currentMileage;
+
+    @Column(name = "last_maintenance_mileage")
+    private Integer lastMaintenanceMileage;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "last_maintenance_at")
+    private Date lastMaintenanceAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -114,6 +127,30 @@ public class Vehicle {
 
     public void setVin(String vin) {
         this.vin = vin;
+    }
+
+    public Integer getCurrentMileage() {
+        return currentMileage;
+    }
+
+    public void setCurrentMileage(Integer currentMileage) {
+        this.currentMileage = currentMileage;
+    }
+
+    public Integer getLastMaintenanceMileage() {
+        return lastMaintenanceMileage;
+    }
+
+    public void setLastMaintenanceMileage(Integer lastMaintenanceMileage) {
+        this.lastMaintenanceMileage = lastMaintenanceMileage;
+    }
+
+    public Date getLastMaintenanceAt() {
+        return lastMaintenanceAt;
+    }
+
+    public void setLastMaintenanceAt(Date lastMaintenanceAt) {
+        this.lastMaintenanceAt = lastMaintenanceAt;
     }
 
     public User getUser() {

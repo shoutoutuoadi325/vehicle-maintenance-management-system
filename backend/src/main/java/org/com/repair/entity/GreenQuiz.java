@@ -7,15 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
 @Entity
 @Table(name = "green_quiz")
 @Schema(description = "环保问答题库")
@@ -61,4 +53,25 @@ public class GreenQuiz {
     @Column(name = "energy_reward", nullable = false)
     @Schema(description = "答对后奖励能量", example = "10")
     private Integer energyReward;
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getQuestion() { return question; }
+    public void setQuestion(String question) { this.question = question; }
+    public Integer getCityIndex() { return cityIndex; }
+    public void setCityIndex(Integer cityIndex) { this.cityIndex = cityIndex; }
+    public String getEventTitle() { return eventTitle; }
+    public void setEventTitle(String eventTitle) { this.eventTitle = eventTitle; }
+    public String getEventDescription() { return eventDescription; }
+    public void setEventDescription(String eventDescription) { this.eventDescription = eventDescription; }
+    public String getEventTheme() { return eventTheme; }
+    public void setEventTheme(String eventTheme) { this.eventTheme = eventTheme; }
+    public Boolean getIsDefaultForCity() { return isDefaultForCity; }
+    public void setIsDefaultForCity(Boolean isDefaultForCity) { this.isDefaultForCity = isDefaultForCity; }
+    public String getOptions() { return options; }
+    public void setOptions(String options) { this.options = options; }
+    public String getCorrectAnswer() { return correctAnswer; }
+    public void setCorrectAnswer(String correctAnswer) { this.correctAnswer = correctAnswer; }
+    public Integer getEnergyReward() { return energyReward; }
+    public void setEnergyReward(Integer energyReward) { this.energyReward = energyReward; }
 }

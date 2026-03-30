@@ -11,6 +11,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.com.repair.DTO.DispatchBoardOrderResponse;
+import org.com.repair.DTO.DispatchBoardTechnicianResponse;
 import org.com.repair.DTO.NewRepairOrderRequest;
 import org.com.repair.DTO.RepairOrderResponse;
 import org.com.repair.entity.RepairOrder;
@@ -29,6 +31,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.com.repair.event.EmissionReducedEvent;
 
 @Service
+@SuppressWarnings({"null", "unused"})
 public class RepairOrderService {
     private final RepairOrderRepository repairOrderRepository;
     private final UserRepository userRepository;
@@ -106,8 +109,6 @@ public class RepairOrderService {
         repairOrder.setEcoMaterial(request.ecoMaterial() != null ? request.ecoMaterial() : false);
         repairOrder.setReworkCount(request.reworkCount() != null ? request.reworkCount() : 0);
         repairOrder.setRepairType(request.repairType() != null ? request.repairType() : "repair");
-        // 以estimatedHours为工时，若无则用1
-        double workHours = repairOrder.getEstimatedHours() != null ? repairOrder.getEstimatedHours() : 1.0;
         // 计算碳排放
         repairOrder.setEstimatedEmission(
             emissionCalculatorService.calculate(repairOrder)
@@ -212,6 +213,56 @@ public class RepairOrderService {
     public List<RepairOrderResponse> getAllRepairOrdersWithDetails() {
         return repairOrderRepository.findAllWithDetails().stream()
                 .map(RepairOrderResponse::new)
+                .collect(Collectors.toList());
+    }
+
+    public List<DispatchBoardTechnicianResponse> getDispatchBoard() {
+        List<Technician> technicians = technicianRepository.findAll();
+        List<RepairOrder> activeOrders = new ArrayList<>();
+        activeOrders.addAll(repairOrderRepository.findByStatus(RepairStatus.ASSIGNED));
+        activeOrders.addAll(repairOrderRepository.findByStatus(RepairStatus.IN_PROGRESS));
+
+        Map<Long, List<DispatchBoardOrderResponse>> boardMap = new HashMap<>();
+        for (RepairOrder order : activeOrders) {
+            if (order.getTechnicians() == null || order.getTechnicians().isEmpty()) {
+                continue;
+            }
+
+            DispatchBoardOrderResponse orderCard = new DispatchBoardOrderResponse(
+                    order.getId(),
+                    order.getOrderNumber(),
+                    order.getStatus() != null ? order.getStatus().name() : null,
+                    order.getDescription(),
+                    order.getRequiredSkillType() != null ? order.getRequiredSkillType().name() : null,
+                    order.getUser() != null ? order.getUser().getName() : null,
+                    order.getVehicle() != null ? order.getVehicle().getLicensePlate() : null,
+                    order.getAssignmentType() != null ? order.getAssignmentType().name() : null,
+                    order.getAssignmentType() == RepairOrder.AssignmentType.AUTO,
+                    order.getCreatedAt(),
+                    order.getEstimatedHours()
+            );
+
+            for (Technician tech : order.getTechnicians()) {
+                boardMap.computeIfAbsent(tech.getId(), k -> new ArrayList<>()).add(orderCard);
+            }
+        }
+
+        return technicians.stream()
+                .map(tech -> {
+                    List<DispatchBoardOrderResponse> techOrders = boardMap.getOrDefault(tech.getId(), new ArrayList<>());
+                    return new DispatchBoardTechnicianResponse(
+                            tech.getId(),
+                            tech.getName(),
+                            tech.getEmployeeId(),
+                            tech.getSkillType() != null ? tech.getSkillType().name() : null,
+                            tech.getHourlyRate(),
+                            techOrders.size(),
+                            tech.getTotalWorkHours(),
+                            tech.getCompletedOrders(),
+                            techOrders
+                    );
+                })
+                .sorted((a, b) -> Integer.compare(b.activeOrderCount(), a.activeOrderCount()))
                 .collect(Collectors.toList());
     }
     

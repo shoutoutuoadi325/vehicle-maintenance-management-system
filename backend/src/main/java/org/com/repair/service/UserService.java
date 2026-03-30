@@ -1,6 +1,7 @@
 package org.com.repair.service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -40,7 +41,7 @@ public class UserService {
     }
     
     public Optional<UserResponse> getUserById(Long id) {
-        return userRepository.findById(id)
+        return userRepository.findById(Objects.requireNonNull(id, "用户ID不能为空"))
                 .map(this::createSafeUserResponse);
     }
     
@@ -51,7 +52,7 @@ public class UserService {
     
     @Transactional
     public UserResponse updateUser(Long id, NewUserRequest request) {
-        User user = userRepository.findById(id)
+        User user = userRepository.findById(Objects.requireNonNull(id, "用户ID不能为空"))
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         
         user.setName(request.name());
@@ -69,8 +70,9 @@ public class UserService {
     
     @Transactional
     public boolean deleteUser(Long id) {
-        if (userRepository.existsById(id)) {
-            userRepository.deleteById(id);
+        Long userId = Objects.requireNonNull(id, "用户ID不能为空");
+        if (userRepository.existsById(userId)) {
+            userRepository.deleteById(userId);
             return true;
         }
         return false;

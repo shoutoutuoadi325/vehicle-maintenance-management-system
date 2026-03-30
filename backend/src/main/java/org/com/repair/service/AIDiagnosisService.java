@@ -68,7 +68,7 @@ public class AIDiagnosisService {
             try {
                 String fallbackPrompt = buildPrompt(problemDescription, normalizedRole);
                 String fallbackText = callOpenAIAPI(fallbackPrompt, traceId, "FALLBACK_SINGLE");
-                AIDiagnosisResponse fallbackResponse = parseResponse(fallbackText);
+                AIDiagnosisResponse fallbackResponse = parseResponse(fallbackText, problemDescription);
                 logger.info("[AI-CONSILIUM][{}] 单模型回退完成", traceId);
                 return fallbackResponse;
             } catch (SocketTimeoutException timeoutException) {
@@ -114,7 +114,7 @@ public class AIDiagnosisService {
                 "- 必要时在步骤中插入 `[安全高危校验]` 标记。";
         String finalReport = runAgentStep("ARBITRATOR", arbitratorInput, traceId);
 
-        return new AIDiagnosisResponse("专家会诊", finalReport);
+        return parseResponse(finalReport, problemDescription);
     }
 
     private double resolveTechnicianFatigueLevel(Long technicianId, String traceId) {
@@ -217,10 +217,11 @@ public class AIDiagnosisService {
         }
     }
 
-    private AIDiagnosisResponse parseResponse(String responseText) {
+    private AIDiagnosisResponse parseResponse(String responseText, String problemDescription) {
         // 解析AI返回的文本
         String faultType = "";
         String suggestion = "";
+        java.util.List<String> possibleCauses = new java.util.ArrayList<>();
 
         String[] lines = responseText.split("\n");
         for (String line : lines) {
@@ -229,6 +230,11 @@ public class AIDiagnosisService {
                 faultType = line.substring(5).trim();
             } else if (line.startsWith("建议：") || line.startsWith("建议:")) {
                 suggestion = line.substring(3).trim();
+            } else if (line.startsWith("- ") || line.startsWith("* ")) {
+                String cause = line.substring(2).trim();
+                if (!cause.isEmpty() && possibleCauses.size() < 5) {
+                    possibleCauses.add(cause);
+                }
             }
         }
 
@@ -238,6 +244,50 @@ public class AIDiagnosisService {
             faultType = "综合诊断";
         }
 
-        return new AIDiagnosisResponse(faultType, suggestion);
+        String severity = evaluateSeverity(problemDescription + "\n" + responseText);
+        Integer[] costRange = estimateCostBySeverity(severity);
+        Integer[] hourRange = estimateHoursBySeverity(severity);
+
+        AIDiagnosisResponse response = new AIDiagnosisResponse(faultType, suggestion);
+        response.setSeverityLevel(severity);
+        response.setPossibleCauses(possibleCauses);
+        response.setEstimatedCostMin(costRange[0]);
+        response.setEstimatedCostMax(costRange[1]);
+        response.setEstimatedHoursMin(hourRange[0]);
+        response.setEstimatedHoursMax(hourRange[1]);
+
+        return response;
+    }
+
+    private String evaluateSeverity(String text) {
+        String normalized = text == null ? "" : text.toLowerCase();
+        if (normalized.contains("无法启动") || normalized.contains("刹车失灵") || normalized.contains("高温") || normalized.contains("漏油")) {
+            return "CRITICAL";
+        }
+        if (normalized.contains("异响") || normalized.contains("抖动") || normalized.contains("故障灯") || normalized.contains("动力不足")) {
+            return "HIGH";
+        }
+        if (normalized.contains("油耗") || normalized.contains("偶发") || normalized.contains("轻微")) {
+            return "MEDIUM";
+        }
+        return "LOW";
+    }
+
+    private Integer[] estimateCostBySeverity(String severity) {
+        return switch (severity) {
+            case "CRITICAL" -> new Integer[]{2000, 8000};
+            case "HIGH" -> new Integer[]{800, 3000};
+            case "MEDIUM" -> new Integer[]{300, 1500};
+            default -> new Integer[]{100, 600};
+        };
+    }
+
+    private Integer[] estimateHoursBySeverity(String severity) {
+        return switch (severity) {
+            case "CRITICAL" -> new Integer[]{6, 16};
+            case "HIGH" -> new Integer[]{3, 8};
+            case "MEDIUM" -> new Integer[]{2, 5};
+            default -> new Integer[]{1, 3};
+        };
     }
 }

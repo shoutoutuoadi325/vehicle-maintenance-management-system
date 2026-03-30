@@ -3,10 +3,12 @@ import VueRouter from 'vue-router'
 import IdentitySelection from '../components/IdentitySelection.vue'
 import AuthForm from '../components/AuthForm.vue'
 import CustomerDashboard from '../views/CustomerDashboard.vue'
+import AIDiagnosisClient from '../views/AIDiagnosisClient.vue'
 import ZeroCarbonJourney from '../views/ZeroCarbonJourney.vue'
 import GrandPrizeStatus from '../views/GrandPrizeStatus.vue'
 import TechnicianDashboard from '../views/TechnicianDashboard.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
+import DispatchBoard from '../views/DispatchBoard.vue'
 
 Vue.use(VueRouter)
 
@@ -26,6 +28,12 @@ const routes = [
     path: '/customer',
     name: 'CustomerDashboard',
     component: CustomerDashboard,
+    meta: { requiresAuth: true, role: 'customer' }
+  },
+  {
+    path: '/customer/ai-diagnosis',
+    name: 'AIDiagnosisClient',
+    component: AIDiagnosisClient,
     meta: { requiresAuth: true, role: 'customer' }
   },
   {
@@ -50,6 +58,12 @@ const routes = [
     path: '/admin',
     name: 'AdminDashboard',
     component: AdminDashboard,
+    meta: { requiresAuth: true, role: 'admin' }
+  },
+  {
+    path: '/admin/dispatch',
+    name: 'DispatchBoard',
+    component: DispatchBoard,
     meta: { requiresAuth: true, role: 'admin' }
   }
 ]

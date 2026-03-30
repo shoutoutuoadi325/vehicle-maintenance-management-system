@@ -19,11 +19,10 @@ public class GreenEnergyAccountProvisioningService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public GreenEnergyAccount createAccountInNewTransaction(Long userId) {
         try {
-            GreenEnergyAccount newAccount = GreenEnergyAccount.builder()
-                    .userId(userId)
-                    .totalEnergy(0)
-                    .currentMileage(0)
-                    .build();
+            GreenEnergyAccount newAccount = new GreenEnergyAccount();
+            newAccount.setUserId(userId);
+            newAccount.setTotalEnergy(0);
+            newAccount.setCurrentMileage(0);
             return greenEnergyAccountRepository.save(newAccount);
         } catch (DataIntegrityViolationException duplicate) {
             throw new ConcurrentAccountCreationException("账户并发创建冲突", duplicate);

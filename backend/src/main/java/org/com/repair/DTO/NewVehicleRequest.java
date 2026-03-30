@@ -7,6 +7,9 @@ public record NewVehicleRequest(
     Integer year,
     String color,
     String vin,
-    Long userId
+    Long userId,
+    Integer currentMileage,
+    Integer lastMaintenanceMileage,
+    java.util.Date lastMaintenanceAt
 ) {
 } 

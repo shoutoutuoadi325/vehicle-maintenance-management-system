@@ -10,15 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
 @Entity
 @Table(name = "journey_completion_record")
 public class JourneyCompletionRecord {
@@ -34,11 +26,9 @@ public class JourneyCompletionRecord {
     private LocalDateTime completedAt;
 
     @Column(name = "grand_prize_granted", nullable = false)
-    @Builder.Default
     private Boolean grandPrizeGranted = false;
 
     @Column(name = "sticker_claimed", nullable = false)
-    @Builder.Default
     private Boolean stickerClaimed = false;
 
     @Column(name = "consignee_name", length = 100)
@@ -51,7 +41,6 @@ public class JourneyCompletionRecord {
     private String shippingAddress;
 
     @Column(name = "shipping_status", nullable = false, length = 30)
-    @Builder.Default
     private String shippingStatus = "NOT_CLAIMED";
 
     @Column(name = "shipment_tracking_no", length = 80)
@@ -67,5 +56,101 @@ public class JourneyCompletionRecord {
     @PreUpdate
     public void touchUpdateTime() {
         this.updateTime = LocalDateTime.now();
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public LocalDateTime getCompletedAt() {
+        return completedAt;
+    }
+
+    public void setCompletedAt(LocalDateTime completedAt) {
+        this.completedAt = completedAt;
+    }
+
+    public Boolean getGrandPrizeGranted() {
+        return grandPrizeGranted;
+    }
+
+    public void setGrandPrizeGranted(Boolean grandPrizeGranted) {
+        this.grandPrizeGranted = grandPrizeGranted;
+    }
+
+    public Boolean getStickerClaimed() {
+        return stickerClaimed;
+    }
+
+    public void setStickerClaimed(Boolean stickerClaimed) {
+        this.stickerClaimed = stickerClaimed;
+    }
+
+    public String getConsigneeName() {
+        return consigneeName;
+    }
+
+    public void setConsigneeName(String consigneeName) {
+        this.consigneeName = consigneeName;
+    }
+
+    public String getConsigneePhone() {
+        return consigneePhone;
+    }
+
+    public void setConsigneePhone(String consigneePhone) {
+        this.consigneePhone = consigneePhone;
+    }
+
+    public String getShippingAddress() {
+        return shippingAddress;
+    }
+
+    public void setShippingAddress(String shippingAddress) {
+        this.shippingAddress = shippingAddress;
+    }
+
+    public String getShippingStatus() {
+        return shippingStatus;
+    }
+
+    public void setShippingStatus(String shippingStatus) {
+        this.shippingStatus = shippingStatus;
+    }
+
+    public String getShipmentTrackingNo() {
+        return shipmentTrackingNo;
+    }
+
+    public void setShipmentTrackingNo(String shipmentTrackingNo) {
+        this.shipmentTrackingNo = shipmentTrackingNo;
+    }
+
+    public LocalDateTime getShippedAt() {
+        return shippedAt;
+    }
+
+    public void setShippedAt(LocalDateTime shippedAt) {
+        this.shippedAt = shippedAt;
+    }
+
+    public LocalDateTime getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(LocalDateTime updateTime) {
+        this.updateTime = updateTime;
     }
 }

@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/ai-diagnosis")
+@RequestMapping({"/api/ai-diagnosis", "/api/diagnosis"})
 public class AIDiagnosisController {
 
     private final AIDiagnosisService aiDiagnosisService;
@@ -18,7 +18,7 @@ public class AIDiagnosisController {
         this.aiDiagnosisService = aiDiagnosisService;
     }
 
-    @PostMapping("/diagnose")
+    @PostMapping({"", "/diagnose"})
     public ResponseEntity<AIDiagnosisResponse> diagnoseFault(@Valid @RequestBody AIDiagnosisRequest request) {
         AIDiagnosisResponse response = aiDiagnosisService.diagnoseFault(
                 request.getProblemDescription(),

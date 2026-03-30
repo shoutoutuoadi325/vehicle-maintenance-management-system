@@ -10,15 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
 @Entity
 @Table(name = "journey_map")
 public class JourneyMap {
@@ -31,7 +23,6 @@ public class JourneyMap {
     private String mapName;
 
     @Column(name = "enabled", nullable = false)
-    @Builder.Default
     private Boolean enabled = true;
 
     @Column(name = "update_time", nullable = false)
@@ -42,4 +33,13 @@ public class JourneyMap {
     public void touchUpdateTime() {
         this.updateTime = LocalDateTime.now();
     }
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getMapName() { return mapName; }
+    public void setMapName(String mapName) { this.mapName = mapName; }
+    public Boolean getEnabled() { return enabled; }
+    public void setEnabled(Boolean enabled) { this.enabled = enabled; }
+    public LocalDateTime getUpdateTime() { return updateTime; }
+    public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
 }

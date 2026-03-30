@@ -5,6 +5,7 @@ import java.util.Set;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpMethod;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -20,7 +21,9 @@ public class RoleAuthorizationInterceptor implements HandlerInterceptor {
     );
 
     @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+    public boolean preHandle(@NonNull HttpServletRequest request,
+                             @NonNull HttpServletResponse response,
+                             @NonNull Object handler) throws Exception {
         String path = request.getRequestURI();
         String role = String.valueOf(request.getAttribute("authRole")).toLowerCase();
 
@@ -62,11 +65,15 @@ public class RoleAuthorizationInterceptor implements HandlerInterceptor {
     }
 
     private boolean isOptions(HttpServletRequest request) {
-        return HttpMethod.OPTIONS.matches(request.getMethod());
+        String method = request.getMethod();
+        return method != null && HttpMethod.OPTIONS.matches(method);
     }
 
     private boolean isWriteMethod(HttpServletRequest request) {
         String method = request.getMethod();
+        if (method == null) {
+            return false;
+        }
         return HttpMethod.POST.matches(method)
                 || HttpMethod.PUT.matches(method)
                 || HttpMethod.PATCH.matches(method)

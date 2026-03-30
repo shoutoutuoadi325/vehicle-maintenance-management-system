@@ -12,15 +12,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
 @Entity
 @Table(name = "green_energy_account")
 @Schema(description = "用户绿色能量账户")
@@ -36,22 +28,18 @@ public class GreenEnergyAccount {
     private Long userId;
 
     @Column(name = "total_energy", nullable = false)
-    @Builder.Default
     @Schema(description = "绿色能量余额", example = "120")
     private Integer totalEnergy = 0;
 
     @Column(name = "current_mileage", nullable = false)
-    @Builder.Default
     @Schema(description = "当前公路里程进度", example = "45")
     private Integer currentMileage = 0;
 
     @Column(name = "current_map_id", nullable = false)
-    @Builder.Default
     @Schema(description = "当前正在进行的路线ID", example = "1")
     private Long currentMapId = 1L;
 
     @Column(name = "journey_status", nullable = false, length = 40)
-    @Builder.Default
     @Schema(description = "旅程状态：NORMAL/PENDING_RANDOM_EVENT", example = "NORMAL")
     private String journeyStatus = "NORMAL";
 
@@ -60,7 +48,6 @@ public class GreenEnergyAccount {
     private Long pendingRandomQuizId;
 
     @Column(name = "frozen_mileage", nullable = false)
-    @Builder.Default
     @Schema(description = "冻结中的里程累计值", example = "40")
     private Integer frozenMileage = 0;
 
@@ -74,13 +61,103 @@ public class GreenEnergyAccount {
 
     @Version
     @Column(name = "version", nullable = false)
-    @Builder.Default
     @Schema(description = "乐观锁版本号", example = "0")
     private Long version = 0L;
+
+    public GreenEnergyAccount() {
+    }
 
     @PrePersist
     @PreUpdate
     public void touchUpdateTime() {
         this.updateTime = LocalDateTime.now();
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public Integer getTotalEnergy() {
+        return totalEnergy;
+    }
+
+    public void setTotalEnergy(Integer totalEnergy) {
+        this.totalEnergy = totalEnergy;
+    }
+
+    public Integer getCurrentMileage() {
+        return currentMileage;
+    }
+
+    public void setCurrentMileage(Integer currentMileage) {
+        this.currentMileage = currentMileage;
+    }
+
+    public Long getCurrentMapId() {
+        return currentMapId;
+    }
+
+    public void setCurrentMapId(Long currentMapId) {
+        this.currentMapId = currentMapId;
+    }
+
+    public String getJourneyStatus() {
+        return journeyStatus;
+    }
+
+    public void setJourneyStatus(String journeyStatus) {
+        this.journeyStatus = journeyStatus;
+    }
+
+    public Long getPendingRandomQuizId() {
+        return pendingRandomQuizId;
+    }
+
+    public void setPendingRandomQuizId(Long pendingRandomQuizId) {
+        this.pendingRandomQuizId = pendingRandomQuizId;
+    }
+
+    public Integer getFrozenMileage() {
+        return frozenMileage;
+    }
+
+    public void setFrozenMileage(Integer frozenMileage) {
+        this.frozenMileage = frozenMileage;
+    }
+
+    public LocalDateTime getRandomEventNextRetryTime() {
+        return randomEventNextRetryTime;
+    }
+
+    public void setRandomEventNextRetryTime(LocalDateTime randomEventNextRetryTime) {
+        this.randomEventNextRetryTime = randomEventNextRetryTime;
+    }
+
+    public LocalDateTime getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(LocalDateTime updateTime) {
+        this.updateTime = updateTime;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 }

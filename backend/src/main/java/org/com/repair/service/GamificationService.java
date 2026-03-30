@@ -83,6 +83,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 @Service
+@SuppressWarnings({"null", "unused"})
 public class GamificationService {
 
     private static final Logger logger = LoggerFactory.getLogger(GamificationService.class);
@@ -91,7 +92,6 @@ public class GamificationService {
     private static final String SOURCE_TYPE_JOURNEY = "JOURNEY_CITY";
     private static final String ACTION_EMISSION_REWARD = "EMISSION_REWARD";
     private static final String ACTION_CITY_CHECKIN_REWARD = "CITY_CHECKIN_REWARD";
-    private static final String ACTION_RANDOM_EVENT_TRIGGER = "RANDOM_EVENT_TRIGGER";
     private static final String FOOTPRINT_EVENT_CHECKIN_CITY = "CHECKIN_CITY";
     private static final String FOOTPRINT_EVENT_TRIGGER_RANDOM_EVENT = "TRIGGER_RANDOM_EVENT";
     private static final String FOOTPRINT_EVENT_DRAW_COUPON = "DRAW_COUPON";
@@ -327,7 +327,8 @@ public class GamificationService {
                     "当前暂无可用路线");
         }
 
-        if (currentMapId == null || enabledMaps.stream().noneMatch(m -> m.getId().equals(currentMapId))) {
+        final Long currentMapIdSnapshot = currentMapId;
+        if (currentMapId == null || enabledMaps.stream().noneMatch(m -> m.getId().equals(currentMapIdSnapshot))) {
             currentMapId = enabledMaps.get(0).getId();
         }
 
@@ -461,35 +462,26 @@ public class GamificationService {
                 completion != null ? completion.getShippingStatus() : "NOT_CLAIMED");
         }
 
-        int frozenMileage = account.getFrozenMileage() == null ? 0 : account.getFrozenMileage();
-        if (frozenMileage > 0) {
-            int updated = greenEnergyAccountRepository.atomicIncrease(userId, 0, frozenMileage);
-            if (updated <= 0) {
-            throw new GamificationException(
-                GamificationErrorCode.ACCOUNT_ATOMIC_SETTLEMENT_FAILED,
-                "冻结里程解冻失败");
-            }
-        }
-
         GreenEnergyAccount reloaded = greenEnergyAccountRepository.findByUserId(userId)
             .orElseThrow(() -> new GamificationException(
                 GamificationErrorCode.ACCOUNT_READ_AFTER_SETTLEMENT_FAILED,
                 "解冻后读取账户失败"));
         reloaded.setJourneyStatus(JOURNEY_STATUS_NORMAL);
         reloaded.setPendingRandomQuizId(null);
-        reloaded.setFrozenMileage(0);
         reloaded.setRandomEventNextRetryTime(null);
         GreenEnergyAccount saved = greenEnergyAccountRepository.save(reloaded);
 
-        reconcileNodeStates(userId, saved.getCurrentMapId(), saved.getCurrentMileage());
+        GreenEnergyAccount released = releaseFrozenMileageByCheckpoint(userId, saved.getCurrentMapId());
+
+        reconcileNodeStates(userId, released.getCurrentMapId(), released.getCurrentMileage());
 
         return new QuizAnswerResultResponse(
             userId,
             pendingQuizId,
             true,
             0,
-            saved.getTotalEnergy(),
-            saved.getCurrentMileage(),
+            released.getTotalEnergy(),
+            released.getCurrentMileage(),
             null,
             completion != null,
             completion != null && Boolean.TRUE.equals(completion.getStickerClaimed()),
@@ -703,6 +695,7 @@ public class GamificationService {
             "成功抵达" + cityNode.getCityName());
 
         reconcileNodeStates(userId, mapId, grant.currentMileage());
+        GreenEnergyAccount released = releaseFrozenMileageByCheckpoint(userId, mapId);
 
         CouponDrawResultResponse couponDrawResult = drawCouponForCity(userId, mapId, cityIndex, sourceId);
         JourneyCompletionRecord completionRecord = ensureJourneyCompletionIfFinished(userId, mapId, cityIndex);
@@ -712,8 +705,8 @@ public class GamificationService {
                 quizId,
                 true,
                 grant.rewardEnergy(),
-                grant.totalEnergy(),
-                grant.currentMileage(),
+            released.getTotalEnergy(),
+            released.getCurrentMileage(),
                 couponDrawResult,
                 completionRecord != null,
                 completionRecord != null && Boolean.TRUE.equals(completionRecord.getStickerClaimed()),
@@ -743,10 +736,22 @@ public class GamificationService {
         GreenEnergyAccount account = getOrCreateUserAccount(userId);
         boolean pendingRandomEvent = JOURNEY_STATUS_PENDING_RANDOM_EVENT.equals(account.getJourneyStatus());
 
+        int mileageDelta = rawReward;
+        int frozenMileageDelta = 0;
+        if (!pendingRandomEvent) {
+            Integer gateMileage = resolveNextCheckpointMileage(userId, account.getCurrentMapId());
+            if (gateMileage != null) {
+                int currentMileage = account.getCurrentMileage() == null ? 0 : account.getCurrentMileage();
+                int remainingToGate = Math.max(0, gateMileage - currentMileage);
+                mileageDelta = Math.min(rawReward, remainingToGate);
+                frozenMileageDelta = Math.max(0, rawReward - mileageDelta);
+            }
+        }
+
         RewardGrantResult grant = tryGrantReward(
                 userId,
                 rawReward,
-            pendingRandomEvent ? 0 : rawReward,
+            pendingRandomEvent ? 0 : mileageDelta,
                 SOURCE_TYPE_ORDER,
                 String.valueOf(repairOrderId),
                 ACTION_EMISSION_REWARD,
@@ -767,6 +772,16 @@ public class GamificationService {
             greenEnergyAccountRepository.save(latest);
             logger.info("工单 {} 触发里程冻结累计: userId={}, frozenMileageDelta={}", repairOrderId, userId, rawReward);
             return;
+        }
+
+        if (frozenMileageDelta > 0) {
+            GreenEnergyAccount latest = greenEnergyAccountRepository.findByUserId(userId)
+                .orElseThrow(() -> new GamificationException(
+                    GamificationErrorCode.ACCOUNT_READ_AFTER_SETTLEMENT_FAILED,
+                    "里程封顶冻结时读取账户失败"));
+            int rawFrozen = latest.getFrozenMileage() == null ? 0 : latest.getFrozenMileage();
+            latest.setFrozenMileage(rawFrozen + frozenMileageDelta);
+            greenEnergyAccountRepository.save(latest);
         }
 
         reconcileNodeStates(userId, account.getCurrentMapId(), grant.currentMileage());
@@ -1010,21 +1025,21 @@ public class GamificationService {
                                              String sourceId,
                                              String actionKey,
                                              String reason) {
-        if (requestedEnergy <= 0 || requestedMileage <= 0) {
+        if (requestedEnergy <= 0) {
             GreenEnergyAccount account = getOrCreateAccountInternal(userId);
             return RewardGrantResult.notGranted(account.getTotalEnergy(), account.getCurrentMileage());
         }
 
         int dailyCap = gamificationRuleService.getInt("DAILY_ENERGY_CAP", DEFAULT_DAILY_ENERGY_CAP);
         int finalEnergy = requestedEnergy;
-        int finalMileage = requestedMileage;
+        int finalMileage = Math.max(0, requestedMileage);
 
         if (greenRewardLedgerRepository.existsBySourceTypeAndSourceIdAndActionKey(sourceType, sourceId, actionKey)) {
             GreenEnergyAccount account = getOrCreateAccountInternal(userId);
             return RewardGrantResult.notGranted(account.getTotalEnergy(), account.getCurrentMileage());
         }
 
-        if (finalEnergy <= 0 || finalMileage <= 0) {
+        if (finalEnergy <= 0) {
             GreenEnergyAccount account = getOrCreateAccountInternal(userId);
             return RewardGrantResult.notGranted(account.getTotalEnergy(), account.getCurrentMileage());
         }
@@ -1092,6 +1107,87 @@ public class GamificationService {
                 .map(GreenJourneyNodeState::getCityIndex)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private GreenEnergyAccount releaseFrozenMileageByCheckpoint(Long userId, Long mapId) {
+        GreenEnergyAccount account = greenEnergyAccountRepository.findByUserId(userId)
+                .orElseThrow(() -> new GamificationException(
+                        GamificationErrorCode.ACCOUNT_READ_AFTER_SETTLEMENT_FAILED,
+                        "释放冻结里程前读取账户失败"));
+
+        int frozen = account.getFrozenMileage() == null ? 0 : account.getFrozenMileage();
+        if (frozen <= 0) {
+            return account;
+        }
+
+        Integer gateMileage = resolveNextCheckpointMileage(userId, mapId);
+        int releaseMileage;
+        if (gateMileage == null) {
+            releaseMileage = frozen;
+        } else {
+            int currentMileage = account.getCurrentMileage() == null ? 0 : account.getCurrentMileage();
+            int remainingToGate = Math.max(0, gateMileage - currentMileage);
+            releaseMileage = Math.min(frozen, remainingToGate);
+        }
+
+        if (releaseMileage > 0) {
+            int updated = greenEnergyAccountRepository.atomicIncrease(userId, 0, releaseMileage);
+            if (updated <= 0) {
+                throw new GamificationException(
+                        GamificationErrorCode.ACCOUNT_ATOMIC_SETTLEMENT_FAILED,
+                        "释放冻结里程失败");
+            }
+        }
+
+        GreenEnergyAccount reloaded = greenEnergyAccountRepository.findByUserId(userId)
+                .orElseThrow(() -> new GamificationException(
+                        GamificationErrorCode.ACCOUNT_READ_AFTER_SETTLEMENT_FAILED,
+                        "释放冻结里程后读取账户失败"));
+        int remainFrozen = Math.max(0, frozen - releaseMileage);
+        reloaded.setFrozenMileage(remainFrozen);
+        GreenEnergyAccount saved = greenEnergyAccountRepository.save(reloaded);
+
+        if (releaseMileage > 0) {
+            reconcileNodeStates(userId, mapId, saved.getCurrentMileage());
+        }
+
+        return saved;
+    }
+
+    private Integer resolveNextCheckpointMileage(Long userId, Long mapId) {
+        List<GreenJourneyNodeState> states = greenJourneyNodeStateRepository.findByUserIdAndMapIdOrderByCityIndexAsc(userId, mapId);
+        if (states.isEmpty()) {
+            return null;
+        }
+
+        Integer lastCheckedIndex = states.stream()
+                .filter(state -> NodeState.CHECKED_IN.name().equals(state.getNodeState()))
+                .map(GreenJourneyNodeState::getCityIndex)
+                .max(Integer::compareTo)
+                .orElse(null);
+
+        if (lastCheckedIndex == null) {
+            Optional<GreenJourneyNodeState> firstUnlocked = states.stream()
+                    .filter(state -> NodeState.UNLOCKED.name().equals(state.getNodeState()))
+                    .findFirst();
+            if (firstUnlocked.isPresent()) {
+                JourneyMapNode unlockedNode = getMapNodeOrThrow(mapId, firstUnlocked.get().getCityIndex());
+                if (unlockedNode.getRequiredMileage() != null && unlockedNode.getRequiredMileage() <= 0) {
+                    lastCheckedIndex = firstUnlocked.get().getCityIndex();
+                }
+            }
+        }
+
+        int nextCityIndex = (lastCheckedIndex == null ? 0 : lastCheckedIndex + 1);
+        Optional<GreenJourneyNodeState> gateState = states.stream()
+                .filter(state -> state.getCityIndex() == nextCityIndex)
+                .findFirst();
+        if (gateState.isEmpty()) {
+            return null;
+        }
+
+        JourneyMapNode gateNode = getMapNodeOrThrow(mapId, gateState.get().getCityIndex());
+        return Math.max(0, gateNode.getRequiredMileage());
     }
 
     private JourneyPositionSnapshot calculateJourneyPosition(List<JourneyMapNode> nodes, Integer currentMileage) {
@@ -1284,13 +1380,13 @@ public class GamificationService {
 
         return journeyCompletionRecordRepository.findByUserId(userId)
                 .orElseGet(() -> {
-                    JourneyCompletionRecord created = journeyCompletionRecordRepository.save(JourneyCompletionRecord.builder()
-                        .userId(userId)
-                        .completedAt(LocalDateTime.now())
-                        .grandPrizeGranted(false)
-                        .stickerClaimed(false)
-                        .shippingStatus("NOT_CLAIMED")
-                        .build());
+                    JourneyCompletionRecord record = new JourneyCompletionRecord();
+                    record.setUserId(userId);
+                    record.setCompletedAt(LocalDateTime.now());
+                    record.setGrandPrizeGranted(false);
+                    record.setStickerClaimed(false);
+                    record.setShippingStatus("NOT_CLAIMED");
+                    JourneyCompletionRecord created = journeyCompletionRecordRepository.save(record);
                     publishJourneyFootprint(
                         userId,
                         mapId,
@@ -1317,18 +1413,17 @@ public class GamificationService {
         }
 
         BrandPartner brand = brandPartnerRepository.findById(selected.getBrandPartnerId()).orElse(null);
-        UserCouponWallet wallet = UserCouponWallet.builder()
-                .userId(userId)
-                .couponId(selected.getId())
-                .brandPartnerId(selected.getBrandPartnerId())
-                .cityIndex(cityIndex)
-                .couponTitle(selected.getCouponTitle())
-                .couponDescription(selected.getCouponDescription())
-                .couponStatus("NEW")
-                .sourceAction("JOURNEY_COUPON_DRAW_" + sourceId)
-                .drawTime(LocalDateTime.now())
-                .expireTime(selected.getExpireTime())
-                .build();
+        UserCouponWallet wallet = new UserCouponWallet();
+        wallet.setUserId(userId);
+        wallet.setCouponId(selected.getId());
+        wallet.setBrandPartnerId(selected.getBrandPartnerId());
+        wallet.setCityIndex(cityIndex);
+        wallet.setCouponTitle(selected.getCouponTitle());
+        wallet.setCouponDescription(selected.getCouponDescription());
+        wallet.setCouponStatus("NEW");
+        wallet.setSourceAction("JOURNEY_COUPON_DRAW_" + sourceId);
+        wallet.setDrawTime(LocalDateTime.now());
+        wallet.setExpireTime(selected.getExpireTime());
         userCouponWalletRepository.save(wallet);
 
     publishJourneyFootprint(
@@ -1425,28 +1520,4 @@ public class GamificationService {
         return trimmed.substring(0, 3) + "****" + trimmed.substring(trimmed.length() - 4);
     }
 
-    private String maskUsername(String username) {
-        if (username == null || username.isBlank()) {
-            return "***";
-        }
-        String trimmed = username.trim();
-        if (trimmed.length() <= 1) {
-            return "*";
-        }
-        if (trimmed.length() == 2) {
-            return trimmed.charAt(0) + "*";
-        }
-        return trimmed.charAt(0) + "***" + trimmed.charAt(trimmed.length() - 1);
-    }
-
-    private String maskPhone(String phone) {
-        if (phone == null || phone.isBlank()) {
-            return "****";
-        }
-        String digits = phone.trim();
-        if (digits.length() < 7) {
-            return "****";
-        }
-        return digits.substring(0, 3) + "****" + digits.substring(digits.length() - 4);
-    }
 }
