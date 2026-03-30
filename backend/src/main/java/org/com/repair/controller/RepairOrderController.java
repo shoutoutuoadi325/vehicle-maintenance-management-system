@@ -9,6 +9,8 @@ import org.com.repair.DTO.RepairOrderResponse;
 import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.RepairOrder.RepairStatus;
 import org.com.repair.service.RepairOrderService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/repair-orders")
 public class RepairOrderController {
+
+    private static final Logger logger = LoggerFactory.getLogger(RepairOrderController.class);
     
     private final RepairOrderService repairOrderService;
     
@@ -63,6 +67,7 @@ public class RepairOrderController {
             List<RepairOrderResponse> orders = repairOrderService.getRepairOrdersByTechnician(technicianId);
             return ResponseEntity.ok(orders);
         } catch (Exception e) {
+            logger.error("Failed to get repair orders by technician, technicianId={}", technicianId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -94,6 +99,7 @@ public class RepairOrderController {
             RepairOrderResponse response = repairOrderService.updateRepairOrderStatus(id, status, materialCost);
             return new ResponseEntity<>(response, HttpStatus.OK);
         } catch (RuntimeException e) {
+            logger.warn("Failed to update repair order status, orderId={}, status={}, materialCost={}", id, status, materialCost, e);
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
     }
@@ -106,6 +112,7 @@ public class RepairOrderController {
             RepairOrderResponse response = repairOrderService.updateRepairOrder(id, request);
             return new ResponseEntity<>(response, HttpStatus.OK);
         } catch (RuntimeException e) {
+            logger.warn("Failed to update repair order, orderId={}", id, e);
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
     }
@@ -156,6 +163,7 @@ public class RepairOrderController {
             RepairOrderResponse response = repairOrderService.reassignTechnicians(id, technicianIds, isManual);
             return new ResponseEntity<>(response, HttpStatus.OK);
         } catch (RuntimeException e) {
+            logger.warn("Failed to reassign technicians, orderId={}, isManual={}", id, isManual, e);
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
     }
@@ -166,6 +174,7 @@ public class RepairOrderController {
             RepairOrderResponse response = repairOrderService.autoReassignTechnicians(id);
             return new ResponseEntity<>(response, HttpStatus.OK);
         } catch (RuntimeException e) {
+            logger.warn("Failed to auto reassign technicians, orderId={}", id, e);
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
     }
@@ -176,6 +185,7 @@ public class RepairOrderController {
             RepairOrderResponse response = repairOrderService.urgeRepairOrder(id);
             return new ResponseEntity<>(response, HttpStatus.OK);
         } catch (RuntimeException e) {
+            logger.warn("Failed to urge repair order, orderId={}", id, e);
             return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
         }
     }

@@ -75,10 +75,11 @@ class TechnicianServiceFatigueTest {
     @Test
     void shouldCapFatigueAtOneForExtremeLoad() {
         LocalDate today = LocalDate.now();
+        // Use a full-day interval to keep this assertion deterministic even right after midnight.
         RepairOrder longShift = order(
-                RepairOrder.RepairStatus.IN_PROGRESS,
-                today.atStartOfDay(),
-                null);
+            RepairOrder.RepairStatus.COMPLETED,
+            today.atStartOfDay(),
+            today.plusDays(1).atStartOfDay());
 
         List<RepairOrder> heavyOrders = List.of(
                 longShift,

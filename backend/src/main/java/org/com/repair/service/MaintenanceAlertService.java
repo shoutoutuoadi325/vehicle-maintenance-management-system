@@ -1,8 +1,8 @@
 package org.com.repair.service;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -14,8 +14,11 @@ import org.com.repair.entity.MaintenanceAlert;
 import org.com.repair.entity.MaintenanceAlert.AlertStatus;
 import org.com.repair.entity.MaintenanceAlert.AlertType;
 import org.com.repair.entity.Vehicle;
+import org.com.repair.service.MaintenanceAlertRuleEvaluator.VehicleRiskSnapshot;
 import org.com.repair.repository.MaintenanceAlertRepository;
 import org.com.repair.repository.VehicleRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -25,6 +28,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MaintenanceAlertService {
 
+    private static final Logger logger = LoggerFactory.getLogger(MaintenanceAlertService.class);
+    private static final String ALERT_EVENT_SCAN_FAILURE = "MAINTENANCE_ALERT_SCAN_FAILURE";
+    private static final String ALERT_EVENT_SCAN_SUMMARY = "MAINTENANCE_ALERT_SCAN_SUMMARY";
+    private static final int ERROR_WARN_THRESHOLD = 1;
+
     private static final int MAINTENANCE_MILEAGE_THRESHOLD = 10000;
     private static final int UPCOMING_MILEAGE_WINDOW = 1000;
     private static final int UPCOMING_TIME_WINDOW_DAYS = 15;
@@ -32,52 +40,28 @@ public class MaintenanceAlertService {
 
     private final VehicleRepository vehicleRepository;
     private final MaintenanceAlertRepository maintenanceAlertRepository;
+    private final MaintenanceAlertRuleEvaluator maintenanceAlertRuleEvaluator;
 
     public MaintenanceAlertService(VehicleRepository vehicleRepository,
-                                   MaintenanceAlertRepository maintenanceAlertRepository) {
+                                   MaintenanceAlertRepository maintenanceAlertRepository,
+                                   MaintenanceAlertRuleEvaluator maintenanceAlertRuleEvaluator) {
         this.vehicleRepository = vehicleRepository;
         this.maintenanceAlertRepository = maintenanceAlertRepository;
+        this.maintenanceAlertRuleEvaluator = maintenanceAlertRuleEvaluator;
     }
 
     @Transactional
     @Scheduled(cron = "${maintenance.alert.scan-cron:0 0 2 * * *}")
     public void scanVehiclesForMaintenance() {
         List<Vehicle> vehicles = vehicleRepository.findAll();
-        LocalDateTime now = LocalDateTime.now();
-
-        for (Vehicle vehicle : vehicles) {
-            if (vehicle.getUserId() == null || vehicle.getId() == null) {
-                continue;
-            }
-
-            Integer currentMileage = vehicle.getCurrentMileage();
-            Integer lastMaintenanceMileage = vehicle.getLastMaintenanceMileage();
-            boolean mileageOverdue = currentMileage != null
-                    && lastMaintenanceMileage != null
-                    && currentMileage - lastMaintenanceMileage >= MAINTENANCE_MILEAGE_THRESHOLD;
-
-            LocalDateTime lastMaintenanceAt = vehicle.getLastMaintenanceAt() == null
-                    ? null
-                    : LocalDateTime.ofInstant(vehicle.getLastMaintenanceAt().toInstant(), ZoneId.systemDefault());
-            boolean timeOverdue = lastMaintenanceAt != null && lastMaintenanceAt.isBefore(now.minusMonths(6));
-
-            if (mileageOverdue) {
-                createAlertIfAbsent(vehicle, AlertType.MILEAGE_OVERDUE,
-                        "车辆里程距离上次保养已超过10000公里，建议尽快预约保养。");
-            }
-
-            if (timeOverdue) {
-                createAlertIfAbsent(vehicle, AlertType.TIME_OVERDUE,
-                        "车辆距离上次保养已超过6个月，建议进行周期保养检查。");
-            }
-        }
+        scanVehicles(vehicles, "daily-scan");
     }
 
-    private void createAlertIfAbsent(Vehicle vehicle, AlertType alertType, String message) {
+    private boolean createAlertIfAbsent(Vehicle vehicle, AlertType alertType, String message) {
         boolean exists = maintenanceAlertRepository.existsByVehicleIdAndAlertTypeAndStatusIn(
                 vehicle.getId(), alertType, UNRESOLVED_STATUSES);
         if (exists) {
-            return;
+            return false;
         }
 
         MaintenanceAlert alert = new MaintenanceAlert();
@@ -88,6 +72,7 @@ public class MaintenanceAlertService {
         alert.setTriggerTime(LocalDateTime.now());
         alert.setStatus(AlertStatus.UNREAD);
         maintenanceAlertRepository.save(alert);
+        return true;
     }
 
     @Transactional
@@ -132,25 +117,30 @@ public class MaintenanceAlertService {
         long unreadCount = maintenanceAlertRepository.countByUserIdAndStatus(userId, AlertStatus.UNREAD);
 
         List<Vehicle> vehicles = vehicleRepository.findByUserId(userId);
-        RiskSnapshot riskSnapshot = evaluateVehicleRisk(vehicles, LocalDateTime.now());
+        VehicleRiskSnapshot riskSnapshot = maintenanceAlertRuleEvaluator.evaluateVehicleRisk(
+            vehicles,
+            LocalDateTime.now(),
+            MAINTENANCE_MILEAGE_THRESHOLD,
+            UPCOMING_MILEAGE_WINDOW,
+            UPCOMING_TIME_WINDOW_DAYS);
 
         int score = 100;
-        score -= (int) Math.min(48, (riskSnapshot.dueMileageCount + riskSnapshot.dueTimeCount) * 12);
-        score -= (int) Math.min(20, (riskSnapshot.upcomingMileageCount + riskSnapshot.upcomingTimeCount) * 5);
+        score -= (int) Math.min(48, (riskSnapshot.dueMileageCount() + riskSnapshot.dueTimeCount()) * 12);
+        score -= (int) Math.min(20, (riskSnapshot.upcomingMileageCount() + riskSnapshot.upcomingTimeCount()) * 5);
         score -= (int) Math.min(20, unreadCount * 2);
         score = Math.max(0, score);
 
-        int riskPoint = (int) ((riskSnapshot.dueMileageCount + riskSnapshot.dueTimeCount) * 3
-            + (riskSnapshot.upcomingMileageCount + riskSnapshot.upcomingTimeCount)
+        int riskPoint = (int) ((riskSnapshot.dueMileageCount() + riskSnapshot.dueTimeCount()) * 3
+            + (riskSnapshot.upcomingMileageCount() + riskSnapshot.upcomingTimeCount())
             + Math.min(3, unreadCount));
         String riskLevel = riskPoint >= 8 ? "HIGH" : riskPoint >= 4 ? "MEDIUM" : "LOW";
 
         return new MaintenanceAlertSummaryResponse(
             unreadCount,
-            riskSnapshot.dueMileageCount,
-            riskSnapshot.dueTimeCount,
-            riskSnapshot.upcomingMileageCount,
-            riskSnapshot.upcomingTimeCount,
+            riskSnapshot.dueMileageCount(),
+            riskSnapshot.dueTimeCount(),
+            riskSnapshot.upcomingMileageCount(),
+            riskSnapshot.upcomingTimeCount(),
             score,
             riskLevel);
     }
@@ -158,30 +148,98 @@ public class MaintenanceAlertService {
     @Transactional
     public void scanSingleUserVehicles(Long userId) {
         List<Vehicle> vehicles = vehicleRepository.findByUserId(userId);
+        scanVehicles(vehicles, "single-user-scan");
+    }
+
+    private void scanVehicles(List<Vehicle> vehicles, String scanSource) {
         LocalDateTime now = LocalDateTime.now();
+        long startNanos = System.nanoTime();
+        int skipped = 0;
+        int evaluated = 0;
+        int created = 0;
+        int errors = 0;
+
         for (Vehicle vehicle : vehicles) {
-            Integer currentMileage = vehicle.getCurrentMileage();
-            Integer lastMaintenanceMileage = vehicle.getLastMaintenanceMileage();
-            boolean mileageOverdue = currentMileage != null
-                    && lastMaintenanceMileage != null
-                    && currentMileage - lastMaintenanceMileage >= MAINTENANCE_MILEAGE_THRESHOLD;
-
-            LocalDateTime lastMaintenanceAt = vehicle.getLastMaintenanceAt() == null
-                    ? null
-                    : LocalDateTime.ofInstant(vehicle.getLastMaintenanceAt().toInstant(), ZoneId.systemDefault());
-            boolean timeOverdue = lastMaintenanceAt != null && lastMaintenanceAt.isBefore(now.minusMonths(6));
-
-            if (mileageOverdue) {
-                createAlertIfAbsent(vehicle, AlertType.MILEAGE_OVERDUE,
-                        "车辆里程距离上次保养已超过10000公里，建议尽快预约保养。");
+            if (vehicle.getUserId() == null || vehicle.getId() == null) {
+                skipped++;
+                continue;
             }
 
-            if (timeOverdue) {
-                createAlertIfAbsent(vehicle, AlertType.TIME_OVERDUE,
-                        "车辆距离上次保养已超过6个月，建议进行周期保养检查。");
+            try {
+                EnumSet<AlertType> dueAlertTypes = maintenanceAlertRuleEvaluator.evaluateDueAlertTypes(
+                        vehicle,
+                        now,
+                        MAINTENANCE_MILEAGE_THRESHOLD);
+
+                evaluated++;
+                if (dueAlertTypes.contains(AlertType.MILEAGE_OVERDUE)
+                        && createAlertIfAbsent(vehicle, AlertType.MILEAGE_OVERDUE,
+                                "车辆里程距离上次保养已超过10000公里，建议尽快预约保养。")) {
+                    created++;
+                }
+
+                if (dueAlertTypes.contains(AlertType.TIME_OVERDUE)
+                        && createAlertIfAbsent(vehicle, AlertType.TIME_OVERDUE,
+                                "车辆距离上次保养已超过6个月，建议进行周期保养检查。")) {
+                    created++;
+                }
+            } catch (Exception e) {
+                errors++;
+                logScanFailure(vehicle, scanSource, e);
             }
         }
+
+        long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
+            ScanMetrics metrics = new ScanMetrics(vehicles.size(), evaluated, skipped, created, errors, elapsedMs);
+            logScanSummary(scanSource, metrics);
     }
+
+            private void logScanFailure(Vehicle vehicle, String scanSource, Exception e) {
+            logger.warn(
+                "alertEvent={} source={} vehicleId={} userId={} message={}",
+                ALERT_EVENT_SCAN_FAILURE,
+                scanSource,
+                vehicle.getId(),
+                vehicle.getUserId(),
+                e.getMessage(),
+                e);
+            }
+
+            private void logScanSummary(String scanSource, ScanMetrics metrics) {
+            String message = "alertEvent={} source={} totalVehicles={} evaluated={} skipped={} createdAlerts={} errors={} elapsedMs={}";
+            if (metrics.errors() >= ERROR_WARN_THRESHOLD) {
+                logger.warn(
+                    message,
+                    ALERT_EVENT_SCAN_SUMMARY,
+                    scanSource,
+                    metrics.totalVehicles(),
+                    metrics.evaluated(),
+                    metrics.skipped(),
+                    metrics.createdAlerts(),
+                    metrics.errors(),
+                    metrics.elapsedMs());
+                return;
+            }
+
+            logger.info(
+                message,
+                ALERT_EVENT_SCAN_SUMMARY,
+                scanSource,
+                metrics.totalVehicles(),
+                metrics.evaluated(),
+                metrics.skipped(),
+                metrics.createdAlerts(),
+                metrics.errors(),
+                metrics.elapsedMs());
+            }
+
+            private record ScanMetrics(int totalVehicles,
+                           int evaluated,
+                           int skipped,
+                           int createdAlerts,
+                           int errors,
+                           long elapsedMs) {
+            }
 
     @Transactional
     public boolean markRead(Long alertId, Long userId) {
@@ -213,47 +271,6 @@ public class MaintenanceAlertService {
         }
         return maintenanceAlertRepository.updateStatusByUserIdAndIds(
                 userId, safeIds, AlertStatus.UNREAD, AlertStatus.READ);
-    }
-
-    private RiskSnapshot evaluateVehicleRisk(List<Vehicle> vehicles, LocalDateTime now) {
-        long dueMileageCount = 0;
-        long dueTimeCount = 0;
-        long upcomingMileageCount = 0;
-        long upcomingTimeCount = 0;
-
-        LocalDateTime dueTimeThreshold = now.minusMonths(6);
-        LocalDateTime upcomingTimeThreshold = dueTimeThreshold.plusDays(UPCOMING_TIME_WINDOW_DAYS);
-
-        for (Vehicle vehicle : vehicles) {
-            Integer currentMileage = vehicle.getCurrentMileage();
-            Integer lastMaintenanceMileage = vehicle.getLastMaintenanceMileage();
-            if (currentMileage != null && lastMaintenanceMileage != null) {
-                int sinceLastMaintenance = currentMileage - lastMaintenanceMileage;
-                if (sinceLastMaintenance >= MAINTENANCE_MILEAGE_THRESHOLD) {
-                    dueMileageCount++;
-                } else if (sinceLastMaintenance >= MAINTENANCE_MILEAGE_THRESHOLD - UPCOMING_MILEAGE_WINDOW) {
-                    upcomingMileageCount++;
-                }
-            }
-
-            if (vehicle.getLastMaintenanceAt() != null) {
-                LocalDateTime lastMaintenanceAt = LocalDateTime.ofInstant(
-                        vehicle.getLastMaintenanceAt().toInstant(), ZoneId.systemDefault());
-                if (lastMaintenanceAt.isBefore(dueTimeThreshold)) {
-                    dueTimeCount++;
-                } else if (!lastMaintenanceAt.isAfter(upcomingTimeThreshold)) {
-                    upcomingTimeCount++;
-                }
-            }
-        }
-
-        return new RiskSnapshot(dueMileageCount, dueTimeCount, upcomingMileageCount, upcomingTimeCount);
-    }
-
-    private record RiskSnapshot(long dueMileageCount,
-                                long dueTimeCount,
-                                long upcomingMileageCount,
-                                long upcomingTimeCount) {
     }
 
     private AlertStatus parseStatus(String status) {

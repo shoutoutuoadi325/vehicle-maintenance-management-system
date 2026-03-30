@@ -137,7 +137,7 @@ public class AIDiagnosisService {
                     fatigueLevel);
             return fatigueLevel;
         } catch (Exception ex) {
-            logger.warn("[AI-CONSILIUM][{}] 技师疲劳度估算失败，回退默认值: {}", traceId, ex.getMessage());
+            logger.warn("[AI-CONSILIUM][{}] 技师疲劳度估算失败，回退默认值: {}", traceId, ex.getMessage(), ex);
             return defaultFatigueLevel;
         }
     }
@@ -200,7 +200,11 @@ public class AIDiagnosisService {
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
-            String responseBody = response.body().string();
+            ResponseBody body = response.body();
+            if (body == null) {
+                throw new IOException("API返回空响应体");
+            }
+            String responseBody = body.string();
             
             if (!response.isSuccessful()) {
                 throw new IOException("API调用失败，状态码: " + response.code() + ", 响应: " + responseBody);
@@ -213,7 +217,11 @@ public class AIDiagnosisService {
                     responseBody != null ? responseBody.length() : 0);
             
             JsonNode jsonNode = objectMapper.readTree(responseBody);
-            return jsonNode.path("choices").get(0).path("message").path("content").asText();
+            JsonNode choices = jsonNode.path("choices");
+            if (!choices.isArray() || choices.isEmpty()) {
+                throw new IOException("API返回缺少choices内容");
+            }
+            return choices.get(0).path("message").path("content").asText();
         }
     }
 

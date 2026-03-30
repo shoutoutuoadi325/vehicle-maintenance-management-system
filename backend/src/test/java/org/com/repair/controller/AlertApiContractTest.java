@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.com.repair.DTO.InventoryAlertPageResponse;
@@ -87,7 +88,7 @@ class AlertApiContractTest {
         when(maintenanceAlertService.markReadBatch(eq(1L), anyList())).thenReturn(2);
 
         mockMvc.perform(put("/api/maintenance-alerts/user/1/read-batch")
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                         .content("{\"ids\":[11,12,12]}")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -172,7 +173,7 @@ class AlertApiContractTest {
         when(materialService.resolveInventoryAlerts(anyList())).thenReturn(3);
 
         mockMvc.perform(put("/api/materials/notifications/resolve-batch")
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                         .content("{\"ids\":[21,22,23]}")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -235,7 +236,7 @@ class AlertApiContractTest {
         when(maintenanceAlertService.markReadBatch(eq(1L), any())).thenReturn(0);
 
         mockMvc.perform(put("/api/maintenance-alerts/user/1/read-batch")
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                         .content("{}")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -251,7 +252,7 @@ class AlertApiContractTest {
         when(materialService.resolveInventoryAlerts(any())).thenReturn(0);
 
         mockMvc.perform(put("/api/materials/notifications/resolve-batch")
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                         .content("{}")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -289,7 +290,7 @@ class AlertApiContractTest {
                 .thenReturn(new MaterialResponse(10L, "刹车片", 120.0, 30, 8));
 
         mockMvc.perform(post("/api/materials")
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                         .content("{\"name\":\"刹车片\",\"unitPrice\":120.0,\"stockQuantity\":30,\"minimumStockLevel\":8}")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isCreated())
@@ -301,7 +302,7 @@ class AlertApiContractTest {
     @Test
     void shouldReturnBadRequestCodeWhenConsumeQuantityMissing() throws Exception {
         mockMvc.perform(put("/api/materials/1/consume")
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                         .content("{}")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())

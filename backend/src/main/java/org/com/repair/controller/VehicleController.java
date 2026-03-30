@@ -39,10 +39,8 @@ public class VehicleController {
             logger.info("Found {} vehicles for user ID: {}", vehicles.size(), userId);
             return ResponseEntity.ok(vehicles);
         } catch (Exception e) {
-            logger.error("Error fetching vehicles for user ID: " + userId, e);
-            Map<String, String> error = new HashMap<>();
-            error.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            logger.error("Error fetching vehicles for user ID={}", userId, e);
+            return buildErrorResponse(e);
         }
     }
     
@@ -55,9 +53,7 @@ public class VehicleController {
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
             logger.error("Error adding vehicle", e);
-            Map<String, String> error = new HashMap<>();
-            error.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return buildErrorResponse(e);
         }
     }
     
@@ -73,10 +69,8 @@ public class VehicleController {
                         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
                     });
         } catch (Exception e) {
-            logger.error("Error fetching vehicle with ID: " + id, e);
-            Map<String, String> error = new HashMap<>();
-            error.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            logger.error("Error fetching vehicle with ID={}", id, e);
+            return buildErrorResponse(e);
         }
     }
     
@@ -101,10 +95,8 @@ public class VehicleController {
             logger.info("Successfully updated vehicle with ID: {}", id);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            logger.error("Error updating vehicle with ID: " + id, e);
-            Map<String, String> error = new HashMap<>();
-            error.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            logger.error("Error updating vehicle with ID={}", id, e);
+            return buildErrorResponse(e);
         }
     }
     
@@ -122,10 +114,8 @@ public class VehicleController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
             }
         } catch (Exception e) {
-            logger.error("Error deleting vehicle with ID: " + id, e);
-            Map<String, String> error = new HashMap<>();
-            error.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            logger.error("Error deleting vehicle with ID={}", id, e);
+            return buildErrorResponse(e);
         }
     }
     
@@ -133,5 +123,20 @@ public class VehicleController {
     public ResponseEntity<List<Object[]>> getRepairStatisticsByModel() {
         List<Object[]> statistics = vehicleService.getRepairStatisticsByModel();
         return new ResponseEntity<>(statistics, HttpStatus.OK);
+    }
+
+    private ResponseEntity<Object> buildErrorResponse(Exception e) {
+        Map<String, String> error = new HashMap<>();
+        error.put("message", e.getMessage());
+
+        if (e instanceof IllegalArgumentException) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        }
+
+        if (e instanceof IllegalStateException) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+        }
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
 } 

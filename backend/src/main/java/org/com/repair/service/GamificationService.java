@@ -98,14 +98,15 @@ public class GamificationService {
     private static final String FOOTPRINT_EVENT_REACH_DESTINATION = "REACH_DESTINATION";
     private static final String JOURNEY_STATUS_NORMAL = "NORMAL";
     private static final String JOURNEY_STATUS_PENDING_RANDOM_EVENT = "PENDING_RANDOM_EVENT";
+    private static final String SHIPPING_STATUS_NOT_CLAIMED = "NOT_CLAIMED";
+    private static final String COUPON_STATUS_NEW = "NEW";
+    private static final String COUPON_STATUS_REDEEMED = "REDEEMED";
 
     private static final double DEFAULT_EMISSION_TO_ENERGY_RATIO = 100.0;
     private static final int DEFAULT_DAILY_ENERGY_CAP = 1200;
     private static final int DEFAULT_ORDER_REWARD_CAP = 600;
     private static final int DEFAULT_DAILY_QUIZ_CHECKIN_LIMIT = 8;
     private static final double DEFAULT_RANDOM_EVENT_TRIGGER_PROBABILITY = 0.2;
-    private static final int DEFAULT_WRONG_ANSWER_ENERGY_PENALTY = 50;
-    private static final int DEFAULT_WRONG_ANSWER_COOLDOWN_MINUTES = 120;
 
     private final GreenEnergyAccountRepository greenEnergyAccountRepository;
     private final GreenDailyQuotaRepository greenDailyQuotaRepository;
@@ -124,6 +125,7 @@ public class GamificationService {
     private final UserRepository userRepository;
     private final GreenEnergyAccountProvisioningService greenEnergyAccountProvisioningService;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final GamificationAccountSupport gamificationAccountSupport;
 
     public GamificationService(
             GreenEnergyAccountRepository greenEnergyAccountRepository,
@@ -142,7 +144,8 @@ public class GamificationService {
             JourneyFootprintRepository journeyFootprintRepository,
             UserRepository userRepository,
             GreenEnergyAccountProvisioningService greenEnergyAccountProvisioningService,
-            ApplicationEventPublisher applicationEventPublisher) {
+            ApplicationEventPublisher applicationEventPublisher,
+            GamificationAccountSupport gamificationAccountSupport) {
         this.greenEnergyAccountRepository = greenEnergyAccountRepository;
         this.greenDailyQuotaRepository = greenDailyQuotaRepository;
         this.greenQuizRepository = greenQuizRepository;
@@ -160,6 +163,7 @@ public class GamificationService {
         this.userRepository = userRepository;
         this.greenEnergyAccountProvisioningService = greenEnergyAccountProvisioningService;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.gamificationAccountSupport = gamificationAccountSupport;
     }
 
     @Transactional
@@ -217,7 +221,7 @@ public class GamificationService {
     @Transactional
     public GreenEnergyAccount getOrCreateUserAccount(Long userId) {
         GreenEnergyAccount account = getOrCreateAccountInternal(userId);
-        normalizeJourneyStatus(account);
+        gamificationAccountSupport.normalizeJourneyStatus(account, JOURNEY_STATUS_NORMAL);
         Long mapId = ensureCurrentMapAssigned(account);
         ensureJourneyNodesInitialized(userId, mapId);
         reconcileNodeStates(userId, mapId, account.getCurrentMileage());
@@ -440,32 +444,23 @@ public class GamificationService {
 
         JourneyCompletionRecord completion = journeyCompletionRecordRepository.findByUserId(userId).orElse(null);
         if (!isCorrect) {
-            applyWrongAnswerPenalty(userId);
-            LocalDateTime nextRetryTime = LocalDateTime.now().plusMinutes(getWrongAnswerCooldownMinutes());
-            GreenEnergyAccount refreshed = greenEnergyAccountRepository.findByUserId(userId)
-                .orElseThrow(() -> new GamificationException(
-                    GamificationErrorCode.ACCOUNT_READ_AFTER_SETTLEMENT_FAILED,
-                    "随机事件冷却写入前读取账户失败"));
+            gamificationAccountSupport.applyWrongAnswerPenalty(userId);
+            LocalDateTime nextRetryTime = LocalDateTime.now().plusMinutes(gamificationAccountSupport.getWrongAnswerCooldownMinutes());
+            GreenEnergyAccount refreshed = gamificationAccountSupport.loadAccountOrThrow(userId, "随机事件冷却写入前读取账户失败");
             refreshed.setRandomEventNextRetryTime(nextRetryTime);
             GreenEnergyAccount penaltySaved = greenEnergyAccountRepository.save(refreshed);
 
-            return new QuizAnswerResultResponse(
-                userId,
-                pendingQuizId,
-                false,
-                0,
-            penaltySaved.getTotalEnergy(),
-            penaltySaved.getCurrentMileage(),
-                null,
-                completion != null,
-                completion != null && Boolean.TRUE.equals(completion.getStickerClaimed()),
-                completion != null ? completion.getShippingStatus() : "NOT_CLAIMED");
+            return buildQuizAnswerResultResponse(
+                    userId,
+                    pendingQuizId,
+                    false,
+                    0,
+                    penaltySaved,
+                    null,
+                    completion);
         }
 
-        GreenEnergyAccount reloaded = greenEnergyAccountRepository.findByUserId(userId)
-            .orElseThrow(() -> new GamificationException(
-                GamificationErrorCode.ACCOUNT_READ_AFTER_SETTLEMENT_FAILED,
-                "解冻后读取账户失败"));
+        GreenEnergyAccount reloaded = gamificationAccountSupport.loadAccountOrThrow(userId, "解冻后读取账户失败");
         reloaded.setJourneyStatus(JOURNEY_STATUS_NORMAL);
         reloaded.setPendingRandomQuizId(null);
         reloaded.setRandomEventNextRetryTime(null);
@@ -475,17 +470,14 @@ public class GamificationService {
 
         reconcileNodeStates(userId, released.getCurrentMapId(), released.getCurrentMileage());
 
-        return new QuizAnswerResultResponse(
+        return buildQuizAnswerResultResponse(
             userId,
             pendingQuizId,
             true,
             0,
-            released.getTotalEnergy(),
-            released.getCurrentMileage(),
+            released,
             null,
-            completion != null,
-            completion != null && Boolean.TRUE.equals(completion.getStickerClaimed()),
-            completion != null ? completion.getShippingStatus() : "NOT_CLAIMED");
+            completion);
     }
 
             @Transactional
@@ -503,7 +495,7 @@ public class GamificationService {
                     GamificationErrorCode.COUPON_WALLET_NOT_FOUND,
                     "卡包记录不存在或不属于当前用户"));
 
-            if (!"NEW".equals(wallet.getCouponStatus())) {
+            if (!COUPON_STATUS_NEW.equals(wallet.getCouponStatus())) {
                 throw new GamificationException(
                     GamificationErrorCode.COUPON_NOT_REDEEMABLE,
                     "当前卡券状态不可核销");
@@ -528,7 +520,7 @@ public class GamificationService {
                     "核销技师不存在");
             }
 
-            wallet.setCouponStatus("REDEEMED");
+            wallet.setCouponStatus(COUPON_STATUS_REDEEMED);
             wallet.setRedeemTime(now);
             wallet.setRedeemShopId(shopId);
             wallet.setRedeemTechnicianId(technicianId);
@@ -644,26 +636,20 @@ public class GamificationService {
         JourneyCompletionRecord existingCompletion = journeyCompletionRecordRepository.findByUserId(userId).orElse(null);
 
         if (!isCorrect) {
-            applyWrongAnswerPenalty(userId);
-            LocalDateTime nextRetryTime = LocalDateTime.now().plusMinutes(getWrongAnswerCooldownMinutes());
+            gamificationAccountSupport.applyWrongAnswerPenalty(userId);
+            LocalDateTime nextRetryTime = LocalDateTime.now().plusMinutes(gamificationAccountSupport.getWrongAnswerCooldownMinutes());
             targetNode.setNextRetryTime(nextRetryTime);
             greenJourneyNodeStateRepository.save(targetNode);
 
-            GreenEnergyAccount reloaded = greenEnergyAccountRepository.findByUserId(userId)
-                .orElseThrow(() -> new GamificationException(
-                    GamificationErrorCode.ACCOUNT_READ_AFTER_SETTLEMENT_FAILED,
-                    "惩罚结算后账户读取失败"));
-            return new QuizAnswerResultResponse(
+            GreenEnergyAccount reloaded = gamificationAccountSupport.loadAccountOrThrow(userId, "惩罚结算后账户读取失败");
+            return buildQuizAnswerResultResponse(
                     userId,
                     quizId,
                     false,
                     0,
-                reloaded.getTotalEnergy(),
-                reloaded.getCurrentMileage(),
+                    reloaded,
                     null,
-                    existingCompletion != null,
-                    existingCompletion != null && Boolean.TRUE.equals(existingCompletion.getStickerClaimed()),
-                    existingCompletion != null ? existingCompletion.getShippingStatus() : "NOT_CLAIMED");
+                    existingCompletion);
         }
 
         String sourceId = userId + "-" + mapId + "-" + cityIndex;
@@ -700,17 +686,14 @@ public class GamificationService {
         CouponDrawResultResponse couponDrawResult = drawCouponForCity(userId, mapId, cityIndex, sourceId);
         JourneyCompletionRecord completionRecord = ensureJourneyCompletionIfFinished(userId, mapId, cityIndex);
 
-        return new QuizAnswerResultResponse(
-                userId,
-                quizId,
-                true,
-                grant.rewardEnergy(),
-            released.getTotalEnergy(),
-            released.getCurrentMileage(),
-                couponDrawResult,
-                completionRecord != null,
-                completionRecord != null && Boolean.TRUE.equals(completionRecord.getStickerClaimed()),
-                completionRecord != null ? completionRecord.getShippingStatus() : "NOT_CLAIMED");
+        return buildQuizAnswerResultResponse(
+            userId,
+            quizId,
+            true,
+            grant.rewardEnergy(),
+            released,
+            couponDrawResult,
+            completionRecord);
     }
 
     @TransactionalEventListener(fallbackExecution = true)
@@ -814,50 +797,24 @@ public class GamificationService {
         }
     }
 
-    private void normalizeJourneyStatus(GreenEnergyAccount account) {
-        boolean changed = false;
-        if (account.getJourneyStatus() == null || account.getJourneyStatus().isBlank()) {
-            account.setJourneyStatus(JOURNEY_STATUS_NORMAL);
-            changed = true;
-        }
-        if (account.getFrozenMileage() == null) {
-            account.setFrozenMileage(0);
-            changed = true;
-        }
-        if (JOURNEY_STATUS_NORMAL.equals(account.getJourneyStatus()) && account.getRandomEventNextRetryTime() != null) {
-            account.setRandomEventNextRetryTime(null);
-            changed = true;
-        }
-        if (changed) {
-            greenEnergyAccountRepository.save(account);
-        }
-    }
-
-    private int getWrongAnswerPenalty() {
-        return Math.max(0, gamificationRuleService.getInt(
-                "WRONG_ANSWER_ENERGY_PENALTY",
-                DEFAULT_WRONG_ANSWER_ENERGY_PENALTY));
-    }
-
-    private int getWrongAnswerCooldownMinutes() {
-        return Math.max(0, gamificationRuleService.getInt(
-                "WRONG_ANSWER_COOLDOWN_MINUTES",
-                DEFAULT_WRONG_ANSWER_COOLDOWN_MINUTES));
-    }
-
-    private void applyWrongAnswerPenalty(Long userId) {
-        int penalty = getWrongAnswerPenalty();
-        if (penalty <= 0) {
-            return;
-        }
-
-        GreenEnergyAccount latest = greenEnergyAccountRepository.findByUserId(userId)
-                .orElseThrow(() -> new GamificationException(
-                        GamificationErrorCode.ACCOUNT_READ_AFTER_SETTLEMENT_FAILED,
-                        "惩罚扣减前读取账户失败"));
-        int currentEnergy = latest.getTotalEnergy() == null ? 0 : latest.getTotalEnergy();
-        latest.setTotalEnergy(Math.max(0, currentEnergy - penalty));
-        greenEnergyAccountRepository.save(latest);
+    private QuizAnswerResultResponse buildQuizAnswerResultResponse(Long userId,
+                                                                   Long quizId,
+                                                                   boolean correct,
+                                                                   int reward,
+                                                                   GreenEnergyAccount account,
+                                                                   CouponDrawResultResponse couponDrawResult,
+                                                                   JourneyCompletionRecord completionRecord) {
+        return new QuizAnswerResultResponse(
+                userId,
+                quizId,
+                correct,
+                reward,
+                account.getTotalEnergy(),
+                account.getCurrentMileage(),
+                couponDrawResult,
+                completionRecord != null,
+                completionRecord != null && Boolean.TRUE.equals(completionRecord.getStickerClaimed()),
+                completionRecord != null ? completionRecord.getShippingStatus() : SHIPPING_STATUS_NOT_CLAIMED);
     }
 
     private void ensureNodeRetryWindowReady(GreenJourneyNodeState targetNode) {

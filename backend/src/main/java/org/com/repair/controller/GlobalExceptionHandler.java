@@ -1,6 +1,7 @@
 package org.com.repair.controller;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 import org.com.repair.DTO.ApiResponse;
 import org.com.repair.exception.GamificationErrorCode;
@@ -57,7 +58,7 @@ public class GlobalExceptionHandler {
                 message,
                 null,
                 LocalDateTime.now().toString());
-        return new ResponseEntity<>(body, status);
+        return new ResponseEntity<>(body, Objects.requireNonNull(status));
     }
 
     private HttpStatus mapGamificationStatus(GamificationErrorCode errorCode) {

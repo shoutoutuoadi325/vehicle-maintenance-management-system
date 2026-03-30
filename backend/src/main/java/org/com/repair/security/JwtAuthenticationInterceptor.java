@@ -2,6 +2,8 @@ package org.com.repair.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -10,6 +12,8 @@ import io.jsonwebtoken.Claims;
 
 @Component
 public class JwtAuthenticationInterceptor implements HandlerInterceptor {
+
+    private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationInterceptor.class);
 
     private final JwtTokenService jwtTokenService;
 
@@ -47,6 +51,7 @@ public class JwtAuthenticationInterceptor implements HandlerInterceptor {
             request.setAttribute("authRole", role.toLowerCase());
             return true;
         } catch (Exception ex) {
+            logger.warn("JWT validation failed: method={}, path={}", request.getMethod(), request.getRequestURI(), ex);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "登录态失效，请重新登录");
             return false;
         }

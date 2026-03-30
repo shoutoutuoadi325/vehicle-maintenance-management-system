@@ -22,11 +22,15 @@ import org.com.repair.entity.Technician;
 import org.com.repair.entity.Technician.SkillType;
 import org.com.repair.repository.RepairOrderRepository;
 import org.com.repair.repository.TechnicianRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class TechnicianService {
+
+    private static final Logger logger = LoggerFactory.getLogger(TechnicianService.class);
 
     private static final double BASELINE_FATIGUE = 0.1;
     private static final long CONTINUOUS_BREAK_MINUTES = 30;
@@ -183,10 +187,11 @@ public class TechnicianService {
         
         int totalTasks = allTasks.size();
         int completedTasks = (int) allTasks.stream()
-            .filter(task -> "COMPLETED".equals(task.getStatus()))
+            .filter(task -> task.getStatus() == RepairOrder.RepairStatus.COMPLETED)
             .count();
         int pendingTasks = (int) allTasks.stream()
-            .filter(task -> "ASSIGNED".equals(task.getStatus()) || "IN_PROGRESS".equals(task.getStatus()))
+            .filter(task -> task.getStatus() == RepairOrder.RepairStatus.ASSIGNED
+                    || task.getStatus() == RepairOrder.RepairStatus.IN_PROGRESS)
             .count();
         
         // 获取平均评分
@@ -442,9 +447,9 @@ public class TechnicianService {
         order.getTechnicians().removeIf(t -> t.getId().equals(safeTechnicianId));
         
         // 6. 记录拒绝原因（可以在RepairOrder中添加拒绝记录字段，这里暂时在日志中记录）
-        System.out.println(String.format("技师 %s (ID: %d) 拒绝了订单 %s (ID: %d)，原因：%s", 
-            technician.getName(), safeTechnicianId, order.getOrderNumber(), safeOrderId, 
-                reason != null ? reason : "未提供原因"));
+        logger.info("Technician rejected order: technicianName={}, technicianId={}, orderNumber={}, orderId={}, reason={}",
+            technician.getName(), safeTechnicianId, order.getOrderNumber(), safeOrderId,
+            reason != null ? reason : "未提供原因");
         
         // 7. 重新自动分配给其他技师
         try {
@@ -471,8 +476,8 @@ public class TechnicianService {
                     
                     repairOrderRepository.save(order);
                     
-                    System.out.println(String.format("订单 %s 已重新分配给技师 %s (ID: %d)", 
-                            order.getOrderNumber(), newTechnician.getName(), newTechnician.getId()));
+                        logger.info("Order reassigned after reject: orderNumber={}, technicianName={}, technicianId={}",
+                            order.getOrderNumber(), newTechnician.getName(), newTechnician.getId());
                     
                     return true;
                 } else {
@@ -481,8 +486,8 @@ public class TechnicianService {
                     order.setUpdatedAt(new Date());
                     repairOrderRepository.save(order);
                     
-                    System.out.println(String.format("订单 %s 无其他可用技师，已改为待分配状态", 
-                            order.getOrderNumber()));
+                        logger.info("No alternative technician found, order set to pending: orderNumber={}",
+                            order.getOrderNumber());
                     
                     return true;
                 }
@@ -495,8 +500,8 @@ public class TechnicianService {
             order.setUpdatedAt(new Date());
             repairOrderRepository.save(order);
             
-            System.err.println(String.format("订单 %s 重新分配失败：%s，已改为待分配状态", 
-                    order.getOrderNumber(), e.getMessage()));
+                logger.warn("Order reassign failed after reject, fallback to pending: orderNumber={}",
+                    order.getOrderNumber(), e);
             
             return true; // 拒绝操作成功，但重新分配失败
         }

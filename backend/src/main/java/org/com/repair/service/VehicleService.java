@@ -1,6 +1,7 @@
 package org.com.repair.service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -35,13 +36,13 @@ public class VehicleService {
     @Transactional
     public VehicleResponse addVehicle(NewVehicleRequest request) {
         if (vehicleRepository.existsByLicensePlate(request.licensePlate())) {
-            throw new RuntimeException("车牌号已存在");
+            throw new IllegalStateException("车牌号已存在");
         }
 
         Long userId = Objects.requireNonNull(request.userId(), "用户ID不能为空");
         
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("用户不存在"));
+            .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
         
         Vehicle vehicle = new Vehicle();
         vehicle.setLicensePlate(request.licensePlate());
@@ -66,31 +67,33 @@ public class VehicleService {
     
     @Transactional(readOnly = true)
     public List<VehicleResponse> getVehiclesByUserId(Long userId) {
+        Long validatedUserId = Objects.requireNonNull(userId, "用户ID不能为空");
         try {
-            logger.info("开始获取用户ID: {} 的车辆列表", userId);
-            List<Vehicle> vehicles = vehicleRepository.findByUserId(userId);
+            logger.info("开始获取用户ID: {} 的车辆列表", validatedUserId);
+            List<Vehicle> vehicles = vehicleRepository.findByUserId(validatedUserId);
             logger.info("成功获取到 {} 辆车", vehicles.size());
+
+            if (vehicles.isEmpty()) {
+                return List.of();
+            }
+
+            List<Long> vehicleIds = vehicles.stream()
+                    .map(Vehicle::getId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+
+            Map<Long, List<RepairOrder>> repairOrdersByVehicleId = groupRepairOrdersByVehicleId(vehicleIds);
             
             List<VehicleResponse> responses = vehicles.stream()
-                    .map(vehicle -> {
-                        try {
-                            // 为每辆车单独查询维修订单
-                            List<RepairOrder> repairOrders = repairOrderRepository.findByVehicleId(vehicle.getId());
-                            logger.info("车辆 {} 有 {} 个维修订单", vehicle.getLicensePlate(), repairOrders.size());
-                            return new VehicleResponse(vehicle, repairOrders);
-                        } catch (Exception e) {
-                            logger.error("转换车辆数据时出错，车辆ID: " + vehicle.getId(), e);
-                            return null;
-                        }
-                    })
+                    .map(vehicle -> toVehicleResponseSafely(vehicle, repairOrdersByVehicleId))
                     .filter(response -> response != null)
                     .collect(Collectors.toList());
             
             logger.info("成功转换 {} 辆车的数据", responses.size());
             return responses;
         } catch (Exception e) {
-            logger.error("获取用户车辆列表时出错，用户ID: " + userId, e);
-            throw new RuntimeException("获取车辆列表失败: " + e.getMessage());
+            logger.error("获取用户车辆列表时出错，用户ID={}", validatedUserId, e);
+            throw new RuntimeException("获取车辆列表失败: " + e.getMessage(), e);
         }
     }
     
@@ -98,18 +101,18 @@ public class VehicleService {
     public VehicleResponse updateVehicle(Long id, NewVehicleRequest request) {
         Long vehicleId = Objects.requireNonNull(id, "车辆ID不能为空");
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
-                .orElseThrow(() -> new RuntimeException("车辆不存在"));
+            .orElseThrow(() -> new IllegalArgumentException("车辆不存在"));
 
         Long requestUserId = Objects.requireNonNull(request.userId(), "用户ID不能为空");
         
         if (!vehicle.getLicensePlate().equals(request.licensePlate()) &&
             vehicleRepository.existsByLicensePlate(request.licensePlate())) {
-            throw new RuntimeException("车牌号已存在");
+            throw new IllegalStateException("车牌号已存在");
         }
         
         if (!vehicle.getUser().getId().equals(requestUserId)) {
             User newUser = userRepository.findById(requestUserId)
-                    .orElseThrow(() -> new RuntimeException("用户不存在"));
+                    .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
             vehicle.setUser(newUser);
         }
         
@@ -150,5 +153,30 @@ public class VehicleService {
     
     public List<Object[]> getRepairStatisticsByModel() {
         return vehicleRepository.getRepairStatisticsByModel();
+    }
+
+    private Map<Long, List<RepairOrder>> groupRepairOrdersByVehicleId(List<Long> vehicleIds) {
+        if (vehicleIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return repairOrderRepository.findByVehicleIdIn(vehicleIds)
+                .stream()
+                .filter(order -> order.getVehicle() != null && order.getVehicle().getId() != null)
+                .collect(Collectors.groupingBy(order -> order.getVehicle().getId()));
+    }
+
+    private VehicleResponse toVehicleResponseSafely(Vehicle vehicle, Map<Long, List<RepairOrder>> repairOrdersByVehicleId) {
+        try {
+            Long vehicleId = vehicle.getId();
+            List<RepairOrder> repairOrders = vehicleId == null
+                    ? List.of()
+                    : repairOrdersByVehicleId.getOrDefault(vehicleId, List.of());
+            logger.debug("车辆 {} 有 {} 个维修订单", vehicle.getLicensePlate(), repairOrders.size());
+            return new VehicleResponse(vehicle, repairOrders);
+        } catch (Exception e) {
+            logger.error("转换车辆数据时出错，车辆ID={}", vehicle.getId(), e);
+            return null;
+        }
     }
 } 

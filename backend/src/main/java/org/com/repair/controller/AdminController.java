@@ -16,6 +16,8 @@ import org.com.repair.service.AuthTokenService;
 import org.com.repair.service.GamificationService;
 import org.com.repair.service.RepairOrderService;
 import org.com.repair.service.TechnicianService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -34,6 +36,8 @@ import jakarta.servlet.http.HttpServletRequest;
 @RestController
 @RequestMapping("/api/admins")
 public class AdminController {
+
+    private static final Logger logger = LoggerFactory.getLogger(AdminController.class);
     
     private final AdminService adminService;
     private final RepairOrderService repairOrderService;
@@ -97,6 +101,7 @@ public class AdminController {
             AdminResponse response = adminService.updateAdmin(id, request);
             return new ResponseEntity<>(response, HttpStatus.OK);
         } catch (RuntimeException e) {
+            logger.warn("Failed to update admin, adminId={}", id, e);
             // 返回详细的错误信息
             return new ResponseEntity<>(
                 new ErrorResponse(e.getMessage()), 
@@ -147,7 +152,7 @@ public class AdminController {
             
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Failed to load dashboard stats", e);
             // 返回默认值避免前端错误
             Map<String, Object> defaultStats = new HashMap<>();
             defaultStats.put("totalOrders", 0);
@@ -166,7 +171,7 @@ public class AdminController {
             Map<String, Object> statistics = repairOrderService.getDetailedStatistics(startDate, endDate);
             return ResponseEntity.ok(statistics);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Failed to load detailed statistics, startDate={}, endDate={}", startDate, endDate, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "获取统计数据失败: " + e.getMessage()));
         }
@@ -188,7 +193,7 @@ public class AdminController {
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Failed to reassign pending orders", e);
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("error", "重新分配失败: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -204,7 +209,7 @@ public class AdminController {
             List<Map<String, Object>> statistics = repairOrderService.getVehicleBrandRepairStatistics();
             return ResponseEntity.ok(statistics);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Failed to load vehicle brand statistics", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ArrayList<>());
         }
     }
@@ -218,7 +223,7 @@ public class AdminController {
             List<Map<String, Object>> statistics = repairOrderService.getSkillTypeRepairStatistics();
             return ResponseEntity.ok(statistics);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Failed to load skill type statistics", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ArrayList<>());
         }
     }
