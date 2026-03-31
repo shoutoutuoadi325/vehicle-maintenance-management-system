@@ -6,6 +6,8 @@ import java.util.Objects;
 import org.com.repair.DTO.ApiResponse;
 import org.com.repair.exception.GamificationErrorCode;
 import org.com.repair.exception.GamificationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(GamificationException.class)
     public ResponseEntity<ApiResponse<Void>> handleGamificationException(GamificationException ex) {
@@ -46,8 +50,18 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, "数据冲突，请勿重复提交", "DATA_CONFLICT");
     }
 
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ApiResponse<Void>> handleRuntime(RuntimeException ex) {
+        String message = ex.getMessage();
+        if (message == null || message.isBlank()) {
+            message = "请求处理失败";
+        }
+        return buildResponse(HttpStatus.BAD_REQUEST, message, "BUSINESS_ERROR");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnknown(Exception ex) {
+        logger.error("Unhandled exception", ex);
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "系统繁忙，请稍后再试", "INTERNAL_ERROR");
     }
 

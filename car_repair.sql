@@ -22,7 +22,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- ----------------------------
 DROP TABLE IF EXISTS `admin`;
 CREATE TABLE `admin` (
-  `id` bigint NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
   `username` varchar(255) NOT NULL,
   `password` varchar(255) NOT NULL,
   `name` varchar(255) NOT NULL,
@@ -46,7 +46,7 @@ COMMIT;
 -- ----------------------------
 DROP TABLE IF EXISTS `feedback`;
 CREATE TABLE `feedback` (
-  `id` bigint NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
   `rating` int DEFAULT NULL,
   `comment` text,
   `created_at` datetime NOT NULL,
@@ -93,7 +93,7 @@ COMMIT;
 -- ----------------------------
 DROP TABLE IF EXISTS `repair_order`;
 CREATE TABLE `repair_order` (
-  `id` bigint NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
   `order_number` varchar(255) NOT NULL,
   `status` varchar(64) NOT NULL,
   `description` text NOT NULL,
@@ -135,7 +135,7 @@ COMMIT;
 -- ----------------------------
 DROP TABLE IF EXISTS `technician`;
 CREATE TABLE `technician` (
-  `id` bigint NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
   `name` varchar(255) NOT NULL,
   `employee_id` varchar(255) NOT NULL,
   `username` varchar(255) NOT NULL,
@@ -164,7 +164,7 @@ COMMIT;
 -- ----------------------------
 DROP TABLE IF EXISTS `user`;
 CREATE TABLE `user` (
-  `id` bigint NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
   `username` varchar(255) NOT NULL,
   `password` varchar(255) NOT NULL,
   `name` varchar(255) NOT NULL,
@@ -188,7 +188,7 @@ COMMIT;
 -- ----------------------------
 DROP TABLE IF EXISTS `vehicle`;
 CREATE TABLE `vehicle` (
-  `id` bigint NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
   `license_plate` varchar(255) NOT NULL,
   `brand` varchar(255) NOT NULL,
   `model` varchar(255) NOT NULL,
