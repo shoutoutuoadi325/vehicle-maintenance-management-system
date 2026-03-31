@@ -393,10 +393,32 @@
         </div>
       </div>
 
-      <section class="ai-copilot-panel">
+      <button
+        v-if="!showCopilotPanel"
+        class="ai-copilot-toggle"
+        type="button"
+        @click="showCopilotPanel = true"
+        aria-label="打开 AI 技师 Copilot"
+      >
+        <i class="fas fa-robot"></i>
+        AI Copilot
+      </button>
+
+      <section v-if="showCopilotPanel" class="ai-copilot-panel">
         <div class="copilot-header">
-          <h3><i class="fas fa-robot"></i> AI 技师 Copilot</h3>
-          <span class="copilot-tag">TECH MODE</span>
+          <div class="copilot-header-main">
+            <h3><i class="fas fa-robot"></i> AI 技师 Copilot</h3>
+            <span class="copilot-tag">TECH MODE</span>
+          </div>
+          <button
+            class="copilot-close"
+            type="button"
+            @click="showCopilotPanel = false"
+            aria-label="关闭 AI 技师 Copilot"
+            title="关闭"
+          >
+            <i class="fas fa-times"></i>
+          </button>
         </div>
         <p class="copilot-desc">输入故障现象，获取面向技师的排查路径、检测建议与维修提示。</p>
         <textarea
@@ -742,6 +764,7 @@ export default {
       materialRows: [
         { materialId: null, quantity: 1 }
       ],
+      showCopilotPanel: true,
       copilotProblemDescription: '',
       copilotSuggestion: '',
       copilotFaultType: '',
@@ -1388,11 +1411,40 @@ export default {
   z-index: 200;
 }
 
+.ai-copilot-toggle {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  z-index: 190;
+  border: none;
+  border-radius: 999px;
+  background: #111827;
+  color: #f9fafb;
+  padding: 0.65rem 0.95rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgba(17, 24, 39, 0.35);
+}
+
+.ai-copilot-toggle:hover {
+  background: #1f2937;
+}
+
 .copilot-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 0.5rem;
+}
+
+.copilot-header-main {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .copilot-header h3 {
@@ -1407,6 +1459,24 @@ export default {
   font-size: 0.7rem;
   letter-spacing: 0.08em;
   color: #fde68a;
+}
+
+.copilot-close {
+  border: none;
+  border-radius: 0.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e5e7eb;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.copilot-close:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .copilot-desc {
@@ -1970,6 +2040,11 @@ export default {
     right: 0.75rem;
     bottom: 0.75rem;
     width: calc(100vw - 1.5rem);
+  }
+
+  .ai-copilot-toggle {
+    right: 0.75rem;
+    bottom: 0.75rem;
   }
 }
 
