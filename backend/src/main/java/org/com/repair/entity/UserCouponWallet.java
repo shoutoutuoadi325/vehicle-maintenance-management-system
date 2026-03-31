@@ -10,15 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
 @Entity
 @Table(name = "user_coupon_wallet")
 public class UserCouponWallet {
@@ -46,7 +38,6 @@ public class UserCouponWallet {
     private String couponDescription;
 
     @Column(name = "coupon_status", nullable = false, length = 20)
-    @Builder.Default
     private String couponStatus = "NEW";
 
     @Column(name = "source_action", nullable = false, length = 120)
@@ -75,4 +66,35 @@ public class UserCouponWallet {
     public void touchUpdateTime() {
         this.updateTime = LocalDateTime.now();
     }
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
+    public Long getCouponId() { return couponId; }
+    public void setCouponId(Long couponId) { this.couponId = couponId; }
+    public Long getBrandPartnerId() { return brandPartnerId; }
+    public void setBrandPartnerId(Long brandPartnerId) { this.brandPartnerId = brandPartnerId; }
+    public Integer getCityIndex() { return cityIndex; }
+    public void setCityIndex(Integer cityIndex) { this.cityIndex = cityIndex; }
+    public String getCouponTitle() { return couponTitle; }
+    public void setCouponTitle(String couponTitle) { this.couponTitle = couponTitle; }
+    public String getCouponDescription() { return couponDescription; }
+    public void setCouponDescription(String couponDescription) { this.couponDescription = couponDescription; }
+    public String getCouponStatus() { return couponStatus; }
+    public void setCouponStatus(String couponStatus) { this.couponStatus = couponStatus; }
+    public String getSourceAction() { return sourceAction; }
+    public void setSourceAction(String sourceAction) { this.sourceAction = sourceAction; }
+    public LocalDateTime getDrawTime() { return drawTime; }
+    public void setDrawTime(LocalDateTime drawTime) { this.drawTime = drawTime; }
+    public LocalDateTime getExpireTime() { return expireTime; }
+    public void setExpireTime(LocalDateTime expireTime) { this.expireTime = expireTime; }
+    public LocalDateTime getRedeemTime() { return redeemTime; }
+    public void setRedeemTime(LocalDateTime redeemTime) { this.redeemTime = redeemTime; }
+    public Long getRedeemShopId() { return redeemShopId; }
+    public void setRedeemShopId(Long redeemShopId) { this.redeemShopId = redeemShopId; }
+    public Long getRedeemTechnicianId() { return redeemTechnicianId; }
+    public void setRedeemTechnicianId(Long redeemTechnicianId) { this.redeemTechnicianId = redeemTechnicianId; }
+    public LocalDateTime getUpdateTime() { return updateTime; }
+    public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
 }

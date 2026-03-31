@@ -5,12 +5,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.com.repair.entity.Feedback;
+import org.com.repair.entity.MaintenanceAlert;
 import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.Vehicle;
 import org.com.repair.repository.FeedbackRepository;
+import org.com.repair.repository.MaintenanceAlertRepository;
 import org.com.repair.repository.RepairOrderRepository;
 import org.com.repair.repository.VehicleRepository;
 import org.springframework.http.HttpMethod;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -23,24 +26,31 @@ public class OwnershipAuthorizationInterceptor implements HandlerInterceptor {
     private static final Pattern VEHICLE_ID_PATH = Pattern.compile("^/api/vehicles/(\\d+)$");
     private static final Pattern REPAIR_ORDER_ID_PATH = Pattern.compile("^/api/repair-orders/(\\d+)(/.*)?$");
     private static final Pattern FEEDBACK_ID_PATH = Pattern.compile("^/api/feedbacks/(\\d+)$");
-    private static final Pattern USER_SCOPED_PATH = Pattern.compile("^/api/(vehicles|repair-orders|feedbacks)/user/(\\d+)$");
+    private static final Pattern MAINTENANCE_ALERT_ID_PATH = Pattern.compile("^/api/maintenance-alerts/(\\d+)(/.*)?$");
+    private static final Pattern USER_SCOPED_PATH = Pattern.compile("^/api/(vehicles|repair-orders|feedbacks|maintenance-alerts)/user/(\\d+)(/.*)?$");
     private static final Pattern TECHNICIAN_SCOPED_PATH = Pattern.compile("^/api/repair-orders/technician/(\\d+)$");
 
     private final VehicleRepository vehicleRepository;
     private final RepairOrderRepository repairOrderRepository;
     private final FeedbackRepository feedbackRepository;
+    private final MaintenanceAlertRepository maintenanceAlertRepository;
 
     public OwnershipAuthorizationInterceptor(VehicleRepository vehicleRepository,
                                              RepairOrderRepository repairOrderRepository,
-                                             FeedbackRepository feedbackRepository) {
+                                             FeedbackRepository feedbackRepository,
+                                             MaintenanceAlertRepository maintenanceAlertRepository) {
         this.vehicleRepository = vehicleRepository;
         this.repairOrderRepository = repairOrderRepository;
         this.feedbackRepository = feedbackRepository;
+        this.maintenanceAlertRepository = maintenanceAlertRepository;
     }
 
     @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        if (HttpMethod.OPTIONS.matches(request.getMethod())) {
+    public boolean preHandle(@NonNull HttpServletRequest request,
+                             @NonNull HttpServletResponse response,
+                             @NonNull Object handler) throws Exception {
+        String method = request.getMethod();
+        if (method != null && HttpMethod.OPTIONS.matches(method)) {
             return true;
         }
 
@@ -81,6 +91,17 @@ public class OwnershipAuthorizationInterceptor implements HandlerInterceptor {
             Long pathUserId = Long.parseLong(userScoped.group(2));
             if (!authUserId.equals(pathUserId)) {
                 response.sendError(HttpServletResponse.SC_FORBIDDEN, "禁止访问其他用户的资源");
+                return false;
+            }
+            return true;
+        }
+
+        Matcher maintenanceAlertMatcher = MAINTENANCE_ALERT_ID_PATH.matcher(path);
+        if (maintenanceAlertMatcher.matches()) {
+            Long alertId = Long.parseLong(maintenanceAlertMatcher.group(1));
+            Optional<MaintenanceAlert> alert = maintenanceAlertRepository.findById(alertId);
+            if (alert.isPresent() && !authUserId.equals(alert.get().getUserId())) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "禁止访问其他用户保养提醒");
                 return false;
             }
             return true;

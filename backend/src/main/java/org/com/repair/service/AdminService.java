@@ -1,6 +1,7 @@
 package org.com.repair.service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -39,7 +40,7 @@ public class AdminService {
     }
     
     public Optional<AdminResponse> getAdminById(Long id) {
-        return adminRepository.findById(id)
+        return adminRepository.findById(Objects.requireNonNull(id, "管理员ID不能为空"))
                 .map(AdminResponse::new);
     }
     
@@ -50,7 +51,7 @@ public class AdminService {
     
     @Transactional
     public AdminResponse updateAdmin(Long id, NewAdminRequest request) {
-        Admin admin = adminRepository.findById(id)
+        Admin admin = adminRepository.findById(Objects.requireNonNull(id, "管理员ID不能为空"))
                 .orElseThrow(() -> new RuntimeException("管理员不存在"));
         
         // 如果用户名更改了，检查新用户名是否已存在
@@ -74,8 +75,9 @@ public class AdminService {
     
     @Transactional
     public boolean deleteAdmin(Long id) {
-        if (adminRepository.existsById(id)) {
-            adminRepository.deleteById(id);
+        Long adminId = Objects.requireNonNull(id, "管理员ID不能为空");
+        if (adminRepository.existsById(adminId)) {
+            adminRepository.deleteById(adminId);
             return true;
         }
         return false;

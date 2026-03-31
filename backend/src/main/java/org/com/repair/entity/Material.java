@@ -18,6 +18,12 @@ public class Material {
     @Column(nullable = false)
     private Double unitPrice;
 
+    @Column(name = "stock_quantity", nullable = false)
+    private Integer stockQuantity = 0;
+
+    @Column(name = "minimum_stock_level", nullable = false)
+    private Integer minimumStockLevel = 10;
+
     // 构造函数
     public Material() {
     }
@@ -45,5 +51,21 @@ public class Material {
 
     public void setUnitPrice(Double unitPrice) {
         this.unitPrice = unitPrice;
+    }
+
+    public Integer getStockQuantity() {
+        return stockQuantity;
+    }
+
+    public void setStockQuantity(Integer stockQuantity) {
+        this.stockQuantity = stockQuantity;
+    }
+
+    public Integer getMinimumStockLevel() {
+        return minimumStockLevel;
+    }
+
+    public void setMinimumStockLevel(Integer minimumStockLevel) {
+        this.minimumStockLevel = minimumStockLevel;
     }
 } 

@@ -30,3 +30,67 @@ parent.
 To prevent this, the project POM contains empty overrides for these elements.
 If you manually switch to a different parent and actually want the inheritance, you need to remove those overrides.
 
+### Local Environment Quick Check (Windows)
+
+Use the helper script before running backend tests:
+
+```powershell
+Set-Location .\backend
+.\scripts\verify-dev-env.ps1
+```
+
+Run full backend tests after the check:
+
+```powershell
+Set-Location .\backend
+.\scripts\verify-dev-env.ps1 -RunTests
+```
+
+### Local Quality Gate (Windows)
+
+Run compile + full tests in one command:
+
+```powershell
+Set-Location .\backend
+.\scripts\quality-gate.ps1
+```
+
+Optional modes:
+
+```powershell
+# Skip environment precheck (when already verified)
+.\scripts\quality-gate.ps1 -SkipEnvCheck
+
+# Compile-only gate (fast path)
+.\scripts\quality-gate.ps1 -SkipTests
+```
+
+### Standardized Release Gate (Windows)
+
+Run release gate with quality checks, migration validation and post-release smoke:
+
+```powershell
+Set-Location .\backend
+.\scripts\release-gate.ps1 -BaseUrl http://localhost:8080
+```
+
+Optional mode:
+
+```powershell
+# Skip smoke during pre-release dry run
+.\scripts\release-gate.ps1 -SkipSmoke
+```
+
+### DB Migration Validation
+
+```powershell
+Set-Location .\backend
+.\scripts\validate-migrations.ps1
+```
+
+### Operability SOP and Debt Ledger
+
+- Operability runbook: `OPERABILITY_RUNBOOK.md`
+- Architecture debt ledger: `ARCHITECTURE_DEBT_LEDGER.md`
+- Gray release template: `GRAY_RELEASE_PLAYBOOK.md`
+

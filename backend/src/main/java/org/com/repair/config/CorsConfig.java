@@ -2,6 +2,7 @@ package org.com.repair.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.lang.NonNull;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -12,13 +13,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class CorsConfig implements WebMvcConfigurer {
 
     @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**")
-                .allowedOriginPatterns("*")
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*")
-                .allowCredentials(true)
-                .maxAge(3600);
+    public void addCorsMappings(@NonNull CorsRegistry registry) {
+        var registration = registry.addMapping("/api/**");
+        registration.allowedOriginPatterns("*");
+        registration.allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS");
+        registration.allowedHeaders("*");
+        registration.allowCredentials(true);
+        registration.maxAge(3600);
     }
 
     @Bean

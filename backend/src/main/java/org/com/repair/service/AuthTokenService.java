@@ -7,11 +7,14 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 
 import org.com.repair.DTO.AuthLoginResponse;
 import org.com.repair.entity.AuthRefreshToken;
 import org.com.repair.repository.AuthRefreshTokenRepository;
 import org.com.repair.security.JwtTokenService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +23,8 @@ import jakarta.servlet.http.HttpServletRequest;
 
 @Service
 public class AuthTokenService {
+
+    private static final Logger logger = LoggerFactory.getLogger(AuthTokenService.class);
 
     private final JwtTokenService jwtTokenService;
     private final AuthRefreshTokenRepository authRefreshTokenRepository;
@@ -99,6 +104,7 @@ public class AuthTokenService {
             }
         } catch (Exception ignored) {
             // Keep logout idempotent: even invalid token should look like success.
+            logger.debug("Ignore logout token parsing failure to keep idempotent behavior", ignored);
         }
     }
 
@@ -130,7 +136,7 @@ public class AuthTokenService {
                 .expiresAt(expiresAt)
                 .revoked(false)
                 .build();
-        authRefreshTokenRepository.save(entity);
+            authRefreshTokenRepository.save(Objects.requireNonNull(entity));
     }
 
     private String extractDeviceId(HttpServletRequest request) {
@@ -163,6 +169,7 @@ public class AuthTokenService {
             byte[] bytes = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(bytes);
         } catch (Exception ex) {
+            logger.error("Failed to hash token payload", ex);
             throw new IllegalStateException("令牌摘要计算失败", ex);
         }
     }

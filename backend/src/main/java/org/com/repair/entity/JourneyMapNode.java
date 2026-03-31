@@ -12,15 +12,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
 @Entity
 @Table(
         name = "journey_map_node",
@@ -63,4 +55,21 @@ public class JourneyMapNode {
     public void touchUpdateTime() {
         this.updateTime = LocalDateTime.now();
     }
+
+        public Long getId() { return id; }
+        public void setId(Long id) { this.id = id; }
+        public Long getMapId() { return mapId; }
+        public void setMapId(Long mapId) { this.mapId = mapId; }
+        public Integer getCityIndex() { return cityIndex; }
+        public void setCityIndex(Integer cityIndex) { this.cityIndex = cityIndex; }
+        public String getCityName() { return cityName; }
+        public void setCityName(String cityName) { this.cityName = cityName; }
+        public Integer getRequiredMileage() { return requiredMileage; }
+        public void setRequiredMileage(Integer requiredMileage) { this.requiredMileage = requiredMileage; }
+        public Integer getX() { return x; }
+        public void setX(Integer x) { this.x = x; }
+        public Integer getY() { return y; }
+        public void setY(Integer y) { this.y = y; }
+        public LocalDateTime getUpdateTime() { return updateTime; }
+        public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
 }

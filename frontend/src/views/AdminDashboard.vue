@@ -119,6 +119,11 @@
               <h3>管理技师</h3>
               <p>添加或编辑技师信息</p>
             </div>
+            <div v-if="isManager || isSuperAdmin" class="action-card" @click="$router.push('/admin/dispatch')">
+              <i class="fas fa-columns"></i>
+              <h3>智能调度看板</h3>
+              <p>拖拽重分配并查看 AI 派单负荷</p>
+            </div>
             <div v-if="isSuperAdmin" class="action-card" @click="activeTab = 'statistics'">
               <i class="fas fa-chart-line"></i>
               <h3>查看报表</h3>
@@ -128,6 +133,109 @@
               <i class="fas fa-users"></i>
               <h3>用户管理</h3>
               <p>管理系统用户</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="inventory-alerts">
+          <div class="inventory-alerts-header">
+            <h2>库存预警</h2>
+            <div class="inventory-alert-header-actions">
+              <button
+                class="btn btn-secondary btn-sm"
+                @click="resolveSelectedInventoryAlerts"
+                :disabled="inventoryAlertsLoading || resolvingInventoryAlertsBatch || selectedInventoryAlertIds.length === 0"
+              >
+                <i class="fas fa-check-double"></i>
+                {{ resolvingInventoryAlertsBatch ? '批量处理中...' : `批量处理(${selectedInventoryAlertIds.length})` }}
+              </button>
+              <button class="btn btn-outline btn-sm" @click="loadInventoryAlerts" :disabled="inventoryAlertsLoading">
+                <i class="fas fa-sync-alt" :class="{ 'fa-spin': inventoryAlertsLoading }"></i>
+                {{ inventoryAlertsLoading ? '刷新中...' : '刷新预警' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="inventory-alerts-card">
+            <p class="inventory-alerts-summary">
+              当前待处理低库存预警：<strong>{{ activeInventoryAlertCount }}</strong> 条
+            </p>
+
+            <div class="inventory-alerts-stats" v-if="inventoryAlerts.length > 0">
+              <span class="inventory-alert-stat critical">高危 {{ criticalInventoryAlertCount }}</span>
+              <span class="inventory-alert-stat warning">一般 {{ warningInventoryAlertCount }}</span>
+            </div>
+
+            <div class="inventory-alert-filter" v-if="inventoryAlerts.length > 0">
+              <select v-model="inventoryAlertFilter" class="form-input" @change="onInventoryAlertFilterChange">
+                <option value="ALL">全部预警</option>
+                <option value="CRITICAL">仅高危</option>
+                <option value="WARNING">仅一般</option>
+              </select>
+              <label class="inventory-select-all">
+                <input type="checkbox" :checked="allFilteredInventorySelected" @change="toggleSelectAllInventoryAlerts($event)">
+                当前页全选
+              </label>
+            </div>
+
+            <div v-if="inventoryAlertsLoading" class="inventory-alerts-empty">
+              <i class="fas fa-spinner fa-spin"></i>
+              <span>正在加载库存预警...</span>
+            </div>
+
+            <div v-else-if="filteredInventoryAlerts.length === 0" class="inventory-alerts-empty">
+              <i class="fas fa-check-circle"></i>
+              <span>当前筛选条件下暂无库存预警</span>
+            </div>
+
+            <div v-else class="inventory-alerts-list">
+              <div v-for="alert in filteredInventoryAlerts" :key="alert.id" class="inventory-alert-item">
+                <div class="inventory-alert-checkbox">
+                  <input
+                    type="checkbox"
+                    :value="alert.id"
+                    :checked="selectedInventoryAlertIds.includes(alert.id)"
+                    @change="toggleInventoryAlertSelection(alert.id, $event.target.checked)"
+                  >
+                </div>
+                <div class="inventory-alert-item-main">
+                  <h3>{{ alert.materialName }}</h3>
+                  <p>
+                    当前库存 <strong>{{ alert.currentStock }}</strong>
+                    <span class="inventory-alert-divider">/</span>
+                    安全库存 {{ alert.minimumStockLevel }}
+                  </p>
+                  <p :class="['inventory-alert-level', getInventoryAlertSeverity(alert).toLowerCase()]">
+                    {{ getInventoryAlertSeverity(alert) === 'CRITICAL' ? '高危库存' : '一般库存风险' }}
+                  </p>
+                  <p class="inventory-alert-time">触发时间：{{ formatDateTime(alert.createdAt) }}</p>
+                </div>
+                <button
+                  class="btn btn-primary btn-sm"
+                  @click="resolveInventoryAlert(alert)"
+                  :disabled="resolvingInventoryAlertIds.includes(alert.id)"
+                >
+                  <i class="fas fa-check"></i>
+                  {{ resolvingInventoryAlertIds.includes(alert.id) ? '处理中...' : '标记已处理' }}
+                </button>
+              </div>
+            </div>
+
+            <div class="inventory-alert-pagination" v-if="inventoryAlertPagination.totalPages > 1">
+              <button
+                class="btn btn-outline btn-sm"
+                @click="changeInventoryAlertPage(inventoryAlertPagination.page - 1)"
+                :disabled="inventoryAlertsLoading || inventoryAlertPagination.page <= 0"
+              >上一页</button>
+              <span>
+                第 {{ inventoryAlertPagination.page + 1 }} / {{ inventoryAlertPagination.totalPages }} 页
+                (共 {{ inventoryAlertPagination.totalElements }} 条)
+              </span>
+              <button
+                class="btn btn-outline btn-sm"
+                @click="changeInventoryAlertPage(inventoryAlertPagination.page + 1)"
+                :disabled="inventoryAlertsLoading || inventoryAlertPagination.page >= inventoryAlertPagination.totalPages - 1"
+              >下一页</button>
             </div>
           </div>
         </div>
@@ -917,6 +1025,20 @@ export default {
         completedOrders: 0,
         activeTechnicians: 0
       },
+      inventoryAlerts: [],
+      inventoryAlertsLoading: false,
+      resolvingInventoryAlertIds: [],
+      resolvingInventoryAlertsBatch: false,
+      selectedInventoryAlertIds: [],
+      inventoryAlertFilter: 'ALL',
+      inventoryAlertCriticalCount: 0,
+      inventoryAlertWarningCount: 0,
+      inventoryAlertPagination: {
+        page: 0,
+        size: 8,
+        totalElements: 0,
+        totalPages: 0
+      },
       statisticsDateRange: {
         start: '',
         end: ''
@@ -943,6 +1065,24 @@ export default {
     },
     recentOrders() {
       return this.allOrders.slice(0, 10);
+    },
+    activeInventoryAlertCount() {
+      return this.inventoryAlertPagination.totalElements || this.inventoryAlerts.length;
+    },
+    filteredInventoryAlerts() {
+      return this.inventoryAlerts;
+    },
+    criticalInventoryAlertCount() {
+      return this.inventoryAlertCriticalCount;
+    },
+    warningInventoryAlertCount() {
+      return this.inventoryAlertWarningCount;
+    },
+    allFilteredInventorySelected() {
+      if (!this.filteredInventoryAlerts.length) {
+        return false;
+      }
+      return this.filteredInventoryAlerts.every(alert => this.selectedInventoryAlertIds.includes(alert.id));
     },
     availableTechnicians() {
       return this.technicians.filter(tech => tech.status !== 'INACTIVE');
@@ -1063,6 +1203,7 @@ export default {
         // 先加载基础数据
         await this.loadOrders();
         await this.loadTechnicians();
+        await this.loadInventoryAlerts();
         
         if (this.isSuperAdmin) {
           await this.loadUsers();
@@ -1094,6 +1235,7 @@ export default {
         
         // 重新分配后再次加载数据以反映最新状态
         await this.loadOrders();
+        await this.loadInventoryAlerts();
         
         // 强制重新计算统计数据
         await this.loadDashboardStats();
@@ -1500,6 +1642,147 @@ export default {
     formatDate(dateString) {
       return new Date(dateString).toLocaleDateString('zh-CN');
     },
+    formatDateTime(dateString) {
+      if (!dateString) {
+        return '-';
+      }
+      return new Date(dateString).toLocaleString('zh-CN');
+    },
+    getInventoryAlertSeverity(alert) {
+      const currentStock = Number(alert.currentStock || 0);
+      const minimumStockLevel = Number(alert.minimumStockLevel || 0);
+      if (currentStock <= 0) {
+        return 'CRITICAL';
+      }
+      if (minimumStockLevel > 0 && currentStock <= Math.ceil(minimumStockLevel * 0.5)) {
+        return 'CRITICAL';
+      }
+      return 'WARNING';
+    },
+    async loadInventoryAlerts() {
+      try {
+        this.inventoryAlertsLoading = true;
+        const normalizedFilter = this.normalizeInventoryAlertFilter(this.inventoryAlertFilter);
+        if (normalizedFilter !== this.inventoryAlertFilter) {
+          this.inventoryAlertFilter = normalizedFilter;
+        }
+        const response = await this.$axios.get('/materials/notifications/page', {
+          params: {
+            page: this.inventoryAlertPagination.page,
+            size: this.inventoryAlertPagination.size,
+            severity: normalizedFilter === 'ALL' ? undefined : normalizedFilter
+          }
+        });
+        const payload = response.data?.data || response.data || {};
+        this.inventoryAlerts = Array.isArray(payload.items) ? payload.items : [];
+        this.inventoryAlertPagination.page = Number(payload.page || 0);
+        this.inventoryAlertPagination.size = Number(payload.size || this.inventoryAlertPagination.size);
+        this.inventoryAlertPagination.totalElements = Number(payload.totalElements || this.inventoryAlerts.length);
+        this.inventoryAlertPagination.totalPages = Number(payload.totalPages || 0);
+        this.inventoryAlertCriticalCount = Number(payload.criticalCount || 0);
+        this.inventoryAlertWarningCount = Number(payload.warningCount || 0);
+        this.selectedInventoryAlertIds = [];
+      } catch (error) {
+        this.inventoryAlerts = [];
+        this.inventoryAlertCriticalCount = 0;
+        this.inventoryAlertWarningCount = 0;
+        this.selectedInventoryAlertIds = [];
+        console.error('加载库存预警失败:', error);
+        this.$emit('message', error.response?.data?.message || '加载库存预警失败', 'error');
+      } finally {
+        this.inventoryAlertsLoading = false;
+      }
+    },
+    onInventoryAlertFilterChange() {
+      const normalizedFilter = this.normalizeInventoryAlertFilter(this.inventoryAlertFilter);
+      if (normalizedFilter !== this.inventoryAlertFilter) {
+        this.inventoryAlertFilter = normalizedFilter;
+        this.$emit('message', '库存筛选值无效，已自动恢复为全部', 'warning');
+      }
+      this.inventoryAlertPagination.page = 0;
+      this.selectedInventoryAlertIds = [];
+      this.loadInventoryAlerts();
+    },
+    normalizeInventoryAlertFilter(filter) {
+      const allowed = ['ALL', 'CRITICAL', 'WARNING'];
+      return allowed.includes(filter) ? filter : 'ALL';
+    },
+    changeInventoryAlertPage(page) {
+      const maxPage = Math.max(0, this.inventoryAlertPagination.totalPages - 1);
+      const target = Math.min(maxPage, Math.max(0, page));
+      if (target === this.inventoryAlertPagination.page) {
+        return;
+      }
+      this.inventoryAlertPagination.page = target;
+      this.loadInventoryAlerts();
+    },
+    toggleInventoryAlertSelection(alertId, checked) {
+      if (!alertId) {
+        return;
+      }
+      if (checked) {
+        if (!this.selectedInventoryAlertIds.includes(alertId)) {
+          this.selectedInventoryAlertIds.push(alertId);
+        }
+        return;
+      }
+      this.selectedInventoryAlertIds = this.selectedInventoryAlertIds.filter(id => id !== alertId);
+    },
+    toggleSelectAllInventoryAlerts(event) {
+      const checked = Boolean(event?.target?.checked);
+      if (!checked) {
+        this.selectedInventoryAlertIds = this.selectedInventoryAlertIds.filter(
+          id => !this.filteredInventoryAlerts.some(alert => alert.id === id)
+        );
+        return;
+      }
+      const merged = [...this.selectedInventoryAlertIds];
+      this.filteredInventoryAlerts.forEach(alert => {
+        if (!merged.includes(alert.id)) {
+          merged.push(alert.id);
+        }
+      });
+      this.selectedInventoryAlertIds = merged;
+    },
+    async resolveInventoryAlert(alert) {
+      if (!alert || !alert.id || this.resolvingInventoryAlertIds.includes(alert.id)) {
+        return;
+      }
+
+      this.resolvingInventoryAlertIds.push(alert.id);
+      try {
+        await this.$axios.put(`/materials/notifications/${alert.id}/resolve`);
+        this.inventoryAlerts = this.inventoryAlerts.filter(item => item.id !== alert.id);
+        this.selectedInventoryAlertIds = this.selectedInventoryAlertIds.filter(id => id !== alert.id);
+        this.inventoryAlertPagination.totalElements = Math.max(0, this.inventoryAlertPagination.totalElements - 1);
+        this.$emit('message', `库存预警已处理：${alert.materialName}`, 'success');
+      } catch (error) {
+        console.error('处理库存预警失败:', error);
+        this.$emit('message', '处理库存预警失败', 'error');
+      } finally {
+        this.resolvingInventoryAlertIds = this.resolvingInventoryAlertIds.filter(id => id !== alert.id);
+      }
+    },
+    async resolveSelectedInventoryAlerts() {
+      if (!this.selectedInventoryAlertIds.length || this.resolvingInventoryAlertsBatch) {
+        return;
+      }
+      try {
+        this.resolvingInventoryAlertsBatch = true;
+        const payloadIds = [...this.selectedInventoryAlertIds];
+        const response = await this.$axios.put('/materials/notifications/resolve-batch', {
+          ids: payloadIds
+        });
+        const updated = Number(response.data?.data?.updated || 0);
+        this.$emit('message', `批量处理完成，共处理 ${updated} 条库存预警`, 'success');
+        await this.loadInventoryAlerts();
+      } catch (error) {
+        console.error('批量处理库存预警失败:', error);
+        this.$emit('message', '批量处理库存预警失败', 'error');
+      } finally {
+        this.resolvingInventoryAlertsBatch = false;
+      }
+    },
     async logout() {
       const refreshToken = localStorage.getItem('refreshToken');
       try {
@@ -1833,6 +2116,157 @@ export default {
   margin: 0;
   color: #6b7280;
   font-size: 0.875rem;
+}
+
+.inventory-alerts {
+  margin-bottom: 2rem;
+}
+
+.inventory-alerts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.inventory-alert-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.inventory-alerts-header h2 {
+  margin: 0;
+  color: #1f2937;
+}
+
+.inventory-alerts-card {
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  padding: 1rem;
+}
+
+.inventory-alerts-summary {
+  margin: 0 0 1rem;
+  color: #374151;
+}
+
+.inventory-alerts-stats {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.inventory-alert-stat {
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.inventory-alert-stat.critical {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.inventory-alert-stat.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.inventory-alert-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.inventory-alert-filter .form-input {
+  max-width: 220px;
+}
+
+.inventory-select-all {
+  font-size: 0.84rem;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.inventory-alerts-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.inventory-alert-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.875rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  gap: 1rem;
+}
+
+.inventory-alert-checkbox {
+  flex: 0 0 auto;
+}
+
+.inventory-alert-item-main h3 {
+  margin: 0 0 0.25rem;
+  color: #1f2937;
+  font-size: 1rem;
+}
+
+.inventory-alert-item-main p {
+  margin: 0.125rem 0;
+  color: #4b5563;
+  font-size: 0.875rem;
+}
+
+.inventory-alert-divider {
+  margin: 0 0.25rem;
+  color: #9ca3af;
+}
+
+.inventory-alert-time {
+  color: #6b7280;
+}
+
+.inventory-alert-level {
+  font-weight: 700;
+}
+
+.inventory-alert-level.critical {
+  color: #b91c1c;
+}
+
+.inventory-alert-level.warning {
+  color: #92400e;
+}
+
+.inventory-alerts-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #6b7280;
+  background: #f9fafb;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.inventory-alert-pagination {
+  margin-top: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #475569;
+  font-size: 0.84rem;
 }
 
 .recent-orders {
@@ -2403,6 +2837,17 @@ export default {
   
   .action-grid {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-alerts-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .inventory-alert-item {
+    flex-direction: column;
+    align-items: stretch;
   }
   
   .section-header {

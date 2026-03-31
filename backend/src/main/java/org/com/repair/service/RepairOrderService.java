@@ -11,6 +11,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.com.repair.DTO.DispatchBoardOrderResponse;
+import org.com.repair.DTO.DispatchBoardTechnicianResponse;
 import org.com.repair.DTO.NewRepairOrderRequest;
 import org.com.repair.DTO.RepairOrderResponse;
 import org.com.repair.entity.RepairOrder;
@@ -22,6 +24,8 @@ import org.com.repair.repository.RepairOrderRepository;
 import org.com.repair.repository.TechnicianRepository;
 import org.com.repair.repository.UserRepository;
 import org.com.repair.repository.VehicleRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +33,10 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.com.repair.event.EmissionReducedEvent;
 
 @Service
+@SuppressWarnings({"null", "unused"})
 public class RepairOrderService {
+    private static final Logger logger = LoggerFactory.getLogger(RepairOrderService.class);
+
     private final RepairOrderRepository repairOrderRepository;
     private final UserRepository userRepository;
     private final VehicleRepository vehicleRepository;
@@ -106,8 +113,6 @@ public class RepairOrderService {
         repairOrder.setEcoMaterial(request.ecoMaterial() != null ? request.ecoMaterial() : false);
         repairOrder.setReworkCount(request.reworkCount() != null ? request.reworkCount() : 0);
         repairOrder.setRepairType(request.repairType() != null ? request.repairType() : "repair");
-        // 以estimatedHours为工时，若无则用1
-        double workHours = repairOrder.getEstimatedHours() != null ? repairOrder.getEstimatedHours() : 1.0;
         // 计算碳排放
         repairOrder.setEstimatedEmission(
             emissionCalculatorService.calculate(repairOrder)
@@ -214,6 +219,56 @@ public class RepairOrderService {
                 .map(RepairOrderResponse::new)
                 .collect(Collectors.toList());
     }
+
+    public List<DispatchBoardTechnicianResponse> getDispatchBoard() {
+        List<Technician> technicians = technicianRepository.findAll();
+        List<RepairOrder> activeOrders = new ArrayList<>();
+        activeOrders.addAll(repairOrderRepository.findByStatus(RepairStatus.ASSIGNED));
+        activeOrders.addAll(repairOrderRepository.findByStatus(RepairStatus.IN_PROGRESS));
+
+        Map<Long, List<DispatchBoardOrderResponse>> boardMap = new HashMap<>();
+        for (RepairOrder order : activeOrders) {
+            if (order.getTechnicians() == null || order.getTechnicians().isEmpty()) {
+                continue;
+            }
+
+            DispatchBoardOrderResponse orderCard = new DispatchBoardOrderResponse(
+                    order.getId(),
+                    order.getOrderNumber(),
+                    order.getStatus() != null ? order.getStatus().name() : null,
+                    order.getDescription(),
+                    order.getRequiredSkillType() != null ? order.getRequiredSkillType().name() : null,
+                    order.getUser() != null ? order.getUser().getName() : null,
+                    order.getVehicle() != null ? order.getVehicle().getLicensePlate() : null,
+                    order.getAssignmentType() != null ? order.getAssignmentType().name() : null,
+                    order.getAssignmentType() == RepairOrder.AssignmentType.AUTO,
+                    order.getCreatedAt(),
+                    order.getEstimatedHours()
+            );
+
+            for (Technician tech : order.getTechnicians()) {
+                boardMap.computeIfAbsent(tech.getId(), k -> new ArrayList<>()).add(orderCard);
+            }
+        }
+
+        return technicians.stream()
+                .map(tech -> {
+                    List<DispatchBoardOrderResponse> techOrders = boardMap.getOrDefault(tech.getId(), new ArrayList<>());
+                    return new DispatchBoardTechnicianResponse(
+                            tech.getId(),
+                            tech.getName(),
+                            tech.getEmployeeId(),
+                            tech.getSkillType() != null ? tech.getSkillType().name() : null,
+                            tech.getHourlyRate(),
+                            techOrders.size(),
+                            tech.getTotalWorkHours(),
+                            tech.getCompletedOrders(),
+                            techOrders
+                    );
+                })
+                .sorted((a, b) -> Integer.compare(b.activeOrderCount(), a.activeOrderCount()))
+                .collect(Collectors.toList());
+    }
     
     public Map<String, Object> getDetailedStatistics(String startDate, String endDate) {
         Map<String, Object> statistics = new HashMap<>();
@@ -275,6 +330,7 @@ public class RepairOrderService {
             statistics.put("completionRate", Math.round(completionRate * 100.0) / 100.0);
             
         } catch (Exception e) {
+            logger.error("Failed to calculate detailed statistics, startDate={}, endDate={}", startDate, endDate, e);
             // 返回默认统计数据
             statistics.put("totalOrders", 0);
             statistics.put("completedOrders", 0);
@@ -500,12 +556,12 @@ public class RepairOrderService {
                 }
             } catch (Exception e) {
                 // 记录错误但继续处理其他订单
-                System.err.println("重新分配订单 " + order.getId() + " 失败: " + e.getMessage());
+                logger.warn("Reassign pending order failed, orderId={}", order.getId(), e);
             }
         }
         
-        System.out.println(String.format("重新分配完成：总计 %d 个待分配订单，成功分配 %d 个", 
-                totalPendingOrders, successfulAssignments));
+        logger.info("Reassign pending orders completed: total={}, successful={}",
+                totalPendingOrders, successfulAssignments);
         
         return reassignedOrders;
     }
@@ -542,7 +598,7 @@ public class RepairOrderService {
             statistics.sort((a, b) -> Integer.compare((Integer) b.get("repairCount"), (Integer) a.get("repairCount")));
             
         } catch (Exception e) {
-            System.err.println("获取车辆品牌维修统计失败: " + e.getMessage());
+            logger.error("Failed to calculate vehicle brand repair statistics", e);
         }
         
         return statistics;
@@ -563,7 +619,6 @@ public class RepairOrderService {
             
             for (RepairOrder order : allOrders) {
                 if (order.getRequiredSkillType() != null) {
-                    String skillType = order.getRequiredSkillType().toString();
                     String skillTypeName = getSkillTypeName(order.getRequiredSkillType());
                     skillTypeCounts.put(skillTypeName, skillTypeCounts.getOrDefault(skillTypeName, 0) + 1);
                 }
@@ -581,7 +636,7 @@ public class RepairOrderService {
             statistics.sort((a, b) -> Integer.compare((Integer) b.get("orderCount"), (Integer) a.get("orderCount")));
             
         } catch (Exception e) {
-            System.err.println("获取工种类型维修统计失败: " + e.getMessage());
+            logger.error("Failed to calculate skill type repair statistics", e);
         }
         
         return statistics;

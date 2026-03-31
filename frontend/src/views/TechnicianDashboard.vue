@@ -392,6 +392,40 @@
           </form>
         </div>
       </div>
+
+      <section class="ai-copilot-panel">
+        <div class="copilot-header">
+          <h3><i class="fas fa-robot"></i> AI 技师 Copilot</h3>
+          <span class="copilot-tag">TECH MODE</span>
+        </div>
+        <p class="copilot-desc">输入故障现象，获取面向技师的排查路径、检测建议与维修提示。</p>
+        <textarea
+          v-model="copilotProblemDescription"
+          class="copilot-input"
+          rows="4"
+          placeholder="例如：冷车启动抖动，怠速不稳，故障灯偶发点亮，P0301..."
+        ></textarea>
+        <div class="copilot-actions">
+          <button
+            class="btn btn-primary"
+            type="button"
+            :disabled="copilotLoading || !copilotProblemDescription.trim()"
+            @click="askTechnicianCopilot"
+          >
+            <i class="fas" :class="copilotLoading ? 'fa-spinner fa-spin' : 'fa-paper-plane'"></i>
+            {{ copilotLoading ? '分析中...' : '发送诊断' }}
+          </button>
+        </div>
+        <div v-if="copilotError" class="copilot-error">
+          <i class="fas fa-exclamation-circle"></i>
+          {{ copilotError }}
+        </div>
+        <div v-if="copilotSuggestion" class="copilot-result">
+          <h4>诊断建议</h4>
+          <p v-if="copilotFaultType" class="copilot-fault-type">故障类型：{{ copilotFaultType }}</p>
+          <div class="copilot-markdown" v-html="renderedCopilotSuggestion"></div>
+        </div>
+      </section>
     </main>
 
     <!-- 拒绝订单确认模态框 -->
@@ -450,7 +484,15 @@
             <i class="fas fa-times"></i>
           </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-tabs">
+          <button class="tab-btn" :class="{ active: taskDetailTab === 'detail' }" @click="taskDetailTab = 'detail'">
+            任务详情
+          </button>
+          <button class="tab-btn" :class="{ active: taskDetailTab === 'ai' }" @click="loadTaskAiSuggestion">
+            AI Suggestion
+          </button>
+        </div>
+        <div v-if="taskDetailTab === 'detail'" class="modal-body">
           <div class="detail-section">
             <h3>基本信息</h3>
             <div class="detail-grid">
@@ -564,6 +606,28 @@
             </div>
           </div>
         </div>
+        <div v-else class="modal-body">
+          <div class="detail-section">
+            <h3>AI 维修方案建议</h3>
+            <p class="muted-text">基于当前故障描述和工单上下文生成，供技师复核。</p>
+            <div v-if="taskAiSuggestionLoading" class="copilot-loading">
+              <i class="fas fa-spinner fa-spin"></i>
+              正在生成维修建议...
+            </div>
+            <div v-else-if="taskAiSuggestionError" class="copilot-error">
+              <i class="fas fa-exclamation-circle"></i>
+              {{ taskAiSuggestionError }}
+            </div>
+            <div v-else-if="taskAiSuggestion" class="copilot-result">
+              <p v-if="taskAiFaultType" class="copilot-fault-type">故障类型：{{ taskAiFaultType }}</p>
+              <div class="copilot-markdown" v-html="renderedTaskAiSuggestion"></div>
+            </div>
+            <div v-else class="empty-state">
+              <i class="fas fa-robot"></i>
+              <p>点击 AI Suggestion 标签页以生成建议</p>
+            </div>
+          </div>
+        </div>
         <div class="modal-footer">
           <button v-if="selectedTask.status === 'ASSIGNED'" @click="startTask(selectedTask)" class="btn btn-primary">
             <i class="fas fa-play"></i> 开始任务
@@ -604,7 +668,7 @@
                     {{ m.name }} (¥{{ m.unitPrice }})
                   </option>
                 </select>
-                <input type="number" v-model.number="row.quantity" min="0.1" step="0.1" placeholder="数量" style="flex:1;" required>
+                <input type="number" v-model.number="row.quantity" min="1" step="1" placeholder="数量" style="flex:1;" required>
                 <span style="flex:1;">¥{{ materialRowCost(row) }}</span>
                 <button type="button" @click="removeMaterialRow(idx)" v-if="materialRows.length>1" style="flex:0 0 auto;">删除</button>
               </div>
@@ -633,6 +697,8 @@
 </template>
 
 <script>
+import { marked } from 'marked';
+
 export default {
   name: 'TechnicianDashboard',
   data() {
@@ -643,6 +709,12 @@ export default {
       showTaskDetail: false,
       showCompleteTask: false,
       showRejectModal: false,
+      taskDetailTab: 'detail',
+      taskAiSuggestionLoading: false,
+      taskAiSuggestionError: '',
+      taskAiFaultType: '',
+      taskAiSuggestion: '',
+      taskAiLastOrderId: null,
       taskFilter: '',
       allTasks: [],
       selectedTask: null,
@@ -669,7 +741,12 @@ export default {
       materials: [],
       materialRows: [
         { materialId: null, quantity: 1 }
-      ]
+      ],
+      copilotProblemDescription: '',
+      copilotSuggestion: '',
+      copilotFaultType: '',
+      copilotError: '',
+      copilotLoading: false
     }
   },
   computed: {
@@ -691,6 +768,12 @@ export default {
         }
         return sum;
       }, 0).toFixed(2);
+    },
+    renderedCopilotSuggestion() {
+      return marked.parse(this.copilotSuggestion || '');
+    },
+    renderedTaskAiSuggestion() {
+      return marked.parse(this.taskAiSuggestion || '');
     }
   },
   created() {
@@ -727,6 +810,34 @@ export default {
       } catch (error) {
         console.error('加载数据失败:', error);
         this.$emit('message', '加载数据失败', 'error');
+      }
+    },
+    async askTechnicianCopilot() {
+      const problemDescription = this.copilotProblemDescription.trim();
+      if (!problemDescription || this.copilotLoading) {
+        return;
+      }
+
+      this.copilotLoading = true;
+      this.copilotError = '';
+
+      try {
+        const response = await this.$axios.post('/ai-diagnosis/diagnose', {
+          problemDescription,
+          role: 'technician',
+          technicianId: this.user?.id || null
+        });
+
+        const payload = response.data || {};
+        this.copilotFaultType = payload.faultType || '';
+        this.copilotSuggestion = payload.suggestion || '未返回诊断建议';
+      } catch (error) {
+        console.error('技师 Copilot 诊断失败:', error);
+        this.copilotFaultType = '';
+        this.copilotSuggestion = '';
+        this.copilotError = error.response?.data?.errorMessage || error.response?.data?.message || 'AI 诊断失败，请稍后重试';
+      } finally {
+        this.copilotLoading = false;
       }
     },
     async loadTasks() {
@@ -897,6 +1008,7 @@ export default {
     },
     async completeTask(task) {
       this.selectedTask = task;
+      this.taskDetailTab = 'detail';
       this.completeTaskForm = {
         materialCost: '',
         workNotes: ''
@@ -907,15 +1019,55 @@ export default {
     },
     viewTask(task) {
       this.selectedTask = task;
+      this.taskDetailTab = 'detail';
       this.showTaskDetail = true;
     },
     viewTaskDetail(task) {
       this.selectedTask = task;
+      this.taskDetailTab = 'detail';
       this.showTaskDetail = true;
+    },
+    async loadTaskAiSuggestion() {
+      if (!this.selectedTask || !this.selectedTask.id) {
+        return;
+      }
+
+      this.taskDetailTab = 'ai';
+      if (this.taskAiLastOrderId === this.selectedTask.id && this.taskAiSuggestion) {
+        return;
+      }
+
+      this.taskAiSuggestionLoading = true;
+      this.taskAiSuggestionError = '';
+      this.taskAiFaultType = '';
+      this.taskAiSuggestion = '';
+
+      try {
+        const response = await this.$axios.post('/ai-diagnosis/diagnose', {
+          problemDescription: this.selectedTask.description || '工单故障待补充',
+          role: 'technician',
+          technicianId: this.user?.id || null
+        });
+
+        const payload = response.data || {};
+        this.taskAiFaultType = payload.faultType || '';
+        this.taskAiSuggestion = payload.suggestion || '未返回诊断建议';
+        this.taskAiLastOrderId = this.selectedTask.id;
+      } catch (error) {
+        this.taskAiSuggestionError = error.response?.data?.errorMessage || error.response?.data?.message || 'AI 建议生成失败，请稍后重试';
+      } finally {
+        this.taskAiSuggestionLoading = false;
+      }
     },
     closeTaskDetail() {
       this.showTaskDetail = false;
       this.selectedTask = null;
+      this.taskDetailTab = 'detail';
+      this.taskAiSuggestionLoading = false;
+      this.taskAiSuggestionError = '';
+      this.taskAiFaultType = '';
+      this.taskAiSuggestion = '';
+      this.taskAiLastOrderId = null;
     },
     getVehicleDisplay(task) {
       if (task.vehicle) {
@@ -968,10 +1120,24 @@ export default {
       try {
         this.isSubmitting = true;
         console.log('提交完成任务:', this.selectedTask.id);
+        const selectedRows = this.materialRows
+          .filter(row => row.materialId && Number(row.quantity) > 0)
+          .map(row => ({
+            materialId: row.materialId,
+            quantity: Math.floor(Number(row.quantity))
+          }));
+
+        for (const row of selectedRows) {
+          await this.$axios.put(`/materials/${row.materialId}/consume`, {
+            quantity: row.quantity
+          });
+        }
+
+        const materialCost = Number(this.materialCostComputed);
         const response = await this.$axios.put(`/repair-orders/${this.selectedTask.id}/status`, null, {
           params: { 
             status: 'COMPLETED',
-            materialCost: this.completeTaskForm.materialCost
+            materialCost
           }
         });
         
@@ -980,7 +1146,7 @@ export default {
         if (taskIndex !== -1) {
           this.allTasks[taskIndex].status = 'COMPLETED';
           this.allTasks[taskIndex].completedAt = new Date().toISOString();
-          this.allTasks[taskIndex].materialCost = this.completeTaskForm.materialCost;
+          this.allTasks[taskIndex].materialCost = materialCost;
           this.allTasks[taskIndex].updatedAt = new Date().toISOString();
         }
         
@@ -1006,7 +1172,8 @@ export default {
     async fetchMaterials() {
       try {
         const res = await this.$axios.get('/materials');
-        this.materials = res.data || [];
+        const payload = res.data?.data || res.data || [];
+        this.materials = Array.isArray(payload) ? payload : [];
       } catch (e) {
         console.error('加载材料列表失败', e);
         this.$emit('message', '加载材料列表失败', 'error');
@@ -1020,7 +1187,7 @@ export default {
     },
     materialRowCost(row) {
       const mat = this.materials.find(m => m.id === row.materialId);
-      return mat && row.quantity ? (mat.unitPrice * row.quantity).toFixed(2) : 0;
+      return mat && row.quantity ? (mat.unitPrice * Number(row.quantity)).toFixed(2) : 0;
     },
     
     // 拒绝订单相关方法
@@ -1205,6 +1372,124 @@ export default {
   padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
+  position: relative;
+}
+
+.ai-copilot-panel {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  width: min(420px, calc(100vw - 2rem));
+  background: linear-gradient(140deg, #111827, #1f2937);
+  color: #f9fafb;
+  border-radius: 1rem;
+  padding: 1rem;
+  box-shadow: 0 18px 40px rgba(17, 24, 39, 0.35);
+  z-index: 200;
+}
+
+.copilot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.copilot-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.copilot-tag {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: #fde68a;
+}
+
+.copilot-desc {
+  font-size: 0.85rem;
+  color: #d1d5db;
+  margin: 0 0 0.75rem;
+}
+
+.copilot-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f9fafb;
+  resize: vertical;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.copilot-input::placeholder {
+  color: #9ca3af;
+}
+
+.copilot-actions {
+  margin-top: 0.75rem;
+}
+
+.copilot-error {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #fca5a5;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.copilot-result {
+  margin-top: 0.75rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+
+.copilot-result h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.copilot-fault-type {
+  margin: 0 0 0.4rem;
+  color: #fde68a;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.copilot-markdown {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.copilot-markdown :deep(h1),
+.copilot-markdown :deep(h2),
+.copilot-markdown :deep(h3) {
+  margin: 0.6rem 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.copilot-markdown :deep(p) {
+  margin: 0.25rem 0;
+}
+
+.copilot-markdown :deep(ul),
+.copilot-markdown :deep(ol) {
+  margin: 0.3rem 0 0.4rem 1rem;
+  padding: 0;
+}
+
+.copilot-markdown :deep(code) {
+  background: rgba(255, 255, 255, 0.14);
+  padding: 0.05rem 0.25rem;
+  border-radius: 0.25rem;
 }
 
 .tab-content {
@@ -1680,6 +1965,12 @@ export default {
   .task-actions {
     justify-content: space-between;
   }
+
+  .ai-copilot-panel {
+    right: 0.75rem;
+    bottom: 0.75rem;
+    width: calc(100vw - 1.5rem);
+  }
 }
 
 /* 模态框样式 */
@@ -1739,6 +2030,49 @@ export default {
 
 .modal-body {
   padding: 1.5rem;
+}
+
+.modal-tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem 0;
+}
+
+.tab-btn {
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #4b5563;
+  border-radius: 9999px;
+  padding: 0.45rem 0.95rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  background: #fff7ed;
+  color: #b45309;
+  border-color: #fdba74;
+}
+
+.tab-btn.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.muted-text {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.copilot-loading {
+  margin-top: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #1f2937;
 }
 
 .modal-footer {

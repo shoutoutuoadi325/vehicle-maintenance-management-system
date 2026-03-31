@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -61,7 +60,8 @@ class GamificationServiceConcurrencyTest {
         assertNotNull(account);
         assertTrue(account.getTotalEnergy() == 0 || account.getTotalEnergy() == expectedSingleReward,
                 "同一工单并发奖励只能发放一次");
-        assertEquals(account.getTotalEnergy(), account.getCurrentMileage(), "里程与能量增量应一致");
+        assertTrue(account.getCurrentMileage() >= 0, "里程不能为负数");
+        assertTrue(account.getCurrentMileage() <= account.getTotalEnergy(), "站点门禁下里程不应超过能量");
     }
 
     @Test
@@ -90,7 +90,8 @@ class GamificationServiceConcurrencyTest {
         assertNotNull(account);
         assertTrue(account.getTotalEnergy() <= dailyCap,
                 "并发结算后总能量不能超过日上限");
-        assertEquals(account.getTotalEnergy(), account.getCurrentMileage(), "里程与能量增量应一致");
+        assertTrue(account.getCurrentMileage() >= 0, "里程不能为负数");
+        assertTrue(account.getCurrentMileage() <= account.getTotalEnergy(), "站点门禁下里程不应超过能量");
     }
 
     private int calculateReward(double emissionReduction,

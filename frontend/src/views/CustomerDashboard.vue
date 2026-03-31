@@ -10,6 +10,7 @@
         <nav class="nav-menu">
           <a href="#" @click="activeTab = 'overview'" :class="{ active: activeTab === 'overview' }">
             <i class="fas fa-home"></i> 概览
+            <span v-if="maintenanceSummary.unreadCount > 0" class="dot-badge">{{ maintenanceSummary.unreadCount }}</span>
           </a>
           <a href="#" @click="activeTab = 'vehicles'" :class="{ active: activeTab === 'vehicles' }">
             <i class="fas fa-car"></i> 我的车辆
@@ -93,6 +94,113 @@
           </div>
         </div>
 
+        <div class="vehicle-health-panel">
+          <div class="health-header">
+            <h2>爱车健康档案</h2>
+            <div class="health-header-right">
+              <span class="health-score">健康分 {{ maintenanceSummary.vehicleHealthScore }}</span>
+              <span :class="['health-risk-badge', (maintenanceSummary.riskLevel || 'LOW').toLowerCase()]">
+                风险 {{ maintenanceSummary.riskLevel || 'LOW' }}
+              </span>
+            </div>
+          </div>
+          <div v-if="maintenanceSummary.unreadCount > 0" class="health-alert-banner">
+            <i class="fas fa-exclamation-circle"></i>
+            您有 {{ maintenanceSummary.unreadCount }} 条未读保养提醒，请尽快处理。
+          </div>
+          <div class="health-summary-grid">
+            <div class="health-item">
+              <span>里程超限提醒</span>
+              <strong>{{ maintenanceSummary.dueMileageCount }}</strong>
+            </div>
+            <div class="health-item">
+              <span>周期超时提醒</span>
+              <strong>{{ maintenanceSummary.dueTimeCount }}</strong>
+            </div>
+            <div class="health-item">
+              <span>里程临近提醒</span>
+              <strong>{{ maintenanceSummary.upcomingMileageCount }}</strong>
+            </div>
+            <div class="health-item">
+              <span>周期临近提醒</span>
+              <strong>{{ maintenanceSummary.upcomingTimeCount }}</strong>
+            </div>
+          </div>
+          <div v-if="maintenanceAlerts.length > 0" class="maintenance-alert-toolbar">
+            <div class="maintenance-toolbar-left">
+              <select v-model="maintenanceAlertFilter" class="form-input maintenance-filter-select" @change="onMaintenanceFilterChange">
+                <option value="ALL">全部提醒</option>
+                <option value="UNREAD">仅未读</option>
+                <option value="MILEAGE_OVERDUE">仅里程提醒</option>
+                <option value="TIME_OVERDUE">仅周期提醒</option>
+              </select>
+              <label class="maintenance-select-all">
+                <input type="checkbox" :checked="allMaintenanceAlertsSelected" @change="toggleSelectAllMaintenanceAlerts($event)">
+                当前页全选
+              </label>
+            </div>
+            <div class="maintenance-toolbar-actions">
+              <button
+                class="btn btn-secondary btn-sm"
+                @click="markSelectedMaintenanceAlertsRead"
+                :disabled="markingSelectedMaintenanceAlerts || selectedMaintenanceAlertIds.length === 0"
+              >
+                <i class="fas fa-check"></i>
+                {{ markingSelectedMaintenanceAlerts ? '处理中...' : `批量已读(${selectedMaintenanceAlertIds.length})` }}
+              </button>
+              <button
+                v-if="maintenanceSummary.unreadCount > 0"
+                class="btn btn-outline btn-sm"
+                @click="markAllMaintenanceAlertsRead"
+                :disabled="markingAllMaintenanceAlerts"
+              >
+                <i class="fas fa-check-double"></i>
+                {{ markingAllMaintenanceAlerts ? '处理中...' : '全部标记已读' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="maintenanceAlerts.length > 0" class="maintenance-alert-list">
+            <article v-for="alert in visibleMaintenanceAlerts" :key="alert.id" class="maintenance-alert-item">
+              <div class="maintenance-alert-checkbox">
+                <input
+                  type="checkbox"
+                  :value="alert.id"
+                  :checked="selectedMaintenanceAlertIds.includes(alert.id)"
+                  @change="toggleMaintenanceAlertSelection(alert.id, $event.target.checked)"
+                >
+              </div>
+              <div>
+                <div class="alert-title">{{ formatMaintenanceAlertType(alert.alertType) }}</div>
+                <div class="alert-message">{{ alert.message }}</div>
+                <div class="alert-time">{{ formatDateTime(alert.createdAt) }}</div>
+              </div>
+              <button
+                v-if="alert.status === 'UNREAD'"
+                class="btn btn-outline btn-sm"
+                @click="markMaintenanceAlertRead(alert.id)"
+              >
+                标记已读
+              </button>
+            </article>
+          </div>
+          <div v-if="maintenancePagination.totalPages > 1" class="maintenance-pagination">
+            <button
+              class="btn btn-outline btn-sm"
+              @click="previousMaintenancePage"
+              :disabled="maintenancePagination.page <= 0"
+            >上一页</button>
+            <span>
+              第 {{ maintenancePagination.page + 1 }} / {{ maintenancePagination.totalPages }} 页
+              (共 {{ maintenancePagination.totalElements }} 条)
+            </span>
+            <button
+              class="btn btn-outline btn-sm"
+              @click="nextMaintenancePage"
+              :disabled="maintenancePagination.page >= maintenancePagination.totalPages - 1"
+            >下一页</button>
+          </div>
+        </div>
+
         <!-- 快速操作 -->
         <div class="quick-actions">
           <h2>快速操作</h2>
@@ -120,6 +228,10 @@
             <button class="action-card" @click="goToGrandPrizeStatus">
               <i class="fas fa-award"></i>
               <span>🏅 我的通关奖励</span>
+            </button>
+            <button class="action-card" @click="$router.push('/customer/ai-diagnosis')">
+              <i class="fas fa-robot"></i>
+              <span>🤖 AI 问诊</span>
             </button>
           </div>
         </div>
@@ -356,6 +468,20 @@
             </form>
           </div>
 
+          <div v-if="diagnosisLoading" class="diagnosis-loading-tips">
+            <div class="loading-header">
+              <i class="fas fa-spinner fa-spin"></i>
+              <span>专家会诊进行中，正在交叉验证诊断结论...</span>
+            </div>
+            <div class="eco-tip-card">
+              <div class="eco-tip-label">
+                <i class="fas fa-leaf"></i>
+                零碳公路小知识
+              </div>
+              <p>{{ currentEcoTip }}</p>
+            </div>
+          </div>
+
           <!-- 诊断结果显示 -->
           <div v-if="diagnosisResult" class="diagnosis-result">
             <div class="result-header">
@@ -376,6 +502,54 @@
                   <i class="fas fa-lightbulb"></i> 维修建议
                 </div>
                 <div class="result-value suggestion">{{ diagnosisResult.suggestion }}</div>
+              </div>
+            </div>
+
+            <div v-if="diagnosisResult.severityLevel || diagnosisResult.possibleCauses" class="result-context">
+              <div v-if="diagnosisResult.severityLevel" class="context-item">
+                <div class="context-label">
+                  <i class="fas fa-exclamation-circle"></i> 严重程度
+                </div>
+                <div class="context-value" :class="'severity-' + (diagnosisResult.severityLevel || 'unknown').toLowerCase()">
+                  {{ diagnosisResult.severityLevel }}
+                </div>
+              </div>
+              <div v-if="diagnosisResult.possibleCauses && diagnosisResult.possibleCauses.length > 0" class="context-item">
+                <div class="context-label">
+                  <i class="fas fa-list"></i> 可能原因
+                </div>
+                <div class="context-value">
+                  <ul>
+                    <li v-for="(cause, idx) in diagnosisResult.possibleCauses" :key="idx">{{ cause }}</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="diagnosisResult.estimatedCostMin || diagnosisResult.estimatedHoursMin" class="result-estimates">
+              <div class="estimate-header">
+                <i class="fas fa-calculator"></i> 维修评估
+              </div>
+              <div class="estimate-grid">
+                <div v-if="diagnosisResult.estimatedCostMin || diagnosisResult.estimatedCostMax" class="estimate-card">
+                  <div class="estimate-label">预计费用</div>
+                  <div class="estimate-value">
+                    ¥{{ diagnosisResult.estimatedCostMin || 0 }}
+                    <span v-if="diagnosisResult.estimatedCostMax && diagnosisResult.estimatedCostMax !== diagnosisResult.estimatedCostMin">
+                      - ¥{{ diagnosisResult.estimatedCostMax }}
+                    </span>
+                  </div>
+                </div>
+                <div v-if="diagnosisResult.estimatedHoursMin || diagnosisResult.estimatedHoursMax" class="estimate-card">
+                  <div class="estimate-label">预计工时</div>
+                  <div class="estimate-value">
+                    {{ diagnosisResult.estimatedHoursMin || 0 }}
+                    <span v-if="diagnosisResult.estimatedHoursMax && diagnosisResult.estimatedHoursMax !== diagnosisResult.estimatedHoursMin">
+                      - {{ diagnosisResult.estimatedHoursMax }}
+                    </span>
+                    小时
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -772,24 +946,75 @@ export default {
         pendingCount: 0,
         totalCost: 0
       },
+      maintenanceSummary: {
+        unreadCount: 0,
+        dueMileageCount: 0,
+        dueTimeCount: 0,
+        upcomingMileageCount: 0,
+        upcomingTimeCount: 0,
+        vehicleHealthScore: 100,
+        riskLevel: 'LOW'
+      },
+      maintenanceAlerts: [],
+      maintenanceAlertFilter: 'ALL',
+      markingAllMaintenanceAlerts: false,
+      markingSelectedMaintenanceAlerts: false,
+      selectedMaintenanceAlertIds: [],
+      maintenancePagination: {
+        page: 0,
+        size: 6,
+        totalElements: 0,
+        totalPages: 0
+      },
       diagnosisForm: {
         problemDescription: ''
       },
       diagnosisResult: null,
       diagnosisError: null,
       diagnosisLoading: false,
-      diagnosisHistory: []
+      diagnosisHistory: [],
+      ecoTips: [
+        '平稳起步可减少约 15% 的能耗与碳排放。',
+        '提前观察路况减少急刹急加速，可显著降低油耗。',
+        '轮胎胎压保持在建议区间，有助于降低滚阻。',
+        '合理规划路线避开拥堵，通常更省时也更低碳。'
+      ],
+      ecoTipIndex: 0,
+      ecoTipTimer: null
     }
   },
   computed: {
     isValidFeedback() {
       return this.feedbackForm.rating > 0 && this.feedbackForm.comment.trim().length > 0;
+    },
+    currentEcoTip() {
+      if (!this.ecoTips.length) {
+        return '平稳驾驶和规范保养，有助于减少排放并提升安全性。';
+      }
+      return this.ecoTips[this.ecoTipIndex % this.ecoTips.length];
+    },
+    filteredMaintenanceAlerts() {
+      return this.maintenanceAlerts;
+    },
+    visibleMaintenanceAlerts() {
+      return this.filteredMaintenanceAlerts;
+    },
+    allMaintenanceAlertsSelected() {
+      if (!this.visibleMaintenanceAlerts.length) {
+        return false;
+      }
+      return this.visibleMaintenanceAlerts.every(alert => this.selectedMaintenanceAlertIds.includes(alert.id));
     }
   },
   created() {
     this.loadUserInfo();
     this.loadData();
     this.loadDiagnosisHistory();
+    this.loadEcoTips();
+    this.applyDiagnosisOrderFromRoute();
+  },
+  beforeDestroy() {
+    this.stopEcoTipRotation();
   },
   methods: {
     loadUserInfo() {
@@ -822,7 +1047,8 @@ export default {
         await Promise.all([
           this.loadVehicles(),
           this.loadRepairOrders(),
-          this.loadFeedbacks()
+          this.loadFeedbacks(),
+          this.loadMaintenanceAlerts()
         ]);
         this.calculateStatistics();
       } catch (error) {
@@ -902,6 +1128,136 @@ export default {
       } catch (error) {
         console.error('加载反馈失败:', error);
       }
+    },
+    async loadMaintenanceAlerts() {
+      try {
+        const normalizedFilter = this.normalizeMaintenanceAlertFilter(this.maintenanceAlertFilter);
+        const statusFilter = normalizedFilter === 'UNREAD' ? 'UNREAD' : undefined;
+        const alertTypeFilter = ['MILEAGE_OVERDUE', 'TIME_OVERDUE'].includes(normalizedFilter)
+          ? normalizedFilter
+          : undefined;
+        const [alertsRes, summaryRes] = await Promise.all([
+          this.$axios.get(`/maintenance-alerts/user/${this.user.id}/page`, {
+            params: {
+              page: this.maintenancePagination.page,
+              size: this.maintenancePagination.size,
+              status: statusFilter,
+              alertType: alertTypeFilter
+            }
+          }),
+          this.$axios.get(`/maintenance-alerts/user/${this.user.id}/summary`)
+        ]);
+        const pagePayload = alertsRes.data?.data || alertsRes.data;
+        this.maintenanceAlerts = pagePayload?.items || [];
+        this.maintenancePagination.page = pagePayload?.page || 0;
+        this.maintenancePagination.size = pagePayload?.size || this.maintenancePagination.size;
+        this.maintenancePagination.totalElements = pagePayload?.totalElements || 0;
+        this.maintenancePagination.totalPages = pagePayload?.totalPages || 0;
+        this.maintenanceSummary = summaryRes.data?.data || summaryRes.data || this.maintenanceSummary;
+        this.selectedMaintenanceAlertIds = [];
+      } catch (error) {
+        console.warn('加载保养提醒失败:', error);
+        this.$emit('message', error.response?.data?.message || '加载保养提醒失败', 'error');
+      }
+    },
+    onMaintenanceFilterChange() {
+      const normalizedFilter = this.normalizeMaintenanceAlertFilter(this.maintenanceAlertFilter);
+      if (normalizedFilter !== this.maintenanceAlertFilter) {
+        this.maintenanceAlertFilter = normalizedFilter;
+        this.$emit('message', '提醒筛选条件无效，已自动恢复为全部', 'warning');
+      }
+      this.maintenancePagination.page = 0;
+      this.selectedMaintenanceAlertIds = [];
+      this.loadMaintenanceAlerts();
+    },
+    previousMaintenancePage() {
+      if (this.maintenancePagination.page <= 0) {
+        return;
+      }
+      this.maintenancePagination.page -= 1;
+      this.loadMaintenanceAlerts();
+    },
+    nextMaintenancePage() {
+      if (this.maintenancePagination.page >= this.maintenancePagination.totalPages - 1) {
+        return;
+      }
+      this.maintenancePagination.page += 1;
+      this.loadMaintenanceAlerts();
+    },
+    async markMaintenanceAlertRead(alertId) {
+      try {
+        await this.$axios.put(`/maintenance-alerts/${alertId}/read`);
+        await this.loadMaintenanceAlerts();
+      } catch (error) {
+        this.$emit('message', '标记提醒失败', 'error');
+      }
+    },
+    async markAllMaintenanceAlertsRead() {
+      const unreadAlerts = this.maintenanceAlerts.filter(alert => alert.status === 'UNREAD');
+      if (!unreadAlerts.length) {
+        return;
+      }
+
+      this.markingAllMaintenanceAlerts = true;
+      try {
+        await this.$axios.put(`/maintenance-alerts/user/${this.user.id}/read-all`);
+        await this.loadMaintenanceAlerts();
+        this.$emit('message', `已将 ${unreadAlerts.length} 条提醒标记为已读`, 'success');
+      } catch (error) {
+        this.$emit('message', '批量标记提醒失败', 'error');
+      } finally {
+        this.markingAllMaintenanceAlerts = false;
+      }
+    },
+    toggleMaintenanceAlertSelection(alertId, checked) {
+      if (!alertId) {
+        return;
+      }
+      if (checked) {
+        if (!this.selectedMaintenanceAlertIds.includes(alertId)) {
+          this.selectedMaintenanceAlertIds.push(alertId);
+        }
+        return;
+      }
+      this.selectedMaintenanceAlertIds = this.selectedMaintenanceAlertIds.filter(id => id !== alertId);
+    },
+    toggleSelectAllMaintenanceAlerts(event) {
+      const checked = Boolean(event?.target?.checked);
+      if (!checked) {
+        this.selectedMaintenanceAlertIds = [];
+        return;
+      }
+      this.selectedMaintenanceAlertIds = this.visibleMaintenanceAlerts.map(alert => alert.id);
+    },
+    async markSelectedMaintenanceAlertsRead() {
+      if (!this.selectedMaintenanceAlertIds.length) {
+        return;
+      }
+      this.markingSelectedMaintenanceAlerts = true;
+      try {
+        const payloadIds = [...this.selectedMaintenanceAlertIds];
+        const response = await this.$axios.put(`/maintenance-alerts/user/${this.user.id}/read-batch`, {
+          ids: payloadIds
+        });
+        const updated = Number(response.data?.data?.updated || 0);
+        await this.loadMaintenanceAlerts();
+        this.$emit('message', `已批量标记 ${updated} 条提醒为已读`, 'success');
+      } catch (error) {
+        this.$emit('message', '批量标记提醒失败', 'error');
+      } finally {
+        this.markingSelectedMaintenanceAlerts = false;
+      }
+    },
+    formatMaintenanceAlertType(type) {
+      const map = {
+        MILEAGE_OVERDUE: '里程保养提醒',
+        TIME_OVERDUE: '周期保养提醒'
+      };
+      return map[type] || '保养提醒';
+    },
+    normalizeMaintenanceAlertFilter(filter) {
+      const allowed = ['ALL', 'UNREAD', 'MILEAGE_OVERDUE', 'TIME_OVERDUE'];
+      return allowed.includes(filter) ? filter : 'ALL';
     },
     calculateStatistics() {
       this.statistics = {
@@ -1014,6 +1370,12 @@ export default {
     },
     formatDate(dateString) {
       return new Date(dateString).toLocaleDateString('zh-CN');
+    },
+    formatDateTime(dateString) {
+      if (!dateString) {
+        return '-';
+      }
+      return new Date(dateString).toLocaleString('zh-CN');
     },
     editVehicle(vehicle) {
       // 实现编辑车辆功能
@@ -1228,10 +1590,34 @@ export default {
         this.$emit('message', '催单失败：' + (error.response?.data?.message || '未知错误'), 'error');
       }
     },
+    async loadEcoTips() {
+      try {
+        const response = await this.$axios.get('/gamification/journey/eco-tips');
+        if (Array.isArray(response.data) && response.data.length > 0) {
+          this.ecoTips = response.data;
+          this.ecoTipIndex = 0;
+        }
+      } catch (error) {
+        console.warn('加载环保贴士失败，使用前端默认文案', error);
+      }
+    },
+    startEcoTipRotation() {
+      this.stopEcoTipRotation();
+      this.ecoTipTimer = setInterval(() => {
+        this.ecoTipIndex = (this.ecoTipIndex + 1) % Math.max(1, this.ecoTips.length);
+      }, 3000);
+    },
+    stopEcoTipRotation() {
+      if (this.ecoTipTimer) {
+        clearInterval(this.ecoTipTimer);
+        this.ecoTipTimer = null;
+      }
+    },
     async submitDiagnosis() {
       this.diagnosisLoading = true;
       this.diagnosisError = null;
       this.diagnosisResult = null;
+      this.startEcoTipRotation();
 
       try {
         const response = await this.$axios.post('/ai-diagnosis/diagnose', {
@@ -1241,7 +1627,13 @@ export default {
         if (response.data.success) {
           this.diagnosisResult = {
             faultType: response.data.faultType,
-            suggestion: response.data.suggestion
+            suggestion: response.data.suggestion,
+            severityLevel: response.data.severityLevel,
+            possibleCauses: response.data.possibleCauses || [],
+            estimatedCostMin: response.data.estimatedCostMin,
+            estimatedCostMax: response.data.estimatedCostMax,
+            estimatedHoursMin: response.data.estimatedHoursMin,
+            estimatedHoursMax: response.data.estimatedHoursMax
           };
 
           // 保存到历史记录
@@ -1249,7 +1641,13 @@ export default {
             timestamp: new Date(),
             problemDescription: this.diagnosisForm.problemDescription,
             faultType: response.data.faultType,
-            suggestion: response.data.suggestion
+            suggestion: response.data.suggestion,
+            severityLevel: response.data.severityLevel,
+            possibleCauses: response.data.possibleCauses || [],
+            estimatedCostMin: response.data.estimatedCostMin,
+            estimatedCostMax: response.data.estimatedCostMax,
+            estimatedHoursMin: response.data.estimatedHoursMin,
+            estimatedHoursMax: response.data.estimatedHoursMax
           });
 
           // 只保留最近10条记录
@@ -1270,6 +1668,7 @@ export default {
         this.diagnosisError = error.response?.data?.errorMessage || 'AI诊断服务暂时不可用，请稍后再试';
         this.$emit('message', this.diagnosisError, 'error');
       } finally {
+        this.stopEcoTipRotation();
         this.diagnosisLoading = false;
       }
     },
@@ -1305,6 +1704,23 @@ export default {
           this.diagnosisHistory = [];
         }
       }
+    },
+    applyDiagnosisOrderFromRoute() {
+      const query = this.$route && this.$route.query ? this.$route.query : {};
+      if (query.createOrder !== '1' || !query.diagnosisDesc) {
+        return;
+      }
+
+      try {
+        this.activeTab = 'orders';
+        this.showCreateOrder = true;
+        this.repairOrderForm.description = decodeURIComponent(query.diagnosisDesc);
+        this.$emit('message', '已带入 AI 诊断结果，请确认后提交维修单', 'success');
+      } catch (e) {
+        this.$emit('message', '解析 AI 诊断结果失败，请手动填写维修描述', 'error');
+      }
+
+      this.$router.replace({ path: '/customer' });
     }
   }
 }
@@ -2091,6 +2507,53 @@ export default {
   margin-top: 1rem;
 }
 
+.diagnosis-loading-tips {
+  background: white;
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-left: 4px solid #22c55e;
+  margin-bottom: 1.5rem;
+}
+
+.loading-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #1f2937;
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+}
+
+.loading-header i {
+  color: #3b82f6;
+}
+
+.eco-tip-card {
+  background: linear-gradient(120deg, #ecfdf5, #f0fdf4);
+  border: 1px solid #bbf7d0;
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.eco-tip-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #047857;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.eco-tip-card p {
+  margin: 0;
+  color: #14532d;
+  line-height: 1.5;
+}
+
 .diagnosis-result {
   background: white;
   padding: 2rem;
@@ -2176,6 +2639,130 @@ export default {
 .suggestion {
   font-size: 1rem;
   white-space: pre-line;
+}
+
+.result-context {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.context-item {
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 0.75rem;
+  border-left: 3px solid #f59e0b;
+}
+
+.context-label {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.context-value {
+  color: #6b7280;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.context-value ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.context-value li {
+  margin: 0.25rem 0;
+}
+
+.severity-critical {
+  color: #dc2626;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  background: #fee2e2;
+  border-radius: 0.5rem;
+  display: inline-block;
+}
+
+.severity-high {
+  color: #f59e0b;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  background: #fef3c7;
+  border-radius: 0.5rem;
+  display: inline-block;
+}
+
+.severity-medium {
+  color: #2563eb;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  background: #dbeafe;
+  border-radius: 0.5rem;
+  display: inline-block;
+}
+
+.severity-low {
+  color: #059669;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  background: #d1fae5;
+  border-radius: 0.5rem;
+  display: inline-block;
+}
+
+.result-estimates {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border-radius: 0.75rem;
+  border: 1px solid #d1d5db;
+}
+
+.estimate-header {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #1f2937;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.estimate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.estimate-card {
+  background: white;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  text-align: center;
+}
+
+.estimate-label {
+  font-size: 0.8rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.estimate-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2937;
 }
 
 .result-actions {
@@ -2285,6 +2872,195 @@ export default {
   font-size: 0.875rem;
 }
 
+.dot-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.vehicle-health-panel {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border-radius: 0.9rem;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.health-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.health-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.health-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.health-score {
+  background: #ecfeff;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.health-risk-badge {
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.health-risk-badge.low {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.health-risk-badge.medium {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.health-risk-badge.high {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+.health-alert-banner {
+  margin-top: 0.8rem;
+  padding: 0.7rem;
+  border-radius: 0.6rem;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.health-summary-grid {
+  margin-top: 0.8rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 0.7rem;
+}
+
+.health-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.6rem;
+  padding: 0.65rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.maintenance-alert-list {
+  margin-top: 0.9rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.maintenance-alert-toolbar {
+  margin-top: 0.9rem;
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.maintenance-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.maintenance-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.maintenance-select-all {
+  font-size: 0.84rem;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.maintenance-filter-select {
+  max-width: 220px;
+}
+
+.maintenance-alert-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.6rem;
+  padding: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.maintenance-alert-checkbox {
+  flex: 0 0 auto;
+}
+
+.alert-title {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 0.88rem;
+}
+
+.alert-message {
+  color: #475569;
+  font-size: 0.85rem;
+  margin-top: 0.2rem;
+}
+
+.alert-time {
+  margin-top: 0.3rem;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.maintenance-expand-btn {
+  margin-top: 0.8rem;
+}
+
+.maintenance-pagination {
+  margin-top: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #475569;
+  font-size: 0.84rem;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .ai-diagnosis-container {
@@ -2297,6 +3073,30 @@ export default {
 
   .result-actions button {
     width: 100%;
+  }
+
+  .health-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .maintenance-alert-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .maintenance-toolbar-left,
+  .maintenance-toolbar-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .maintenance-filter-select {
+    max-width: none;
+  }
+
+  .maintenance-alert-item {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

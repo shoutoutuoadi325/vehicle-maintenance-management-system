@@ -1,8 +1,15 @@
 package org.com.repair.service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -15,11 +22,18 @@ import org.com.repair.entity.Technician;
 import org.com.repair.entity.Technician.SkillType;
 import org.com.repair.repository.RepairOrderRepository;
 import org.com.repair.repository.TechnicianRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class TechnicianService {
+
+    private static final Logger logger = LoggerFactory.getLogger(TechnicianService.class);
+
+    private static final double BASELINE_FATIGUE = 0.1;
+    private static final long CONTINUOUS_BREAK_MINUTES = 30;
     
     private final TechnicianRepository technicianRepository;
     private final RepairOrderRepository repairOrderRepository;
@@ -61,7 +75,7 @@ public class TechnicianService {
     }
     
     public Optional<TechnicianResponse> getTechnicianById(Long id) {
-        return technicianRepository.findById(id)
+        return technicianRepository.findById(Objects.requireNonNull(id, "技师ID不能为空"))
                 .map(TechnicianResponse::new);
     }
     
@@ -77,7 +91,7 @@ public class TechnicianService {
     
     @Transactional
     public TechnicianResponse updateTechnician(Long id, NewTechnicianRequest request) {
-        Technician technician = technicianRepository.findById(id)
+        Technician technician = technicianRepository.findById(Objects.requireNonNull(id, "技师ID不能为空"))
                 .orElseThrow(() -> new RuntimeException("技师不存在"));
         
         // 如果员工ID更改了，检查新员工ID是否已存在
@@ -109,16 +123,17 @@ public class TechnicianService {
     
     @Transactional
     public boolean deleteTechnician(Long id) {
-        if (!technicianRepository.existsById(id)) {
+        Long technicianId = Objects.requireNonNull(id, "技师ID不能为空");
+        if (!technicianRepository.existsById(technicianId)) {
             return false;
         }
         
         try {
             // 先清除技师与所有订单的关联关系
-            technicianRepository.removeFromAllOrders(id);
+            technicianRepository.removeFromAllOrders(technicianId);
             
             // 然后删除技师
-            technicianRepository.deleteById(id);
+            technicianRepository.deleteById(technicianId);
             return true;
         } catch (Exception e) {
             throw new RuntimeException("删除技师失败: " + e.getMessage(), e);
@@ -172,10 +187,11 @@ public class TechnicianService {
         
         int totalTasks = allTasks.size();
         int completedTasks = (int) allTasks.stream()
-            .filter(task -> "COMPLETED".equals(task.getStatus()))
+            .filter(task -> task.getStatus() == RepairOrder.RepairStatus.COMPLETED)
             .count();
         int pendingTasks = (int) allTasks.stream()
-            .filter(task -> "ASSIGNED".equals(task.getStatus()) || "IN_PROGRESS".equals(task.getStatus()))
+            .filter(task -> task.getStatus() == RepairOrder.RepairStatus.ASSIGNED
+                    || task.getStatus() == RepairOrder.RepairStatus.IN_PROGRESS)
             .count();
         
         // 获取平均评分
@@ -196,6 +212,195 @@ public class TechnicianService {
         return new TechnicianStatistics(totalTasks, completedTasks, pendingTasks, 
                                       averageRating, totalEarnings, monthlyEarnings);
     }
+
+    public TechnicianFatigueSnapshot getTechnicianFatigueSnapshot(Long technicianId) {
+        List<RepairOrder> allTasks = repairOrderRepository.findByTechnicianId(technicianId);
+        LocalDate today = LocalDate.now();
+        LocalDateTime now = LocalDateTime.now();
+
+        List<RepairOrder> todayWorkedOrders = allTasks.stream()
+                .filter(order -> isWorkedToday(order, today))
+                .collect(Collectors.toList());
+
+        int completedToday = (int) todayWorkedOrders.stream()
+                .filter(order -> order.getStatus() == RepairOrder.RepairStatus.COMPLETED)
+                .filter(order -> order.getCompletedAt() != null)
+                .filter(order -> toLocalDateTime(order.getCompletedAt()).toLocalDate().isEqual(today))
+                .count();
+
+        double continuousWorkingHours = calculateContinuousWorkingHours(todayWorkedOrders, today, now);
+        int nightOrdersToday = (int) todayWorkedOrders.stream()
+                .filter(this::isNightOrder)
+                .count();
+
+        double completedFactor = Math.min(1.0, completedToday / 8.0);
+        double continuousFactor = Math.min(1.0, continuousWorkingHours / 6.0);
+        double nightFactor = Math.min(1.0, nightOrdersToday / 3.0);
+
+        double fatigueLevel = BASELINE_FATIGUE
+                + completedFactor * 0.4
+                + continuousFactor * 0.35
+                + nightFactor * 0.15;
+
+        double normalizedFatigue = Math.max(0.0, Math.min(1.0, fatigueLevel));
+
+        return new TechnicianFatigueSnapshot(
+                normalizedFatigue,
+                completedToday,
+                continuousWorkingHours,
+                nightOrdersToday);
+    }
+
+    private boolean isWorkedToday(RepairOrder order, LocalDate today) {
+        if (order == null) {
+            return false;
+        }
+
+        LocalDateTime start = resolveWorkStart(order);
+        LocalDateTime end = resolveWorkEnd(order, LocalDateTime.now());
+        if (start == null || end == null || end.isBefore(start)) {
+            return false;
+        }
+
+        LocalDate startDate = start.toLocalDate();
+        LocalDate endDate = end.toLocalDate();
+        return !today.isBefore(startDate) && !today.isAfter(endDate);
+    }
+
+    private double calculateContinuousWorkingHours(List<RepairOrder> orders, LocalDate today, LocalDateTime now) {
+        List<WorkInterval> intervals = new ArrayList<>();
+
+        for (RepairOrder order : orders) {
+            LocalDateTime start = resolveWorkStart(order);
+            LocalDateTime end = resolveWorkEnd(order, now);
+            if (start == null || end == null || end.isBefore(start)) {
+                continue;
+            }
+
+            LocalDateTime dayStart = today.atStartOfDay();
+            LocalDateTime dayEnd = today.plusDays(1).atStartOfDay();
+
+            LocalDateTime clippedStart = start.isBefore(dayStart) ? dayStart : start;
+            LocalDateTime clippedEnd = end.isAfter(dayEnd) ? dayEnd : end;
+
+            if (!clippedEnd.isAfter(clippedStart)) {
+                continue;
+            }
+
+            intervals.add(new WorkInterval(clippedStart, clippedEnd));
+        }
+
+        if (intervals.isEmpty()) {
+            return 0.0;
+        }
+
+        intervals.sort(Comparator.comparing(WorkInterval::start));
+
+        LocalDateTime currentStart = intervals.get(0).start();
+        LocalDateTime currentEnd = intervals.get(0).end();
+        double maxHours = durationHours(currentStart, currentEnd);
+
+        for (int i = 1; i < intervals.size(); i++) {
+            WorkInterval next = intervals.get(i);
+            long gapMinutes = Duration.between(currentEnd, next.start()).toMinutes();
+            if (gapMinutes <= CONTINUOUS_BREAK_MINUTES) {
+                if (next.end().isAfter(currentEnd)) {
+                    currentEnd = next.end();
+                }
+            } else {
+                maxHours = Math.max(maxHours, durationHours(currentStart, currentEnd));
+                currentStart = next.start();
+                currentEnd = next.end();
+            }
+        }
+
+        maxHours = Math.max(maxHours, durationHours(currentStart, currentEnd));
+        return Math.round(maxHours * 100.0) / 100.0;
+    }
+
+    private boolean isNightOrder(RepairOrder order) {
+        LocalDateTime start = resolveWorkStart(order);
+        LocalDateTime end = resolveWorkEnd(order, LocalDateTime.now());
+        return isNightTime(start) || isNightTime(end);
+    }
+
+    private boolean isNightTime(LocalDateTime time) {
+        if (time == null) {
+            return false;
+        }
+        int hour = time.getHour();
+        return hour >= 22 || hour < 6;
+    }
+
+    private LocalDateTime resolveWorkStart(RepairOrder order) {
+        if (order.getStartedAt() != null) {
+            return toLocalDateTime(order.getStartedAt());
+        }
+        if (order.getCreatedAt() != null) {
+            return toLocalDateTime(order.getCreatedAt());
+        }
+        return null;
+    }
+
+    private LocalDateTime resolveWorkEnd(RepairOrder order, LocalDateTime now) {
+        if (order.getCompletedAt() != null) {
+            return toLocalDateTime(order.getCompletedAt());
+        }
+        if (order.getStatus() == RepairOrder.RepairStatus.IN_PROGRESS) {
+            return now;
+        }
+        LocalDateTime updatedAt = order.getUpdatedAt() != null ? toLocalDateTime(order.getUpdatedAt()) : null;
+        if (updatedAt != null) {
+            return updatedAt;
+        }
+        return resolveWorkStart(order);
+    }
+
+    private LocalDateTime toLocalDateTime(Date date) {
+        Instant instant = date.toInstant();
+        return LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+    }
+
+    private double durationHours(LocalDateTime start, LocalDateTime end) {
+        long minutes = Duration.between(start, end).toMinutes();
+        return Math.max(0.0, minutes / 60.0);
+    }
+
+    private record WorkInterval(LocalDateTime start, LocalDateTime end) {
+    }
+
+    public static class TechnicianFatigueSnapshot {
+        private final double fatigueLevel;
+        private final int completedToday;
+        private final double continuousWorkingHours;
+        private final int nightOrdersToday;
+
+        public TechnicianFatigueSnapshot(double fatigueLevel,
+                                         int completedToday,
+                                         double continuousWorkingHours,
+                                         int nightOrdersToday) {
+            this.fatigueLevel = fatigueLevel;
+            this.completedToday = completedToday;
+            this.continuousWorkingHours = continuousWorkingHours;
+            this.nightOrdersToday = nightOrdersToday;
+        }
+
+        public double getFatigueLevel() {
+            return fatigueLevel;
+        }
+
+        public int getCompletedToday() {
+            return completedToday;
+        }
+
+        public double getContinuousWorkingHours() {
+            return continuousWorkingHours;
+        }
+
+        public int getNightOrdersToday() {
+            return nightOrdersToday;
+        }
+    }
     
     public Double getTechnicianMonthlyEarnings(Long technicianId, Integer year, Integer month) {
         LocalDate now = LocalDate.now();
@@ -214,18 +419,20 @@ public class TechnicianService {
      */
     @Transactional
     public boolean rejectOrder(Long technicianId, Long orderId, String reason) {
+        Long safeTechnicianId = Objects.requireNonNull(technicianId, "技师ID不能为空");
+        Long safeOrderId = Objects.requireNonNull(orderId, "订单ID不能为空");
         // 1. 验证技师是否存在
-        Technician technician = technicianRepository.findById(technicianId)
+        Technician technician = technicianRepository.findById(safeTechnicianId)
                 .orElseThrow(() -> new RuntimeException("技师不存在"));
         
         // 2. 验证订单是否存在
-        RepairOrder order = repairOrderRepository.findById(orderId)
+        RepairOrder order = repairOrderRepository.findById(safeOrderId)
                 .orElseThrow(() -> new RuntimeException("维修订单不存在"));
         
         // 3. 验证订单是否分配给该技师
         boolean isAssignedToTechnician = order.getTechnicians() != null && 
                 order.getTechnicians().stream()
-                        .anyMatch(t -> t.getId().equals(technicianId));
+                    .anyMatch(t -> t.getId().equals(safeTechnicianId));
         
         if (!isAssignedToTechnician) {
             throw new RuntimeException("此订单未分配给您，无法拒绝");
@@ -237,12 +444,12 @@ public class TechnicianService {
         }
         
         // 5. 从订单的技师列表中移除当前技师
-        order.getTechnicians().removeIf(t -> t.getId().equals(technicianId));
+        order.getTechnicians().removeIf(t -> t.getId().equals(safeTechnicianId));
         
         // 6. 记录拒绝原因（可以在RepairOrder中添加拒绝记录字段，这里暂时在日志中记录）
-        System.out.println(String.format("技师 %s (ID: %d) 拒绝了订单 %s (ID: %d)，原因：%s", 
-                technician.getName(), technicianId, order.getOrderNumber(), orderId, 
-                reason != null ? reason : "未提供原因"));
+        logger.info("Technician rejected order: technicianName={}, technicianId={}, orderNumber={}, orderId={}, reason={}",
+            technician.getName(), safeTechnicianId, order.getOrderNumber(), safeOrderId,
+            reason != null ? reason : "未提供原因");
         
         // 7. 重新自动分配给其他技师
         try {
@@ -259,7 +466,7 @@ public class TechnicianService {
             if (requiredSkillType != null) {
                 // 排除已拒绝的技师，寻找其他技师
                 Technician newTechnician = autoAssignmentService.autoAssignBestTechnicianExcluding(
-                        requiredSkillType, technicianId);
+                    requiredSkillType, safeTechnicianId);
                 
                 if (newTechnician != null) {
                     // 分配给新技师
@@ -269,8 +476,8 @@ public class TechnicianService {
                     
                     repairOrderRepository.save(order);
                     
-                    System.out.println(String.format("订单 %s 已重新分配给技师 %s (ID: %d)", 
-                            order.getOrderNumber(), newTechnician.getName(), newTechnician.getId()));
+                        logger.info("Order reassigned after reject: orderNumber={}, technicianName={}, technicianId={}",
+                            order.getOrderNumber(), newTechnician.getName(), newTechnician.getId());
                     
                     return true;
                 } else {
@@ -279,8 +486,8 @@ public class TechnicianService {
                     order.setUpdatedAt(new Date());
                     repairOrderRepository.save(order);
                     
-                    System.out.println(String.format("订单 %s 无其他可用技师，已改为待分配状态", 
-                            order.getOrderNumber()));
+                        logger.info("No alternative technician found, order set to pending: orderNumber={}",
+                            order.getOrderNumber());
                     
                     return true;
                 }
@@ -293,8 +500,8 @@ public class TechnicianService {
             order.setUpdatedAt(new Date());
             repairOrderRepository.save(order);
             
-            System.err.println(String.format("订单 %s 重新分配失败：%s，已改为待分配状态", 
-                    order.getOrderNumber(), e.getMessage()));
+                logger.warn("Order reassign failed after reject, fallback to pending: orderNumber={}",
+                    order.getOrderNumber(), e);
             
             return true; // 拒绝操作成功，但重新分配失败
         }
@@ -306,14 +513,15 @@ public class TechnicianService {
      * @return 订单列表
      */
     public List<Object> getAssignedOrders(Long technicianId) {
+        Long safeTechnicianId = Objects.requireNonNull(technicianId, "技师ID不能为空");
         // 验证技师是否存在
-        if (!technicianRepository.existsById(technicianId)) {
+        if (!technicianRepository.existsById(safeTechnicianId)) {
             throw new RuntimeException("技师不存在");
         }
         
         // 获取分配给该技师且状态为ASSIGNED的订单
         List<RepairOrder> assignedOrders = repairOrderRepository.findByTechnicianIdAndStatus(
-                technicianId, RepairOrder.RepairStatus.ASSIGNED);
+            safeTechnicianId, RepairOrder.RepairStatus.ASSIGNED);
         
         return assignedOrders.stream()
                 .map(order -> new RepairOrderResponse(order))
