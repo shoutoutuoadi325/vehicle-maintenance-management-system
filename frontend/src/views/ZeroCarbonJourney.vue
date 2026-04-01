@@ -77,6 +77,14 @@
           <g v-for="(city, idx) in cities" :key="city.id">
             <line :x1="city.x" :x2="city.x" :y1="city.y" :y2="city.y + 42" class="city-guide" />
 
+            <circle
+              :cx="city.x"
+              :cy="city.y"
+              r="26"
+              class="city-hit-area"
+              @click.stop.prevent="onNodeTap(idx)"
+            />
+
             <g v-if="city.brandServiceArea" class="brand-service-marker" :transform="`translate(${city.x + 18}, ${city.y - 30})`">
               <rect x="0" y="0" width="88" height="24" rx="12" class="brand-pill" />
               <text x="44" y="16" text-anchor="middle" class="brand-pill-text">{{ brandTag(city.brandName) }}</text>
@@ -94,13 +102,13 @@
                 isCheckedIn(idx) ? 'checked' : ''
               ]"
               :filter="isReached(city) ? 'url(#nodeGlow)' : null"
-              @click="handleNodeClick(idx)"
+              @click.stop.prevent="onNodeTap(idx)"
             />
 
             <g
               class="node-symbol"
               :transform="`translate(${city.x}, ${city.y})`"
-              @click="handleNodeClick(idx)"
+              @click.stop.prevent="onNodeTap(idx)"
             >
               <g v-if="nodeType(city, idx) === 'final'" class="symbol-final">
                 <path d="M -6 -3 L 6 -3 L 4 4 L -4 4 Z" />
@@ -131,13 +139,15 @@
               :cy="city.y"
               r="22"
               class="pulse-ring"
-              @click="handleNodeClick(idx)"
+              @click.stop.prevent="onNodeTap(idx)"
             />
 
             <text :x="city.x" :y="city.y + 68" text-anchor="middle" class="city-name">{{ city.name }}</text>
             <text :x="city.x" :y="city.y + 88" text-anchor="middle" class="city-mile">{{ city.mileage }} km</text>
           </g>
         </svg>
+
+        <div v-if="nodeHintMsg" class="node-hint">{{ nodeHintMsg }}</div>
       </section>
     </main>
 
@@ -290,6 +300,8 @@ export default {
       confettiTimer: null,
       nodeStateMap: {},
       openingQuiz: false,
+      nodeHintMsg: '',
+      nodeHintTimer: null,
       quizRequestSeq: 0,
       lastSubmitAt: 0,
       submitDebounceMs: 800,
@@ -452,6 +464,9 @@ export default {
     isLatestUnlockAndUnchecked(index) {
       return index === this.latestUnlockedIndex && !this.isCheckedIn(index);
     },
+    isNodeActionable(index) {
+      return this.isLatestUnlockAndUnchecked(index);
+    },
     nodeType(city, index) {
       if (this.isFinalNode(index)) {
         return 'final';
@@ -550,6 +565,33 @@ export default {
       } finally {
         this.openingQuiz = false;
       }
+    },
+    onNodeTap(index) {
+      if (this.isNodeActionable(index)) {
+        this.handleNodeClick(index);
+        return;
+      }
+
+      const state = this.nodeState(index);
+      if (state === 'CHECKED_IN') {
+        this.showNodeHint('该站点已完成打卡，请前往下一站。');
+        return;
+      }
+      if (state === 'LOCKED') {
+        this.showNodeHint('该站点尚未解锁，请先积累里程。');
+        return;
+      }
+      this.showNodeHint('请先完成当前闪烁节点的答题挑战。');
+    },
+    showNodeHint(message) {
+      this.nodeHintMsg = message;
+      if (this.nodeHintTimer) {
+        clearTimeout(this.nodeHintTimer);
+      }
+      this.nodeHintTimer = setTimeout(() => {
+        this.nodeHintMsg = '';
+        this.nodeHintTimer = null;
+      }, 2200);
     },
     closeModal() {
       this.showModal = false;
@@ -682,6 +724,10 @@ export default {
     if (this.confettiTimer) {
       clearTimeout(this.confettiTimer);
       this.confettiTimer = null;
+    }
+    if (this.nodeHintTimer) {
+      clearTimeout(this.nodeHintTimer);
+      this.nodeHintTimer = null;
     }
   }
 };
@@ -892,6 +938,12 @@ export default {
   margin-top: 14px;
   position: relative;
   z-index: 1;
+  touch-action: manipulation;
+}
+
+.city-hit-area {
+  fill: rgba(0, 0, 0, 0);
+  cursor: pointer;
 }
 
 .road-base {
@@ -1019,6 +1071,20 @@ export default {
   stroke-width: 3;
   animation: pulse 1.8s infinite ease-out;
   cursor: pointer;
+}
+
+.node-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  z-index: 3;
+  pointer-events: none;
 }
 
 @keyframes pulse {
