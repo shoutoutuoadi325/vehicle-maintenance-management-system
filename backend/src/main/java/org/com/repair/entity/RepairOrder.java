@@ -57,6 +57,10 @@ public class RepairOrder {
     private Date completedAt;
 
     @Column
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date repairEndedAt;
+
+    @Column
     private Double laborCost;
 
     // 绿色导向：碳排放评估相关字段
@@ -230,6 +234,14 @@ public class RepairOrder {
 
     public void setCompletedAt(Date completedAt) {
         this.completedAt = completedAt;
+    }
+
+    public Date getRepairEndedAt() {
+        return repairEndedAt;
+    }
+
+    public void setRepairEndedAt(Date repairEndedAt) {
+        this.repairEndedAt = repairEndedAt;
     }
 
     public Double getLaborCost() {

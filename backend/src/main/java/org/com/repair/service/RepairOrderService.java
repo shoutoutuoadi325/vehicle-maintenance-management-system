@@ -70,6 +70,14 @@ public class RepairOrderService {
         
         Vehicle vehicle = vehicleRepository.findById(request.vehicleId())
                 .orElseThrow(() -> new RuntimeException("车辆不存在"));
+
+        Set<RepairStatus> activeStatuses = Set.of(
+                RepairStatus.PENDING,
+                RepairStatus.ASSIGNED,
+                RepairStatus.IN_PROGRESS);
+        if (repairOrderRepository.existsByVehicleIdAndStatusIn(vehicle.getId(), activeStatuses)) {
+            throw new RuntimeException("该车辆已有进行中的维修工单，请等待当前维修完成后再提交");
+        }
         
         // 检查是否有对应工种的技师
         if (request.requiredSkillType() != null) {
@@ -89,6 +97,7 @@ public class RepairOrderService {
         repairOrder.setCreatedAt(request.createdAt() != null ? request.createdAt() : new Date());
         repairOrder.setUpdatedAt(new Date());
         repairOrder.setCompletedAt(request.completedAt());
+        repairOrder.setRepairEndedAt(request.completedAt());
         repairOrder.setLaborCost(request.laborCost());
         repairOrder.setMaterialCost(request.materialCost());
         repairOrder.setTotalCost(request.totalCost());
@@ -126,6 +135,7 @@ public class RepairOrderService {
     public RepairOrderResponse reassignTechnicians(Long orderId, Set<Long> technicianIds, boolean isManual) {
         RepairOrder repairOrder = repairOrderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("维修工单不存在"));
+        Technician.SkillType requiredSkillType = repairOrder.getRequiredSkillType();
 
         Set<Long> previousTechnicianIds = repairOrder.getTechnicians() == null
             ? new HashSet<>()
@@ -135,6 +145,18 @@ public class RepairOrderService {
         for (Long technicianId : technicianIds) {
             Technician technician = technicianRepository.findById(technicianId)
                     .orElseThrow(() -> new RuntimeException("技师不存在: " + technicianId));
+
+            if (requiredSkillType != null && technician.getSkillType() != requiredSkillType) {
+            String requiredSkillTypeName = getSkillTypeName(requiredSkillType);
+            String selectedSkillTypeName = technician.getSkillType() == null
+                ? "未知工种"
+                : getSkillTypeName(technician.getSkillType());
+            throw new RuntimeException(String.format(
+                "技师工种不匹配：该工单需要%s技师，当前选择为%s",
+                requiredSkillTypeName,
+                selectedSkillTypeName));
+            }
+
             technicians.add(technician);
         }
         
@@ -395,6 +417,7 @@ public class RepairOrderService {
         // 如果从IN_PROGRESS状态变为COMPLETED，计算工时费和总费用
         if (oldStatus == RepairOrder.RepairStatus.IN_PROGRESS && newStatus == RepairOrder.RepairStatus.COMPLETED) {
             repairOrder.setCompletedAt(new Date());
+            repairOrder.setRepairEndedAt(repairOrder.getCompletedAt());
             
             // 计算实际工作时间（小时）
             if (repairOrder.getStartedAt() != null) {
@@ -464,6 +487,10 @@ public class RepairOrderService {
         }
         if (request.totalCost() != null) {
             repairOrder.setTotalCost(request.totalCost());
+        }
+
+        if (repairOrder.getStatus() == RepairOrder.RepairStatus.COMPLETED && repairOrder.getRepairEndedAt() == null) {
+            repairOrder.setRepairEndedAt(new Date());
         }
         
         repairOrder.setUpdatedAt(new Date());

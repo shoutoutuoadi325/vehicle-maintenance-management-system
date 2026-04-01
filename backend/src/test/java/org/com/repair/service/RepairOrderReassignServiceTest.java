@@ -2,9 +2,12 @@ package org.com.repair.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -101,6 +104,35 @@ class RepairOrderReassignServiceTest {
         verify(technicianRepository, times(2)).save(org.mockito.ArgumentMatchers.isA(Technician.class));
         verify(repairOrderRepository).findByTechnicianId(eq(1L));
         verify(repairOrderRepository).findByTechnicianId(eq(2L));
+    }
+
+    @Test
+    void shouldRejectReassignWhenTechnicianSkillTypeMismatch() {
+        Long orderId = 101L;
+        Technician oldTech = technician(1L, "T-OLD");
+        Technician wrongTech = technician(3L, "T-WRONG");
+
+        RepairOrder order = new RepairOrder();
+        order.setId(orderId);
+        order.setOrderNumber("RO202601010002");
+        order.setDescription("electrical issue");
+        order.setStatus(RepairOrder.RepairStatus.ASSIGNED);
+        order.setRequiredSkillType(Technician.SkillType.ELECTRICIAN);
+        order.setCreatedAt(new Date());
+        order.setUpdatedAt(new Date());
+        order.setUser(new User());
+        order.setVehicle(new Vehicle());
+        order.setTechnicians(new HashSet<>(Set.of(oldTech)));
+
+        when(repairOrderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(technicianRepository.findById(3L)).thenReturn(Optional.of(wrongTech));
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> repairOrderService.reassignTechnicians(orderId, Set.of(3L), true));
+
+        assertTrue(ex.getMessage().contains("工种不匹配"));
+        verify(repairOrderRepository, never()).save(any(RepairOrder.class));
+        verify(repairOrderRepository, never()).findByTechnicianId(any(Long.class));
     }
 
     private Technician technician(Long id, String employeeId) {

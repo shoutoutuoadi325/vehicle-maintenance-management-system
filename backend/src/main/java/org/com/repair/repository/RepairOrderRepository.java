@@ -3,6 +3,7 @@ package org.com.repair.repository;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.RepairOrder.RepairStatus;
@@ -42,6 +43,14 @@ public interface RepairOrderRepository extends JpaRepository<RepairOrder, Long> 
      * @return 维修工单列表
      */
     List<RepairOrder> findByVehicleId(Long vehicleId);
+
+       /**
+        * 判断车辆是否存在进行中的维修工单
+        * @param vehicleId 车辆ID
+        * @param statuses 需要匹配的工单状态
+        * @return 是否存在
+        */
+       boolean existsByVehicleIdAndStatusIn(Long vehicleId, Collection<RepairStatus> statuses);
 
        /**
         * 根据车辆ID列表批量查找维修工单

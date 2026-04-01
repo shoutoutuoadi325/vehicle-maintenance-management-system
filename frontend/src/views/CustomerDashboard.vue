@@ -248,7 +248,7 @@
               <div class="order-info">
                 <h4>{{ getVehicleDisplay(order) }}</h4>
                 <p>{{ order.description }}</p>
-                <small>{{ formatDate(order.createdAt) }}</small>
+                <small>{{ formatRepairPeriod(order) }}</small>
               </div>
               <div class="order-status">
                 <span :class="['status', order.status.toLowerCase()]">
@@ -334,7 +334,7 @@
             </div>
             <div class="order-body">
               <p><strong>故障描述:</strong> {{ order.description }}</p>
-              <p><strong>开始时间:</strong> {{ formatDate(order.createdAt) }}</p>
+              <p><strong>维修区间:</strong> {{ formatRepairPeriod(order) }}</p>
               <p><strong>预估费用:</strong> ¥{{ (order.laborCost || 0) + (order.materialCost || 0) }}</p>
               <p v-if="order.totalCost"><strong>实际费用:</strong> ¥{{ order.totalCost }}</p>
             </div>
@@ -752,8 +752,8 @@
                 <span class="detail-value">{{ getVehicleDisplay(selectedOrder) }}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">创建时间:</span>
-                <span class="detail-value">{{ formatDate(selectedOrder.createdAt) }}</span>
+                <span class="detail-label">维修时间区间:</span>
+                <span class="detail-value">{{ formatRepairPeriod(selectedOrder) }}</span>
               </div>
             </div>
           </div>
@@ -1369,7 +1369,29 @@ export default {
       return statusMap[status] || status;
     },
     formatDate(dateString) {
+      if (!dateString) {
+        return '-';
+      }
       return new Date(dateString).toLocaleDateString('zh-CN');
+    },
+    getRepairStartAt(order) {
+      if (!order) {
+        return null;
+      }
+      return order.startedAt || order.createdAt || null;
+    },
+    getRepairEndAt(order) {
+      if (!order) {
+        return null;
+      }
+      return order.repairEndedAt || order.completedAt || null;
+    },
+    formatRepairPeriod(order) {
+      const start = this.getRepairStartAt(order);
+      const end = this.getRepairEndAt(order);
+      const startText = this.formatDate(start);
+      const endText = end ? this.formatDate(end) : '进行中';
+      return `${startText} - ${endText}`;
     },
     formatDateTime(dateString) {
       if (!dateString) {

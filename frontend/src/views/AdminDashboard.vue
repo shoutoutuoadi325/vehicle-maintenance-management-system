@@ -23,6 +23,9 @@
           <a v-if="isSuperAdmin" href="#" @click="activeTab = 'users'" :class="{ active: activeTab === 'users' }">
             <i class="fas fa-users"></i> 用户管理
           </a>
+          <a v-if="canAccessDispatch" href="#" @click.prevent="$router.push('/admin/dispatch')">
+            <i class="fas fa-columns"></i> 调度看板
+          </a>
         </nav>
       </div>
       <div class="header-right">
@@ -119,7 +122,7 @@
               <h3>管理技师</h3>
               <p>添加或编辑技师信息</p>
             </div>
-            <div v-if="isManager || isSuperAdmin" class="action-card" @click="$router.push('/admin/dispatch')">
+            <div v-if="canAccessDispatch" class="action-card" @click="$router.push('/admin/dispatch')">
               <i class="fas fa-columns"></i>
               <h3>智能调度看板</h3>
               <p>拖拽重分配并查看 AI 派单负荷</p>
@@ -292,7 +295,7 @@
             </select>
             <button class="btn btn-secondary" @click="manualReassignPendingOrders" :disabled="isLoading">
               <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i> 
-              {{ isLoading ? '分配中...' : '重新分配' }}
+              {{ isLoading ? '分配中...' : '重新分配待处理单' }}
             </button>
           </div>
         </div>
@@ -350,6 +353,13 @@
             <div class="order-footer">
               <button @click="viewOrderDetail(order)" class="btn btn-primary">
                 <i class="fas fa-eye"></i> 查看详情
+              </button>
+              <button
+                v-if="canAccessDispatch && (order.status === 'ASSIGNED' || order.status === 'IN_PROGRESS')"
+                @click="goToDispatchBoard(order)"
+                class="btn btn-outline"
+              >
+                <i class="fas fa-user-cog"></i> 更换技师
               </button>
             </div>
           </div>
@@ -1046,11 +1056,22 @@ export default {
     }
   },
   computed: {
+    normalizedAdminRole() {
+      return (this.user.role || '').toUpperCase();
+    },
     isManager() {
-      return this.user.role === 'MANAGER';
+      return this.normalizedAdminRole === 'MANAGER';
     },
     isSuperAdmin() {
-      return this.user.role === 'SUPER_ADMIN';
+      return this.normalizedAdminRole === 'SUPER_ADMIN';
+    },
+    canAccessDispatch() {
+      const topLevelRole = (localStorage.getItem('userRole') || '').toLowerCase();
+      if (topLevelRole === 'admin') {
+        return true;
+      }
+
+      return ['MANAGER', 'SUPER_ADMIN', 'STAFF'].includes(this.normalizedAdminRole);
     },
     filteredOrders() {
       if (!this.orderFilter) return this.allOrders;
@@ -1821,13 +1842,13 @@ export default {
     async manualReassignPendingOrders() {
       try {
         this.isLoading = true;
-        this.$emit('message', '正在重新分配待分配订单...', 'info');
+        this.$emit('message', '正在重新分配待处理订单...', 'info');
         
         const response = await this.$axios.post('/admins/reassign-pending-orders');
         
         if (response.data.reassignedCount > 0) {
           this.$emit('message', 
-            `成功重新分配 ${response.data.reassignedCount} 个订单`, 
+            `成功重新分配 ${response.data.reassignedCount} 个待处理订单`, 
             'success'
           );
           console.log('重新分配的订单:', response.data.reassignedOrders);
@@ -1836,7 +1857,7 @@ export default {
           await this.loadOrders();
           await this.loadDashboardStats();
         } else {
-          this.$emit('message', '当前没有需要重新分配的订单', 'info');
+          this.$emit('message', '当前没有待处理订单需要重新分配', 'info');
         }
       } catch (error) {
         console.error('手动重新分配订单失败:', error);
@@ -1844,6 +1865,13 @@ export default {
       } finally {
         this.isLoading = false;
       }
+    },
+    goToDispatchBoard(order) {
+      if (!order || !order.id) {
+        this.$router.push('/admin/dispatch');
+        return;
+      }
+      this.$router.push({ path: '/admin/dispatch', query: { orderId: String(order.id) } });
     },
     async loadVehicleBrandStatistics() {
       try {

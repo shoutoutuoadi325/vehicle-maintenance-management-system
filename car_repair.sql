@@ -101,6 +101,7 @@ CREATE TABLE `repair_order` (
   `updated_at` datetime DEFAULT NULL,
   `started_at` datetime DEFAULT NULL,
   `completed_at` datetime DEFAULT NULL,
+  `repair_ended_at` datetime DEFAULT NULL,
   `labor_cost` double DEFAULT NULL,
   `estimated_emission` double DEFAULT NULL,
   `eco_material` tinyint(1) DEFAULT NULL,
