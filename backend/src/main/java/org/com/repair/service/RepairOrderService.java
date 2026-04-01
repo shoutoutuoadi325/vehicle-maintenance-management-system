@@ -63,7 +63,7 @@ public class RepairOrderService {
         this.eventPublisher = eventPublisher;
     }
     
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public RepairOrderResponse createRepairOrder(NewRepairOrderRequest request) {
         User user = userRepository.findById(request.userId())
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
@@ -122,10 +122,14 @@ public class RepairOrderService {
         return new RepairOrderResponse(savedOrder);
     }
     
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public RepairOrderResponse reassignTechnicians(Long orderId, Set<Long> technicianIds, boolean isManual) {
         RepairOrder repairOrder = repairOrderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("维修工单不存在"));
+
+        Set<Long> previousTechnicianIds = repairOrder.getTechnicians() == null
+            ? new HashSet<>()
+            : repairOrder.getTechnicians().stream().map(Technician::getId).collect(Collectors.toSet());
         
         Set<Technician> technicians = new HashSet<>();
         for (Long technicianId : technicianIds) {
@@ -140,10 +144,38 @@ public class RepairOrderService {
         repairOrder.setUpdatedAt(new Date());
         
         RepairOrder updatedOrder = repairOrderRepository.save(repairOrder);
+
+        Set<Long> affectedTechnicianIds = new HashSet<>(previousTechnicianIds);
+        affectedTechnicianIds.addAll(technicians.stream().map(Technician::getId).collect(Collectors.toSet()));
+        refreshTechnicianLoadStats(affectedTechnicianIds);
+
         return new RepairOrderResponse(updatedOrder);
     }
+
+    private void refreshTechnicianLoadStats(Set<Long> technicianIds) {
+        for (Long technicianId : technicianIds) {
+            Technician technician = technicianRepository.findById(technicianId).orElse(null);
+            if (technician == null) {
+                continue;
+            }
+
+            List<RepairOrder> tasks = repairOrderRepository.findByTechnicianId(technicianId);
+            double totalHours = tasks.stream()
+                    .map(RepairOrder::getActualHours)
+                    .filter(hours -> hours != null && hours > 0)
+                    .mapToDouble(Double::doubleValue)
+                    .sum();
+            int completedOrders = (int) tasks.stream()
+                    .filter(order -> order.getStatus() == RepairOrder.RepairStatus.COMPLETED)
+                    .count();
+
+            technician.setTotalWorkHours(Math.round(totalHours * 100.0) / 100.0);
+            technician.setCompletedOrders(completedOrders);
+            technicianRepository.save(technician);
+        }
+    }
     
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public RepairOrderResponse autoReassignTechnicians(Long orderId) {
         RepairOrder repairOrder = repairOrderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("维修工单不存在"));
@@ -346,7 +378,7 @@ public class RepairOrderService {
         return statistics;
     }
     
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public RepairOrderResponse updateRepairOrderStatus(Long orderId, RepairOrder.RepairStatus newStatus, Double materialCost) {
         RepairOrder repairOrder = repairOrderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("维修订单不存在"));
@@ -413,7 +445,7 @@ public class RepairOrderService {
         return new RepairOrderResponse(savedOrder);
     }
     
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public RepairOrderResponse updateRepairOrder(Long id, NewRepairOrderRequest request) {
         RepairOrder repairOrder = repairOrderRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("维修工单不存在"));
@@ -450,7 +482,7 @@ public class RepairOrderService {
         return new RepairOrderResponse(updatedOrder);
     }
     
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteRepairOrder(Long id) {
         if (repairOrderRepository.existsById(id)) {
             repairOrderRepository.deleteById(id);
@@ -476,7 +508,7 @@ public class RepairOrderService {
         return repairOrderRepository.getTaskStatisticsBySkillType(startDate, endDate);
     }
     
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public RepairOrderResponse urgeRepairOrder(Long orderId) {
         RepairOrder repairOrder = repairOrderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("维修订单不存在"));
@@ -524,7 +556,7 @@ public class RepairOrderService {
      * 重新分配所有未分配的订单
      * 用于管理员刷新数据时自动分配之前因技师不足而未分配的订单
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public List<RepairOrderResponse> reassignPendingOrders() {
         List<RepairOrderResponse> reassignedOrders = new ArrayList<>();
         

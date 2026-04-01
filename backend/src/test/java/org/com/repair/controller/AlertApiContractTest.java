@@ -20,6 +20,7 @@ import java.util.Optional;
 import org.com.repair.DTO.InventoryAlertPageResponse;
 import org.com.repair.DTO.MaterialResponse;
 import org.com.repair.DTO.MaintenanceAlertPageResponse;
+import org.com.repair.DTO.MaintenanceAlertSummaryResponse;
 import org.com.repair.DTO.NewMaterialRequest;
 import org.com.repair.security.RequestUserContextResolver;
 import org.com.repair.service.MaintenanceAlertService;
@@ -154,8 +155,8 @@ class AlertApiContractTest {
                         .param("status", "NOT_A_STATUS")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-                .andExpect(jsonPath("$.errorCode").value("BAD_REQUEST"));
+                                .andExpect(jsonPath("$.code").value("API_400_BAD_REQUEST"))
+                                .andExpect(jsonPath("$.errorCode").value("API_400_BAD_REQUEST"));
     }
 
     @Test
@@ -164,8 +165,22 @@ class AlertApiContractTest {
                         .param("alertType", "NOT_A_TYPE")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-                .andExpect(jsonPath("$.errorCode").value("BAD_REQUEST"));
+                                .andExpect(jsonPath("$.code").value("API_400_BAD_REQUEST"))
+                                .andExpect(jsonPath("$.errorCode").value("API_400_BAD_REQUEST"));
+    }
+
+    @Test
+    void shouldRequireCustomerRoleForMaintenanceSummary() throws Exception {
+        when(maintenanceAlertService.getUserSummary(1L))
+                .thenReturn(new MaintenanceAlertSummaryResponse(0, 0, 0, 0, 0, 100, "LOW"));
+
+        mockMvc.perform(get("/api/maintenance-alerts/user/1/summary")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(requestUserContextResolver).requireCustomerRole(any());
+        verify(requestUserContextResolver).ensurePathUserMatch(any(), eq(1L));
     }
 
     @Test
@@ -192,8 +207,8 @@ class AlertApiContractTest {
                         .param("severity", "INVALID")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-                .andExpect(jsonPath("$.errorCode").value("BAD_REQUEST"));
+                                .andExpect(jsonPath("$.code").value("API_400_BAD_REQUEST"))
+                                .andExpect(jsonPath("$.errorCode").value("API_400_BAD_REQUEST"));
     }
 
     @Test

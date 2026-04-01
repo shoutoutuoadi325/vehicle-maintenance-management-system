@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "user_coupon_wallet")
@@ -61,6 +62,10 @@ public class UserCouponWallet {
     @Column(name = "update_time", nullable = false)
     private LocalDateTime updateTime;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version = 0L;
+
     @PrePersist
     @PreUpdate
     public void touchUpdateTime() {
@@ -97,4 +102,6 @@ public class UserCouponWallet {
     public void setRedeemTechnicianId(Long redeemTechnicianId) { this.redeemTechnicianId = redeemTechnicianId; }
     public LocalDateTime getUpdateTime() { return updateTime; }
     public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
 }

@@ -13,7 +13,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class RoleAuthorizationInterceptor implements HandlerInterceptor {
 
     private static final Set<String> ADMIN_ONLY_PREFIXES = Set.of(
-            "/api/admins"
+            "/api/admins",
+            "/api/admin"
     );
 
     private static final Set<String> CUSTOMER_ONLY_PREFIXES = Set.of(
@@ -25,10 +26,24 @@ public class RoleAuthorizationInterceptor implements HandlerInterceptor {
                              @NonNull HttpServletResponse response,
                              @NonNull Object handler) throws Exception {
         String path = request.getRequestURI();
-        String role = String.valueOf(request.getAttribute("authRole")).toLowerCase();
+        Object roleAttr = request.getAttribute("authRole");
+        String role = roleAttr == null ? "" : String.valueOf(roleAttr).toLowerCase();
 
         if (isOptions(request)) {
             return true;
+        }
+
+        if ("/api/gamification/coupon/redeem".equals(path) && isWriteMethod(request)) {
+            if (!"technician".equals(role) && !"admin".equals(role)) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "仅技师或管理员可核销优惠券");
+                return false;
+            }
+            return true;
+        }
+
+        if (role.isBlank() || "null".equals(role)) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "未登录或登录态失效");
+            return false;
         }
 
         if (isPrefixMatched(path, ADMIN_ONLY_PREFIXES) && !"admin".equals(role)) {
@@ -50,7 +65,7 @@ public class RoleAuthorizationInterceptor implements HandlerInterceptor {
         }
 
         // Material management is treated as backoffice operation.
-        if (path.startsWith("/api/material") && isWriteMethod(request)) {
+        if ((path.startsWith("/api/material") || path.startsWith("/api/materials")) && isWriteMethod(request)) {
             if (!"technician".equals(role) && !"admin".equals(role)) {
                 response.sendError(HttpServletResponse.SC_FORBIDDEN, "仅技师或管理员可修改物料资源");
                 return false;

@@ -46,6 +46,10 @@ public class JwtAuthenticationInterceptor implements HandlerInterceptor {
 
             Long userId = Long.parseLong(claims.getSubject());
             String role = String.valueOf(claims.get("role"));
+            if (role == null || role.isBlank() || "null".equalsIgnoreCase(role)) {
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "令牌角色信息缺失");
+                return false;
+            }
 
             request.setAttribute("authUserId", userId);
             request.setAttribute("authRole", role.toLowerCase());

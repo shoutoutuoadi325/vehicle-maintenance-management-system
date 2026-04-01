@@ -41,6 +41,7 @@ public class MaterialService {
         return new MaterialResponse(saved);
     }
     
+    @Transactional(readOnly = true)
     public Optional<MaterialResponse> getMaterialById(Long id) {
         return materialRepository.findById(Objects.requireNonNull(id, "材料ID不能为空"))
                 .map(MaterialResponse::new);
@@ -73,18 +74,21 @@ public class MaterialService {
         return false;
     }
     
+    @Transactional(readOnly = true)
     public List<MaterialResponse> getAllMaterials() {
         return materialRepository.findAll().stream()
                 .map(MaterialResponse::new)
                 .collect(Collectors.toList());
     }
     
+    @Transactional(readOnly = true)
     public List<MaterialResponse> getMaterialsByName(String name) {
         return materialRepository.findByNameContaining(name).stream()
                 .map(MaterialResponse::new)
                 .collect(Collectors.toList());
     }
     
+    @Transactional(readOnly = true)
     public List<MaterialResponse> getMaterialsByPriceRange(Double minPrice, Double maxPrice) {
         return materialRepository.findByUnitPriceBetween(minPrice, maxPrice).stream()
                 .map(MaterialResponse::new)
@@ -97,7 +101,7 @@ public class MaterialService {
             throw new IllegalArgumentException("消耗数量必须大于0");
         }
 
-        Material material = materialRepository.findById(Objects.requireNonNull(materialId, "材料ID不能为空"))
+        Material material = materialRepository.findByIdForUpdate(Objects.requireNonNull(materialId, "材料ID不能为空"))
                 .orElseThrow(() -> new RuntimeException("材料不存在"));
 
         int currentStock = material.getStockQuantity() == null ? 0 : material.getStockQuantity();
@@ -124,10 +128,12 @@ public class MaterialService {
         return new MaterialResponse(saved);
     }
 
+    @Transactional(readOnly = true)
     public List<InventoryAlertNotification> getActiveInventoryAlerts() {
         return inventoryAlertNotificationRepository.findByStatusOrderByCreatedAtDesc(AlertStatus.ACTIVE);
     }
 
+    @Transactional(readOnly = true)
     public InventoryAlertPageResponse getActiveInventoryAlertsPage(int page, int size, String severity) {
         int safePage = Math.max(0, page);
         int safeSize = Math.min(50, Math.max(1, size));

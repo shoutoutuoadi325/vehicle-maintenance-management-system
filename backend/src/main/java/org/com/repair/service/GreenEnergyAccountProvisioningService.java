@@ -16,7 +16,7 @@ public class GreenEnergyAccountProvisioningService {
         this.greenEnergyAccountRepository = greenEnergyAccountRepository;
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public GreenEnergyAccount createAccountInNewTransaction(Long userId) {
         try {
             GreenEnergyAccount newAccount = new GreenEnergyAccount();

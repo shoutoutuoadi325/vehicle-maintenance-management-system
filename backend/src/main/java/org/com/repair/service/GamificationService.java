@@ -51,6 +51,7 @@ import org.com.repair.entity.User;
 import org.com.repair.entity.UserCouponWallet;
 import org.com.repair.event.EmissionReducedEvent;
 import org.com.repair.event.JourneyFootprintEvent;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -92,6 +93,7 @@ public class GamificationService {
     private static final String SOURCE_TYPE_JOURNEY = "JOURNEY_CITY";
     private static final String ACTION_EMISSION_REWARD = "EMISSION_REWARD";
     private static final String ACTION_CITY_CHECKIN_REWARD = "CITY_CHECKIN_REWARD";
+    private static final String ACTION_JOURNEY_COMPLETE = "JOURNEY_COMPLETE";
     private static final String FOOTPRINT_EVENT_CHECKIN_CITY = "CHECKIN_CITY";
     private static final String FOOTPRINT_EVENT_TRIGGER_RANDOM_EVENT = "TRIGGER_RANDOM_EVENT";
     private static final String FOOTPRINT_EVENT_DRAW_COUPON = "DRAW_COUPON";
@@ -229,6 +231,11 @@ public class GamificationService {
     }
 
     @Transactional
+    public GreenEnergyAccount getOrCreateAccount(Long userId) {
+        return getOrCreateUserAccount(userId);
+    }
+
+    @Transactional
     public JourneyMapSelectResponse selectJourneyMap(Long userId, JourneyMapSelectRequest request) {
         GreenEnergyAccount account = getOrCreateUserAccount(userId);
         Long targetMapId = request.mapId();
@@ -292,6 +299,23 @@ public class GamificationService {
             case TOTAL_ENERGY -> greenEnergyAccountRepository.findTop20ByOrderByTotalEnergyDescIdAsc();
             case CURRENT_MILEAGE -> greenEnergyAccountRepository.findTop20ByOrderByCurrentMileageDescIdAsc();
         };
+
+        rankingAccounts.sort((a, b) -> {
+            int cmp = switch (type) {
+                case TOTAL_ENERGY -> Integer.compare(
+                        b.getTotalEnergy() == null ? 0 : b.getTotalEnergy(),
+                        a.getTotalEnergy() == null ? 0 : a.getTotalEnergy());
+                case CURRENT_MILEAGE -> Integer.compare(
+                        b.getCurrentMileage() == null ? 0 : b.getCurrentMileage(),
+                        a.getCurrentMileage() == null ? 0 : a.getCurrentMileage());
+            };
+            if (cmp != 0) {
+                return cmp;
+            }
+            return Long.compare(
+                    a.getUserId() == null ? Long.MAX_VALUE : a.getUserId(),
+                    b.getUserId() == null ? Long.MAX_VALUE : b.getUserId());
+        });
 
         List<Long> userIds = rankingAccounts.stream().map(GreenEnergyAccount::getUserId).toList();
         List<Long> mapIds = rankingAccounts.stream().map(GreenEnergyAccount::getCurrentMapId).distinct().toList();
@@ -450,6 +474,10 @@ public class GamificationService {
             gamificationAccountSupport.applyWrongAnswerPenalty(userId);
             LocalDateTime nextRetryTime = LocalDateTime.now().plusMinutes(gamificationAccountSupport.getWrongAnswerCooldownMinutes());
             GreenEnergyAccount refreshed = gamificationAccountSupport.loadAccountOrThrow(userId, "随机事件冷却写入前读取账户失败");
+            refreshed.setJourneyStatus(JOURNEY_STATUS_PENDING_RANDOM_EVENT);
+            if (refreshed.getFrozenMileage() == null) {
+                refreshed.setFrozenMileage(0);
+            }
             refreshed.setRandomEventNextRetryTime(nextRetryTime);
             GreenEnergyAccount penaltySaved = greenEnergyAccountRepository.save(refreshed);
 
@@ -483,8 +511,12 @@ public class GamificationService {
             completion);
     }
 
-            @Transactional
-            public CouponRedeemResponse redeemCoupon(Long userId, CouponRedeemRequest request) {
+    @Transactional
+    public CouponRedeemResponse redeemCoupon(Long operatorUserId, String operatorRole, CouponRedeemRequest request) {
+            if (!"admin".equals(operatorRole) && !"technician".equals(operatorRole)) {
+                throw new AccessDeniedException("仅管理员或技师允许执行核销操作");
+            }
+
             Long shopId = request.shopId();
             Long technicianId = request.technicianId();
             if (shopId == null && technicianId == null) {
@@ -493,10 +525,10 @@ public class GamificationService {
                     "核销门店或技师至少提供一个");
             }
 
-            UserCouponWallet wallet = userCouponWalletRepository.findByIdAndUserId(request.walletId(), userId)
+            UserCouponWallet wallet = userCouponWalletRepository.findByIdForUpdate(request.walletId())
                 .orElseThrow(() -> new GamificationException(
                     GamificationErrorCode.COUPON_WALLET_NOT_FOUND,
-                    "卡包记录不存在或不属于当前用户"));
+                    "卡包记录不存在"));
 
             if (!COUPON_STATUS_NEW.equals(wallet.getCouponStatus())) {
                 throw new GamificationException(
@@ -529,14 +561,14 @@ public class GamificationService {
             wallet.setRedeemTechnicianId(technicianId);
             UserCouponWallet saved = userCouponWalletRepository.save(wallet);
 
-            return new CouponRedeemResponse(
-                saved.getId(),
-                saved.getUserId(),
-                saved.getCouponStatus(),
-                saved.getRedeemTime() != null ? saved.getRedeemTime().toString() : null,
-                saved.getRedeemShopId(),
-                saved.getRedeemTechnicianId());
-            }
+        return new CouponRedeemResponse(
+            saved.getId(),
+            saved.getUserId(),
+            saved.getCouponStatus(),
+            saved.getRedeemTime() != null ? saved.getRedeemTime().toString() : null,
+            saved.getRedeemShopId(),
+            saved.getRedeemTechnicianId());
+    }
 
     @Transactional
     public JourneyStateResponse getJourneyState(Long userId) {
@@ -587,7 +619,7 @@ public class GamificationService {
         Long mapId = account.getCurrentMapId();
         getMapNodeOrThrow(mapId, cityIndex);
 
-        GreenJourneyNodeState targetNode = greenJourneyNodeStateRepository.findByUserIdAndMapIdAndCityIndex(userId, mapId, cityIndex)
+        GreenJourneyNodeState targetNode = greenJourneyNodeStateRepository.findByUserIdAndMapIdAndCityIndexForUpdate(userId, mapId, cityIndex)
             .orElseThrow(() -> new GamificationException(
                 GamificationErrorCode.NODE_STATE_MISSING,
                 "节点状态不存在"));
@@ -1338,6 +1370,30 @@ public class GamificationService {
             return journeyCompletionRecordRepository.findByUserId(userId).orElse(null);
         }
 
+        String sourceId = userId + "-" + mapId + "-" + finalCityIndex;
+        if (greenRewardLedgerRepository.existsBySourceTypeAndSourceIdAndActionKey(
+                SOURCE_TYPE_JOURNEY,
+                sourceId,
+                ACTION_JOURNEY_COMPLETE)) {
+            return journeyCompletionRecordRepository.findByUserId(userId).orElse(null);
+        }
+
+        try {
+            GreenRewardLedger completionLedger = GreenRewardLedger.builder()
+                    .userId(userId)
+                    .sourceType(SOURCE_TYPE_JOURNEY)
+                    .sourceId(sourceId)
+                    .actionKey(ACTION_JOURNEY_COMPLETE)
+                    .energyDelta(0)
+                    .mileageDelta(0)
+                    .riskLevel("LOW")
+                    .reason("旅程完成幂等登记")
+                    .build();
+            greenRewardLedgerRepository.save(completionLedger);
+        } catch (DataIntegrityViolationException duplicate) {
+            return journeyCompletionRecordRepository.findByUserId(userId).orElse(null);
+        }
+
         return journeyCompletionRecordRepository.findByUserId(userId)
                 .orElseGet(() -> {
                     JourneyCompletionRecord record = new JourneyCompletionRecord();
@@ -1359,7 +1415,14 @@ public class GamificationService {
     private CouponDrawResultResponse drawCouponForCity(Long userId, Long mapId, Integer cityIndex, String sourceId) {
         List<Coupon> cityCoupons = couponRepository.findActiveByCityIndex(cityIndex, LocalDateTime.now());
         if (cityCoupons.isEmpty()) {
-            return new CouponDrawResultResponse(false, null, null, null, null, null, cityIndex);
+            return new CouponDrawResultResponse(
+                    false,
+                    null,
+                    null,
+                    null,
+                    "当前城市暂无可领优惠券",
+                    "库存不足或活动已结束，可继续完成后续节点获取新权益",
+                    cityIndex);
         }
 
         Coupon selected = selectCouponByProbability(cityCoupons);
@@ -1369,7 +1432,14 @@ public class GamificationService {
 
         int updated = couponRepository.tryIssueCoupon(selected.getId());
         if (updated <= 0) {
-            return new CouponDrawResultResponse(false, null, null, null, null, null, cityIndex);
+            return new CouponDrawResultResponse(
+                    false,
+                    null,
+                    null,
+                    null,
+                    "优惠券已被领完",
+                    "当前批次优惠券库存已耗尽，可继续参与后续活动",
+                    cityIndex);
         }
 
         BrandPartner brand = brandPartnerRepository.findById(selected.getBrandPartnerId()).orElse(null);
@@ -1463,10 +1533,7 @@ public class GamificationService {
         if (trimmed.length() <= 1) {
             return "*";
         }
-        if (trimmed.length() == 2) {
-            return trimmed.charAt(0) + "*";
-        }
-        return trimmed.charAt(0) + "***" + trimmed.charAt(trimmed.length() - 1);
+        return trimmed.charAt(0) + "*";
     }
 
     private String maskPhone(String phone) {

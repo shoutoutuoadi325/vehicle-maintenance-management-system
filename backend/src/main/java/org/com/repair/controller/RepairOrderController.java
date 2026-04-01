@@ -2,12 +2,14 @@ package org.com.repair.controller;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.com.repair.DTO.NewRepairOrderRequest;
 import org.com.repair.DTO.RepairOrderResponse;
 import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.RepairOrder.RepairStatus;
+import org.com.repair.security.RequestUserContextResolver;
 import org.com.repair.service.RepairOrderService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +26,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 @RestController
 @RequestMapping("/api/repair-orders")
 public class RepairOrderController {
@@ -31,9 +35,12 @@ public class RepairOrderController {
     private static final Logger logger = LoggerFactory.getLogger(RepairOrderController.class);
     
     private final RepairOrderService repairOrderService;
+    private final RequestUserContextResolver requestUserContextResolver;
     
-    public RepairOrderController(RepairOrderService repairOrderService) {
+    public RepairOrderController(RepairOrderService repairOrderService,
+                                 RequestUserContextResolver requestUserContextResolver) {
         this.repairOrderService = repairOrderService;
+        this.requestUserContextResolver = requestUserContextResolver;
     }
     
     @PostMapping
@@ -97,10 +104,10 @@ public class RepairOrderController {
             @RequestParam(required = false) Double materialCost) {
         try {
             RepairOrderResponse response = repairOrderService.updateRepairOrderStatus(id, status, materialCost);
-            return new ResponseEntity<>(response, HttpStatus.OK);
+            return okResponse(response);
         } catch (RuntimeException e) {
             logger.warn("Failed to update repair order status, orderId={}, status={}, materialCost={}", id, status, materialCost, e);
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            return statusResponse(HttpStatus.NOT_FOUND);
         }
     }
     
@@ -110,10 +117,10 @@ public class RepairOrderController {
             @RequestBody NewRepairOrderRequest request) {
         try {
             RepairOrderResponse response = repairOrderService.updateRepairOrder(id, request);
-            return new ResponseEntity<>(response, HttpStatus.OK);
+            return okResponse(response);
         } catch (RuntimeException e) {
             logger.warn("Failed to update repair order, orderId={}", id, e);
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            return statusResponse(HttpStatus.NOT_FOUND);
         }
     }
     
@@ -158,13 +165,15 @@ public class RepairOrderController {
     public ResponseEntity<RepairOrderResponse> reassignTechnicians(
             @PathVariable Long id,
             @RequestBody Set<Long> technicianIds,
-            @RequestParam(defaultValue = "true") boolean isManual) {
+            @RequestParam(defaultValue = "true") boolean isManual,
+            HttpServletRequest request) {
         try {
+            requestUserContextResolver.requireAdminRole(request);
             RepairOrderResponse response = repairOrderService.reassignTechnicians(id, technicianIds, isManual);
-            return new ResponseEntity<>(response, HttpStatus.OK);
+            return okResponse(response);
         } catch (RuntimeException e) {
             logger.warn("Failed to reassign technicians, orderId={}, isManual={}", id, isManual, e);
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            return statusResponse(HttpStatus.NOT_FOUND);
         }
     }
     
@@ -172,10 +181,10 @@ public class RepairOrderController {
     public ResponseEntity<RepairOrderResponse> autoReassignTechnicians(@PathVariable Long id) {
         try {
             RepairOrderResponse response = repairOrderService.autoReassignTechnicians(id);
-            return new ResponseEntity<>(response, HttpStatus.OK);
+            return okResponse(response);
         } catch (RuntimeException e) {
             logger.warn("Failed to auto reassign technicians, orderId={}", id, e);
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            return statusResponse(HttpStatus.NOT_FOUND);
         }
     }
     
@@ -183,10 +192,18 @@ public class RepairOrderController {
     public ResponseEntity<RepairOrderResponse> urgeRepairOrder(@PathVariable Long id) {
         try {
             RepairOrderResponse response = repairOrderService.urgeRepairOrder(id);
-            return new ResponseEntity<>(response, HttpStatus.OK);
+            return okResponse(response);
         } catch (RuntimeException e) {
             logger.warn("Failed to urge repair order, orderId={}", id, e);
-            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+            return statusResponse(HttpStatus.BAD_REQUEST);
         }
+    }
+
+    private ResponseEntity<RepairOrderResponse> okResponse(RepairOrderResponse response) {
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    private ResponseEntity<RepairOrderResponse> statusResponse(HttpStatus status) {
+        return new ResponseEntity<>(Objects.requireNonNull(status));
     }
 }

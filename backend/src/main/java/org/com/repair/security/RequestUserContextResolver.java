@@ -1,6 +1,7 @@
 package org.com.repair.security;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -28,21 +29,29 @@ public class RequestUserContextResolver {
     public void requireCustomerRole(HttpServletRequest request) {
         String role = requireRole(request);
         if (!"customer".equals(role)) {
-            throw new IllegalStateException("仅顾客允许访问零碳公路功能");
+            throw new AccessDeniedException("仅顾客允许访问零碳公路功能");
         }
     }
 
     public void requireAdminRole(HttpServletRequest request) {
         String role = requireRole(request);
         if (!"admin".equals(role)) {
-            throw new IllegalStateException("仅管理员允许访问该功能");
+            throw new AccessDeniedException("仅管理员允许访问该功能");
         }
+    }
+
+    public String requireAdminOrTechnicianRole(HttpServletRequest request) {
+        String role = requireRole(request);
+        if (!"admin".equals(role) && !"technician".equals(role)) {
+            throw new AccessDeniedException("仅管理员或技师允许执行该操作");
+        }
+        return role;
     }
 
     public void ensurePathUserMatch(HttpServletRequest request, Long userIdInPath) {
         Long actualUserId = requireUserId(request);
         if (!actualUserId.equals(userIdInPath)) {
-            throw new IllegalStateException("身份不匹配，禁止越权访问");
+            throw new AccessDeniedException("身份不匹配，禁止越权访问");
         }
     }
 }

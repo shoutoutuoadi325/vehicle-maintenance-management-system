@@ -117,7 +117,7 @@ public class MaterialController {
 
     @GetMapping("/notifications")
     public ResponseEntity<ApiResponse<List<InventoryAlertNotification>>> getInventoryAlerts(HttpServletRequest request) {
-        requestUserContextResolver.requireAdminRole(request);
+        ensureAdminRequest(request);
         return ResponseEntity.ok(ApiResponse.ok(materialService.getActiveInventoryAlerts()));
     }
 
@@ -127,7 +127,7 @@ public class MaterialController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String severity,
             HttpServletRequest request) {
-        requestUserContextResolver.requireAdminRole(request);
+        ensureAdminRequest(request);
         int safePage = Math.max(0, page);
         int safeSize = Math.min(50, Math.max(1, size));
         String normalizedSeverity = normalizeSeverity(severity);
@@ -138,7 +138,7 @@ public class MaterialController {
     @PutMapping("/notifications/{id}/resolve")
     public ResponseEntity<ApiResponse<Map<String, Object>>> resolveInventoryAlert(@PathVariable Long id,
                                                                                    HttpServletRequest request) {
-        requestUserContextResolver.requireAdminRole(request);
+        ensureAdminRequest(request);
         boolean resolved = materialService.resolveInventoryAlert(id);
         if (!resolved) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -151,7 +151,7 @@ public class MaterialController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> resolveInventoryAlerts(
             @RequestBody ResolveBatchRequest resolveBatchRequest,
             HttpServletRequest request) {
-        requestUserContextResolver.requireAdminRole(request);
+        ensureAdminRequest(request);
         int updated = materialService.resolveInventoryAlerts(
                 resolveBatchRequest == null ? List.of() : resolveBatchRequest.ids());
         return ResponseEntity.ok(ApiResponse.ok("批量处理库存预警完成", Map.of("updated", updated)));
@@ -172,5 +172,9 @@ public class MaterialController {
             return normalized;
         }
         throw new IllegalArgumentException("severity 参数非法");
+    }
+
+    private void ensureAdminRequest(HttpServletRequest request) {
+        requestUserContextResolver.requireAdminRole(request);
     }
 } 
