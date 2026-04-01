@@ -19,6 +19,7 @@ import org.com.repair.repository.MaintenanceAlertRepository;
 import org.com.repair.repository.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -50,7 +51,7 @@ public class MaintenanceAlertService {
         this.maintenanceAlertRuleEvaluator = maintenanceAlertRuleEvaluator;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     @Scheduled(cron = "${maintenance.alert.scan-cron:0 0 2 * * *}")
     public void scanVehiclesForMaintenance() {
         List<Vehicle> vehicles = vehicleRepository.findAll();
@@ -67,15 +68,22 @@ public class MaintenanceAlertService {
         MaintenanceAlert alert = new MaintenanceAlert();
         alert.setUserId(vehicle.getUserId());
         alert.setVehicleId(vehicle.getId());
+        alert.setDedupKey(buildDedupKey(vehicle.getUserId(), vehicle.getId(), alertType, LocalDateTime.now()));
         alert.setAlertType(alertType);
         alert.setMessage(message);
         alert.setTriggerTime(LocalDateTime.now());
         alert.setStatus(AlertStatus.UNREAD);
-        maintenanceAlertRepository.save(alert);
-        return true;
+        try {
+            maintenanceAlertRepository.save(alert);
+            return true;
+        } catch (DataIntegrityViolationException duplicate) {
+            logger.info("Skip duplicate maintenance alert by dedupKey={}, vehicleId={}, alertType={}",
+                    alert.getDedupKey(), vehicle.getId(), alertType);
+            return false;
+        }
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public List<MaintenanceAlertResponse> getUserAlerts(Long userId) {
         scanSingleUserVehicles(userId);
         return maintenanceAlertRepository.findByUserIdOrderByTriggerTimeDesc(userId)
@@ -84,7 +92,7 @@ public class MaintenanceAlertService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public MaintenanceAlertPageResponse getUserAlertsPage(Long userId,
                                                            int page,
                                                            int size,
@@ -111,7 +119,7 @@ public class MaintenanceAlertService {
         );
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public MaintenanceAlertSummaryResponse getUserSummary(Long userId) {
         scanSingleUserVehicles(userId);
         long unreadCount = maintenanceAlertRepository.countByUserIdAndStatus(userId, AlertStatus.UNREAD);
@@ -145,7 +153,7 @@ public class MaintenanceAlertService {
             riskLevel);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void scanSingleUserVehicles(Long userId) {
         List<Vehicle> vehicles = vehicleRepository.findByUserId(userId);
         scanVehicles(vehicles, "single-user-scan");
@@ -241,7 +249,7 @@ public class MaintenanceAlertService {
                            long elapsedMs) {
             }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public boolean markRead(Long alertId, Long userId) {
         return maintenanceAlertRepository.findByIdAndUserId(alertId, userId)
                 .map(alert -> {
@@ -254,13 +262,13 @@ public class MaintenanceAlertService {
                 .orElse(false);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int markAllRead(Long userId) {
         return maintenanceAlertRepository.updateStatusByUserId(
                 userId, AlertStatus.UNREAD, AlertStatus.READ);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int markReadBatch(Long userId, List<Long> ids) {
         List<Long> safeIds = ids == null ? Collections.emptyList() : ids.stream()
                 .filter(id -> id != null && id > 0)
@@ -295,5 +303,9 @@ public class MaintenanceAlertService {
         } catch (IllegalArgumentException ex) {
             throw new IllegalArgumentException("alertType 参数非法");
         }
+    }
+
+    private String buildDedupKey(Long userId, Long vehicleId, AlertType alertType, LocalDateTime triggerAt) {
+        return userId + ":" + vehicleId + ":" + alertType.name() + ":" + triggerAt.toLocalDate();
     }
 }

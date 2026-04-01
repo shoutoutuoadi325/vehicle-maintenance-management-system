@@ -1,5 +1,6 @@
 package org.com.repair.config;
 
+import java.util.List;
 import java.util.Objects;
 
 import org.com.repair.security.JwtAuthenticationInterceptor;
@@ -13,6 +14,20 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 public class AuthInterceptorConfig implements WebMvcConfigurer {
+
+    private static final List<String> AUTH_EXCLUDE_PATHS = List.of(
+            "/api/users/login",
+            "/api/technicians/login",
+            "/api/admins/login",
+            "/api/users",
+            "/api/technicians",
+            "/api/admins",
+            "/api/auth/refresh",
+            "/api/auth/logout",
+            "/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html"
+    );
 
     private final JwtAuthenticationInterceptor jwtAuthenticationInterceptor;
     private final RoleAuthorizationInterceptor roleAuthorizationInterceptor;
@@ -35,51 +50,15 @@ public class AuthInterceptorConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/**");
 
         registry.addInterceptor(Objects.requireNonNull(jwtAuthenticationInterceptor))
-            .addPathPatterns("/api/**")
-            .excludePathPatterns(
-                "/api/users/login",
-                "/api/technicians/login",
-                "/api/admins/login",
-                "/api/users",
-                "/api/technicians",
-                "/api/admins",
-                "/api/ai-diagnosis/**",
-                "/api/auth/refresh",
-                "/api/auth/logout",
-                "/v3/api-docs/**",
-                "/swagger-ui/**",
-                "/swagger-ui.html");
-
-            registry.addInterceptor(Objects.requireNonNull(roleAuthorizationInterceptor))
                 .addPathPatterns("/api/**")
-                .excludePathPatterns(
-                        "/api/users/login",
-                        "/api/technicians/login",
-                        "/api/admins/login",
-                        "/api/users",
-                        "/api/technicians",
-                        "/api/admins",
-                        "/api/ai-diagnosis/**",
-                        "/api/auth/refresh",
-                        "/api/auth/logout",
-                        "/v3/api-docs/**",
-                        "/swagger-ui/**",
-                        "/swagger-ui.html");
+                .excludePathPatterns(AUTH_EXCLUDE_PATHS);
 
-                registry.addInterceptor(Objects.requireNonNull(ownershipAuthorizationInterceptor))
-                    .addPathPatterns("/api/**")
-                    .excludePathPatterns(
-                        "/api/users/login",
-                        "/api/technicians/login",
-                        "/api/admins/login",
-                        "/api/users",
-                        "/api/technicians",
-                        "/api/admins",
-                        "/api/ai-diagnosis/**",
-                        "/api/auth/refresh",
-                        "/api/auth/logout",
-                        "/v3/api-docs/**",
-                        "/swagger-ui/**",
-                        "/swagger-ui.html");
+        registry.addInterceptor(Objects.requireNonNull(roleAuthorizationInterceptor))
+                .addPathPatterns("/api/**")
+                .excludePathPatterns(AUTH_EXCLUDE_PATHS);
+
+        registry.addInterceptor(Objects.requireNonNull(ownershipAuthorizationInterceptor))
+                .addPathPatterns("/api/**")
+                .excludePathPatterns(AUTH_EXCLUDE_PATHS);
     }
 }

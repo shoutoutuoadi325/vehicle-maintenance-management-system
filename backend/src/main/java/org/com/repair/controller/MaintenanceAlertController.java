@@ -37,7 +37,7 @@ public class MaintenanceAlertController {
     @GetMapping("/user/{userId}")
     public ResponseEntity<ApiResponse<List<MaintenanceAlertResponse>>> getUserAlerts(@PathVariable Long userId,
                                                                                       HttpServletRequest request) {
-        requestUserContextResolver.ensurePathUserMatch(request, userId);
+        ensureCustomerSelfRequest(request, userId);
         return ResponseEntity.ok(ApiResponse.ok(maintenanceAlertService.getUserAlerts(userId)));
     }
 
@@ -48,7 +48,7 @@ public class MaintenanceAlertController {
                                                                                          @RequestParam(required = false) String status,
                                                                                          @RequestParam(required = false) String alertType,
                                                                                          HttpServletRequest request) {
-        requestUserContextResolver.ensurePathUserMatch(request, userId);
+                                                ensureCustomerSelfRequest(request, userId);
         int safePage = Math.max(0, page);
         int safeSize = Math.min(50, Math.max(1, size));
         return ResponseEntity.ok(ApiResponse.ok(
@@ -63,12 +63,13 @@ public class MaintenanceAlertController {
     @GetMapping("/user/{userId}/summary")
     public ResponseEntity<ApiResponse<MaintenanceAlertSummaryResponse>> getUserSummary(@PathVariable Long userId,
                                                                                         HttpServletRequest request) {
-        requestUserContextResolver.ensurePathUserMatch(request, userId);
+        ensureCustomerSelfRequest(request, userId);
         return ResponseEntity.ok(ApiResponse.ok(maintenanceAlertService.getUserSummary(userId)));
     }
 
     @PutMapping("/{id}/read")
     public ResponseEntity<ApiResponse<Map<String, Object>>> markRead(@PathVariable Long id, HttpServletRequest request) {
+        requestUserContextResolver.requireCustomerRole(request);
         Long userId = requestUserContextResolver.requireUserId(request);
         boolean updated = maintenanceAlertService.markRead(id, userId);
         if (!updated) {
@@ -81,7 +82,7 @@ public class MaintenanceAlertController {
     @PutMapping("/user/{userId}/read-all")
     public ResponseEntity<ApiResponse<Map<String, Object>>> markAllRead(@PathVariable Long userId,
                                                                          HttpServletRequest request) {
-        requestUserContextResolver.ensurePathUserMatch(request, userId);
+        ensureCustomerSelfRequest(request, userId);
         int updated = maintenanceAlertService.markAllRead(userId);
         return ResponseEntity.ok(ApiResponse.ok("批量标记已读完成", Map.of("updated", updated)));
     }
@@ -90,7 +91,7 @@ public class MaintenanceAlertController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> markBatchRead(@PathVariable Long userId,
                                                                            @RequestBody ReadBatchRequest readBatchRequest,
                                                                            HttpServletRequest request) {
-        requestUserContextResolver.ensurePathUserMatch(request, userId);
+        ensureCustomerSelfRequest(request, userId);
         int updated = maintenanceAlertService.markReadBatch(
                 userId,
                 readBatchRequest == null ? List.of() : readBatchRequest.ids());
@@ -124,5 +125,10 @@ public class MaintenanceAlertController {
         } catch (IllegalArgumentException ex) {
             throw new IllegalArgumentException("alertType 参数非法");
         }
+    }
+
+    private void ensureCustomerSelfRequest(HttpServletRequest request, Long userId) {
+        requestUserContextResolver.requireCustomerRole(request);
+        requestUserContextResolver.ensurePathUserMatch(request, userId);
     }
 }

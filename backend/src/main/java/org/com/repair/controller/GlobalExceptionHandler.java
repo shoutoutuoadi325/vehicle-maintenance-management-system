@@ -4,11 +4,12 @@ import java.time.LocalDateTime;
 import java.util.Objects;
 
 import org.com.repair.DTO.ApiResponse;
-import org.com.repair.exception.GamificationErrorCode;
 import org.com.repair.exception.GamificationException;
+import org.com.repair.service.GreenEnergyAccountProvisioningService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -18,8 +19,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(GamificationException.class)
     public ResponseEntity<ApiResponse<Void>> handleGamificationException(GamificationException ex) {
-        HttpStatus status = mapGamificationStatus(ex.getErrorCode());
-        return buildResponse(status, ex.getMessage(), ex.getErrorCode().name());
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), "GAMIFICATION_INVALID_REQUEST");
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -29,7 +29,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiResponse<Void>> handleIllegalState(IllegalStateException ex) {
-        return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), "CONFLICT");
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), "IDEMPOTENCY_OR_STATE_CONFLICT");
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException ex) {
+        return buildResponse(HttpStatus.FORBIDDEN, ex.getMessage(), "FORBIDDEN");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -46,6 +51,12 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, "数据冲突，请勿重复提交", "DATA_CONFLICT");
     }
 
+    @ExceptionHandler(GreenEnergyAccountProvisioningService.ConcurrentAccountCreationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConcurrentAccountCreation(
+            GreenEnergyAccountProvisioningService.ConcurrentAccountCreationException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), "IDEMPOTENCY_CONFLICT");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnknown(Exception ex) {
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "系统繁忙，请稍后再试", "INTERNAL_ERROR");
@@ -54,22 +65,15 @@ public class GlobalExceptionHandler {
     private ResponseEntity<ApiResponse<Void>> buildResponse(HttpStatus status, String message, String errorCode) {
         ApiResponse<Void> body = new ApiResponse<>(
                 false,
-                errorCode,
+                formatErrorCode(status, errorCode),
                 message,
                 null,
                 LocalDateTime.now().toString());
         return new ResponseEntity<>(body, Objects.requireNonNull(status));
     }
 
-    private HttpStatus mapGamificationStatus(GamificationErrorCode errorCode) {
-        return switch (errorCode) {
-            case INVALID_CITY_INDEX, QUIZ_NOT_FOUND, QUIZ_CITY_MISMATCH, JOURNEY_NOT_COMPLETED, INVALID_SHIPPING_STATUS,
-                    MAP_NOT_FOUND, MAP_NOT_ACTIVE, MAP_SELECTION_LOCKED,
-                    RANDOM_EVENT_NOT_PENDING, RANDOM_EVENT_QUIZ_MISMATCH,
-                    COUPON_WALLET_NOT_FOUND, COUPON_NOT_REDEEMABLE, COUPON_EXPIRED,
-                    REDEEM_OPERATOR_MISSING, REDEEM_SHOP_NOT_FOUND, REDEEM_TECHNICIAN_NOT_FOUND,
-                    RETRY_COOLDOWN_ACTIVE -> HttpStatus.BAD_REQUEST;
-            default -> HttpStatus.CONFLICT;
-        };
+    private String formatErrorCode(HttpStatus status, String businessCode) {
+        String normalized = businessCode == null ? "UNKNOWN" : businessCode.trim().replace(' ', '_').toUpperCase();
+        return "API_" + status.value() + "_" + normalized;
     }
 }

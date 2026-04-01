@@ -38,6 +38,9 @@ public class MaintenanceAlert {
     @Column(name = "vehicle_id", nullable = false)
     private Long vehicleId;
 
+    @Column(name = "dedup_key", nullable = false, length = 128, unique = true)
+    private String dedupKey;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "alert_type", nullable = false, length = 40)
     private AlertType alertType;
@@ -92,6 +95,14 @@ public class MaintenanceAlert {
 
     public void setVehicleId(Long vehicleId) {
         this.vehicleId = vehicleId;
+    }
+
+    public String getDedupKey() {
+        return dedupKey;
+    }
+
+    public void setDedupKey(String dedupKey) {
+        this.dedupKey = dedupKey;
     }
 
     public AlertType getAlertType() {

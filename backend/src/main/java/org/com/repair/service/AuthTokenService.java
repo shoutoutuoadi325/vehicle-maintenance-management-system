@@ -35,7 +35,7 @@ public class AuthTokenService {
         this.authRefreshTokenRepository = authRefreshTokenRepository;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public <T> AuthLoginResponse<T> issueLoginTokens(Long userId, String username, String role, T user, HttpServletRequest request) {
         authRefreshTokenRepository.revokeAllByUser(userId, role);
 
@@ -46,7 +46,7 @@ public class AuthTokenService {
         return new AuthLoginResponse<>(accessToken, refreshToken, role, user);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AuthLoginResponse<Void> refresh(String refreshToken, HttpServletRequest request) {
         Claims claims = jwtTokenService.parseToken(refreshToken);
         String tokenType = String.valueOf(claims.get("type"));
@@ -90,7 +90,7 @@ public class AuthTokenService {
         return new AuthLoginResponse<>(newAccessToken, newRefreshToken, role, null);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void logout(String refreshToken, HttpServletRequest request) {
         try {
             Claims claims = jwtTokenService.parseToken(refreshToken);

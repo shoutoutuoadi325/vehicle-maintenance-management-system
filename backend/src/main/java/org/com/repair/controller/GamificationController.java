@@ -179,9 +179,9 @@ public class GamificationController {
     public ResponseEntity<CouponRedeemResponse> redeemCoupon(
             @Valid @RequestBody CouponRedeemRequest request,
             HttpServletRequest servletRequest) {
-        requestUserContextResolver.requireCustomerRole(servletRequest);
-        Long userId = requestUserContextResolver.requireUserId(servletRequest);
-        CouponRedeemResponse response = gamificationService.redeemCoupon(userId, request);
+        String operatorRole = requestUserContextResolver.requireAdminOrTechnicianRole(servletRequest);
+        Long operatorUserId = requestUserContextResolver.requireUserId(servletRequest);
+        CouponRedeemResponse response = gamificationService.redeemCoupon(operatorUserId, operatorRole, request);
         return new ResponseEntity<>(response, HttpStatus.OK);
     }
 

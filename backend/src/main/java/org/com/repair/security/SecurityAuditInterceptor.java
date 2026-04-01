@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
@@ -22,6 +23,7 @@ public class SecurityAuditInterceptor implements HandlerInterceptor {
                              @NonNull Object handler) {
         String requestId = UUID.randomUUID().toString().replace("-", "");
         request.setAttribute("requestId", requestId);
+        MDC.put("requestId", requestId);
         response.setHeader("X-Request-Id", requestId);
         request.setAttribute("auditStartNs", System.nanoTime());
         return true;
@@ -54,5 +56,7 @@ public class SecurityAuditInterceptor implements HandlerInterceptor {
         if (ex != null) {
             logger.warn("security_audit_error requestId={} message={}", requestId, ex.getMessage());
         }
+
+        MDC.remove("requestId");
     }
 }
