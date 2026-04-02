@@ -168,12 +168,16 @@
         <span class="status-label">终极奖励状态</span>
         <strong class="status-value reward-state">{{ rewardShippingStatusText }}</strong>
       </div>
+      <div v-if="isRandomEventPending" class="status-item random-event-alert">
+        <span class="status-label">随机事件</span>
+        <button class="event-action-btn" @click="openPendingRandomEventModal">立即处理</button>
+      </div>
     </footer>
 
     <div v-if="showModal" class="modal-mask" @click.self="closeModal">
       <div class="modal-card">
         <div class="modal-head">
-          <h3>{{ activeCityName }} · 环保问答</h3>
+          <h3>{{ quizModalTitle }}</h3>
           <button class="close-btn" @click="closeModal">×</button>
         </div>
 
@@ -305,6 +309,8 @@ export default {
       quizRequestSeq: 0,
       lastSubmitAt: 0,
       submitDebounceMs: 800,
+      journeyStatus: 'NORMAL',
+      pendingRandomEventMode: false,
       showDrawModal: false,
       drawResult: null,
       pendingGrandPrize: false,
@@ -324,9 +330,18 @@ export default {
     checkedCount() {
       return Object.values(this.nodeStateMap).filter(state => state === 'CHECKED_IN').length;
     },
+    isRandomEventPending() {
+      return this.journeyStatus === 'PENDING_RANDOM_EVENT';
+    },
     activeCityName() {
       const activeCity = this.activeNodeIndex >= 0 ? this.cities[this.activeNodeIndex] : null;
       return activeCity ? activeCity.name : '城市';
+    },
+    quizModalTitle() {
+      if (this.pendingRandomEventMode) {
+        return '随机突发事件 · 紧急问答';
+      }
+      return `${this.activeCityName} · 环保问答`;
     },
     parsedOptions() {
       if (!this.quiz || !this.quiz.options) {
@@ -405,6 +420,9 @@ export default {
     this.userId = user.id;
     await this.loadJourneyConfig();
     await this.loadJourneyState();
+    if (this.isRandomEventPending) {
+      await this.openPendingRandomEventModal();
+    }
   },
   methods: {
     buildSmoothRoadPath(cities) {
@@ -517,6 +535,7 @@ export default {
 
         this.totalEnergy = data.totalEnergy || 0;
         this.currentMileage = data.currentMileage || 0;
+        this.journeyStatus = data.journeyStatus || 'NORMAL';
 
         const map = {};
         (data.nodes || []).forEach(node => {
@@ -527,7 +546,41 @@ export default {
         console.error('加载零碳状态失败:', error);
       }
     },
+    isRandomEventPendingError(error) {
+      const code = String(error?.response?.data?.code || '').toUpperCase();
+      return code.includes('RANDOM_EVENT_PENDING');
+    },
+    async openPendingRandomEventModal() {
+      if (this.quizLoading || this.answering) {
+        return;
+      }
+
+      this.pendingRandomEventMode = true;
+      this.showModal = true;
+      this.selectedKey = '';
+      this.feedbackMsg = '';
+      this.lastCorrect = false;
+      this.quiz = null;
+      this.quizLoading = true;
+      try {
+        const response = await this.$axios.get(this.gamificationApi('/journey/random-event/quiz'));
+        this.quiz = response.data;
+        this.journeyStatus = 'PENDING_RANDOM_EVENT';
+      } catch (error) {
+        console.error('获取随机事件题失败:', error);
+        this.pendingRandomEventMode = false;
+        this.showModal = false;
+        this.feedbackMsg = error?.response?.data?.message || '随机事件题目加载失败，请稍后重试';
+      } finally {
+        this.quizLoading = false;
+      }
+    },
     async fetchQuiz(cityIndex) {
+      if (this.isRandomEventPending) {
+        await this.openPendingRandomEventModal();
+        return;
+      }
+
       const requestSeq = ++this.quizRequestSeq;
       this.quizLoading = true;
       try {
@@ -550,6 +603,11 @@ export default {
     },
     async handleNodeClick(index) {
       if (!this.isLatestUnlockAndUnchecked(index) || this.showModal || this.quizLoading || this.openingQuiz) {
+        return;
+      }
+
+      if (this.isRandomEventPending) {
+        await this.openPendingRandomEventModal();
         return;
       }
 
@@ -599,6 +657,7 @@ export default {
       this.selectedKey = '';
       this.feedbackMsg = '';
       this.lastCorrect = false;
+      this.pendingRandomEventMode = false;
     },
     dismissDrawModal() {
       this.showDrawModal = false;
@@ -672,17 +731,38 @@ export default {
       this.answering = true;
 
       try {
-        const response = await this.$axios.post(this.gamificationApi('/journey/checkin'), {
-          cityIndex: this.cities[this.activeNodeIndex]?.cityIndex ?? this.activeNodeIndex,
-          quizId: this.quiz.id,
-          selectedAnswer: optionKey
-        });
+        let response;
+        if (this.pendingRandomEventMode) {
+          response = await this.$axios.post(this.gamificationApi('/journey/random-event/answer'), {
+            quizId: this.quiz.id,
+            selectedAnswer: optionKey
+          });
+        } else {
+          response = await this.$axios.post(this.gamificationApi('/journey/checkin'), {
+            cityIndex: this.cities[this.activeNodeIndex]?.cityIndex ?? this.activeNodeIndex,
+            quizId: this.quiz.id,
+            selectedAnswer: optionKey
+          });
+        }
 
         const result = response.data || {};
         this.lastCorrect = !!result.correct;
 
         if (!result.correct) {
-          this.feedbackMsg = '回答不正确，再试试下一座城市挑战吧。';
+          this.feedbackMsg = this.pendingRandomEventMode
+            ? '随机事件答错了，请冷却后重试。'
+            : '回答不正确，再试试下一座城市挑战吧。';
+          return;
+        }
+
+        if (this.pendingRandomEventMode) {
+          this.feedbackMsg = '随机事件已完成，冻结里程已解除。';
+          this.pendingRandomEventMode = false;
+          this.journeyStatus = 'NORMAL';
+          await this.loadJourneyState();
+          setTimeout(() => {
+            this.closeModal();
+          }, 800);
           return;
         }
 
@@ -699,6 +779,13 @@ export default {
           this.confettiTimer = null;
         }, 1100);
       } catch (error) {
+        if (this.isRandomEventPendingError(error)) {
+          this.journeyStatus = 'PENDING_RANDOM_EVENT';
+          this.selectedKey = '';
+          await this.openPendingRandomEventModal();
+          return;
+        }
+
         this.feedbackMsg = error?.response?.data?.message || '奖励结算失败，请稍后重试';
         this.showConfetti = false;
         this.selectedKey = '';
@@ -1144,6 +1231,28 @@ export default {
 
 .status-item {
   text-align: center;
+}
+
+.random-event-alert {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.event-action-btn {
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.event-action-btn:hover {
+  border-color: #d97706;
+  background: #fef3c7;
 }
 
 .status-label {
@@ -1595,6 +1704,13 @@ export default {
     position: static;
     width: 100%;
     margin-top: 12px;
+  }
+
+  .status-bar {
+    height: auto;
+    padding: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 8px;
   }
 
   .status-value {

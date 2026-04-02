@@ -243,13 +243,16 @@ public class GamificationService {
 
         Long currentMapId = account.getCurrentMapId();
         boolean hasMileageProgress = account.getCurrentMileage() != null && account.getCurrentMileage() > 0;
+        boolean hasFrozenMileage = account.getFrozenMileage() != null && account.getFrozenMileage() > 0;
+        boolean hasPendingRandomEvent = JOURNEY_STATUS_PENDING_RANDOM_EVENT.equals(account.getJourneyStatus())
+            || account.getPendingRandomQuizId() != null;
         boolean hasCheckedIn = currentMapId != null
                 && greenJourneyNodeStateRepository.existsByUserIdAndMapIdAndNodeState(
                         userId,
                         currentMapId,
                         NodeState.CHECKED_IN.name());
 
-        if (hasMileageProgress || hasCheckedIn) {
+        if (hasMileageProgress || hasCheckedIn || hasFrozenMileage || hasPendingRandomEvent) {
             throw new GamificationException(
                     GamificationErrorCode.MAP_SELECTION_LOCKED,
                     "已有旅程进度，当前账号不可切换路线");
@@ -616,6 +619,13 @@ public class GamificationService {
         String selectedAnswer = normalizeOption(request.selectedAnswer());
 
         GreenEnergyAccount account = getOrCreateUserAccount(userId);
+        if (JOURNEY_STATUS_PENDING_RANDOM_EVENT.equals(account.getJourneyStatus())
+                && account.getPendingRandomQuizId() != null) {
+            throw new GamificationException(
+                    GamificationErrorCode.RANDOM_EVENT_PENDING,
+                    "存在待完成的随机突发事件，请先完成随机事件答题");
+        }
+
         Long mapId = account.getCurrentMapId();
         getMapNodeOrThrow(mapId, cityIndex);
 
@@ -660,7 +670,7 @@ public class GamificationService {
                 GamificationErrorCode.QUIZ_NOT_FOUND,
                 "题目不存在"));
 
-        if (quiz.getCityIndex() != null && !cityIndex.equals(quiz.getCityIndex())) {
+        if (quiz.getCityIndex() == null || !cityIndex.equals(quiz.getCityIndex())) {
             throw new GamificationException(
                     GamificationErrorCode.QUIZ_CITY_MISMATCH,
                     "题目与城市节点不匹配，请重新获取题目");

@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.Objects;
 
 import org.com.repair.DTO.ApiResponse;
+import org.com.repair.exception.GamificationErrorCode;
 import org.com.repair.exception.GamificationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +24,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(GamificationException.class)
     public ResponseEntity<ApiResponse<Void>> handleGamificationException(GamificationException ex) {
-        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), "GAMIFICATION_INVALID_REQUEST");
+        HttpStatus status = resolveGamificationStatus(ex.getErrorCode());
+        String errorCode = ex.getErrorCode() == null ? "GAMIFICATION_ERROR" : ex.getErrorCode().name();
+        return buildResponse(status, ex.getMessage(), errorCode, false);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -77,9 +80,17 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ApiResponse<Void>> buildResponse(HttpStatus status, String message, String errorCode) {
+        return buildResponse(status, message, errorCode, true);
+    }
+
+    private ResponseEntity<ApiResponse<Void>> buildResponse(HttpStatus status,
+                                                            String message,
+                                                            String errorCode,
+                                                            boolean formatWithApiPrefix) {
+        String normalizedCode = normalizeBusinessCode(errorCode);
         ApiResponse<Void> body = new ApiResponse<>(
                 false,
-                formatErrorCode(status, errorCode),
+                formatWithApiPrefix ? formatErrorCode(status, normalizedCode) : normalizedCode,
                 message,
                 null,
                 LocalDateTime.now().toString());
@@ -87,7 +98,31 @@ public class GlobalExceptionHandler {
     }
 
     private String formatErrorCode(HttpStatus status, String businessCode) {
-        String normalized = businessCode == null ? "UNKNOWN" : businessCode.trim().replace(' ', '_').toUpperCase();
-        return "API_" + status.value() + "_" + normalized;
+        return "API_" + status.value() + "_" + normalizeBusinessCode(businessCode);
+    }
+
+    private String normalizeBusinessCode(String businessCode) {
+        return businessCode == null ? "UNKNOWN" : businessCode.trim().replace(' ', '_').toUpperCase();
+    }
+
+    private HttpStatus resolveGamificationStatus(GamificationErrorCode errorCode) {
+        if (errorCode == null) {
+            return HttpStatus.BAD_REQUEST;
+        }
+        return switch (errorCode) {
+            case NODE_ALREADY_CHECKED_IN,
+                 NODE_NOT_UNLOCKED,
+                 NODE_NOT_CURRENT_UNLOCKED,
+                 DAILY_QUIZ_LIMIT_REACHED,
+                 REWARD_ALREADY_GRANTED,
+                 DAILY_ENERGY_CAP_EXCEEDED,
+                 MAP_SELECTION_LOCKED,
+                 RANDOM_EVENT_PENDING,
+                 RANDOM_EVENT_NOT_PENDING,
+                 RANDOM_EVENT_QUIZ_MISMATCH,
+                 COUPON_NOT_REDEEMABLE,
+                 RETRY_COOLDOWN_ACTIVE -> HttpStatus.CONFLICT;
+            default -> HttpStatus.BAD_REQUEST;
+        };
     }
 }
