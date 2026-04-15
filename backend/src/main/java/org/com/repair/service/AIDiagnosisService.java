@@ -12,7 +12,10 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -20,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 public class AIDiagnosisService {
 
     private static final Logger logger = LoggerFactory.getLogger(AIDiagnosisService.class);
+    private static final int MAX_IMAGE_COUNT = 3;
+    private static final int MAX_IMAGE_DATA_URL_LENGTH = 7_000_000;
     private static final String PRE_DIAG_PROMPT = "你是一个预诊客服。请从车主的描述中提取关键信息，严格输出JSON格式的故障特征表，包含：核心症状、疑似部位、触发条件。不要给出最终结论。";
     private static final String MAIN_AGENT_PROMPT = "你是主治维修工程师。请根据以下结构化特征表，给出初步排查路径和概率最高的三个故障点。";
     private static final String RED_TEAM_PROMPT = "你是专挑刺的QA工程师（红队）。请仔细审视主治工程师的结论，指出他可能忽略的低概率/高风险长尾故障，或者排查逻辑中的漏洞。";
@@ -52,23 +57,42 @@ public class AIDiagnosisService {
     }
 
     public AIDiagnosisResponse diagnoseFault(String problemDescription, String role) {
-        return diagnoseFault(problemDescription, role, null);
+        return diagnoseFault(problemDescription, role, null, List.of());
     }
 
     public AIDiagnosisResponse diagnoseFault(String problemDescription, String role, Long technicianId) {
+        return diagnoseFault(problemDescription, role, technicianId, List.of());
+    }
+
+    public AIDiagnosisResponse diagnoseFault(String problemDescription,
+                                             String role,
+                                             Long technicianId,
+                                             List<String> imageDataUrls) {
         String traceId = UUID.randomUUID().toString();
         String normalizedRole = normalizeRole(role);
-        logger.info("[AI-CONSILIUM][{}] 会诊开始, role={}, technicianId={}", traceId, normalizedRole, technicianId);
+        String normalizedProblemDescription = normalizeProblemDescription(problemDescription);
+        List<String> normalizedImageDataUrls = normalizeImageDataUrls(imageDataUrls);
+
+        logger.info("[AI-CONSILIUM][{}] 会诊开始, role={}, technicianId={}, imageCount={}",
+                traceId,
+                normalizedRole,
+                technicianId,
+                normalizedImageDataUrls.size());
         try {
-            AIDiagnosisResponse response = expertConsilium(problemDescription, normalizedRole, technicianId, traceId);
+            AIDiagnosisResponse response = expertConsilium(
+                    normalizedProblemDescription,
+                    normalizedRole,
+                    technicianId,
+                    normalizedImageDataUrls,
+                    traceId);
             logger.info("[AI-CONSILIUM][{}] 会诊完成", traceId);
             return response;
         } catch (Exception e) {
             logger.warn("[AI-CONSILIUM][{}] 专家会诊失败，回退单模型诊断: {}", traceId, e.getMessage(), e);
             try {
-                String fallbackPrompt = buildPrompt(problemDescription, normalizedRole);
-                String fallbackText = callOpenAIAPI(fallbackPrompt, traceId, "FALLBACK_SINGLE");
-                AIDiagnosisResponse fallbackResponse = parseResponse(fallbackText, problemDescription);
+                String fallbackPrompt = buildPrompt(normalizedProblemDescription, normalizedRole);
+                String fallbackText = callOpenAIAPI(fallbackPrompt, normalizedImageDataUrls, traceId, "FALLBACK_SINGLE");
+                AIDiagnosisResponse fallbackResponse = parseResponse(fallbackText, normalizedProblemDescription);
                 logger.info("[AI-CONSILIUM][{}] 单模型回退完成", traceId);
                 return fallbackResponse;
             } catch (SocketTimeoutException timeoutException) {
@@ -81,7 +105,11 @@ public class AIDiagnosisService {
         }
     }
 
-    private AIDiagnosisResponse expertConsilium(String problemDescription, String role, Long technicianId, String traceId) throws IOException {
+    private AIDiagnosisResponse expertConsilium(String problemDescription,
+                                                String role,
+                                                Long technicianId,
+                                                List<String> imageDataUrls,
+                                                String traceId) throws IOException {
         List<String> ecoTips = gamificationService.getEcoWaitingTips();
         String ecoTipContext = ecoTips.isEmpty() ? "" : ("\n\n绿色导向参考：" + ecoTips.get(0));
         double fatigueLevel = resolveTechnicianFatigueLevel(technicianId, traceId);
@@ -89,17 +117,17 @@ public class AIDiagnosisService {
         logger.info("[AI-CONSILIUM][{}] 融合上下文: ecoTips={}, fatigueLevel={}", traceId, ecoTips.size(), fatigueLevel);
 
         String preDiagInput = PRE_DIAG_PROMPT + "\n\n车主描述：" + problemDescription + ecoTipContext;
-        String structuredFeatures = runAgentStep("PRE_DIAG", preDiagInput, traceId);
+        String structuredFeatures = runAgentStep("PRE_DIAG", preDiagInput, imageDataUrls, traceId);
 
         String mainAgentInput = MAIN_AGENT_PROMPT +
                 "\n\n角色上下文：" + role +
                 "\n\n结构化特征表：\n" + structuredFeatures;
-        String initialDiagnosis = runAgentStep("MAIN_AGENT", mainAgentInput, traceId);
+        String initialDiagnosis = runAgentStep("MAIN_AGENT", mainAgentInput, List.of(), traceId);
 
         String redTeamInput = RED_TEAM_PROMPT +
                 "\n\n结构化特征表：\n" + structuredFeatures +
                 "\n\n主治诊断：\n" + initialDiagnosis;
-        String critique = runAgentStep("RED_TEAM", redTeamInput, traceId);
+        String critique = runAgentStep("RED_TEAM", redTeamInput, List.of(), traceId);
 
         String arbitratorInput = ARBITRATOR_PROMPT +
                 "\n\n结构化特征表：\n" + structuredFeatures +
@@ -112,7 +140,7 @@ public class AIDiagnosisService {
                 "- `## 分步排查`\n" +
                 "- `## 风险与安全提示`\n" +
                 "- 必要时在步骤中插入 `[安全高危校验]` 标记。";
-        String finalReport = runAgentStep("ARBITRATOR", arbitratorInput, traceId);
+        String finalReport = runAgentStep("ARBITRATOR", arbitratorInput, List.of(), traceId);
 
         return parseResponse(finalReport, problemDescription);
     }
@@ -142,9 +170,9 @@ public class AIDiagnosisService {
         }
     }
 
-    private String runAgentStep(String stage, String prompt, String traceId) throws IOException {
+    private String runAgentStep(String stage, String prompt, List<String> imageDataUrls, String traceId) throws IOException {
         logger.info("[AI-CONSILIUM][{}][{}] 调用开始, promptLength={}", traceId, stage, prompt != null ? prompt.length() : 0);
-        String result = callOpenAIAPI(prompt, traceId, stage);
+        String result = callOpenAIAPI(prompt, imageDataUrls, traceId, stage);
         if (result == null || result.isBlank()) {
             throw new IOException(stage + " 阶段返回空结果");
         }
@@ -185,12 +213,103 @@ public class AIDiagnosisService {
         return role.trim().toLowerCase();
     }
 
-    private String callOpenAIAPI(String prompt, String traceId, String stage) throws IOException {
-        String requestBody = String.format(
-            "{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}],\"temperature\":0.7}",
-            model,
-            prompt.replace("\"", "\\\"").replace("\n", "\\n")
-        );
+    private String normalizeProblemDescription(String problemDescription) {
+        if (problemDescription == null || problemDescription.isBlank()) {
+            return "（用户未提供文字描述，仅上传了故障图片）";
+        }
+        return problemDescription.trim();
+    }
+
+    private List<String> normalizeImageDataUrls(List<String> imageDataUrls) {
+        if (imageDataUrls == null || imageDataUrls.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> normalized = new ArrayList<>();
+        for (String imageDataUrl : imageDataUrls) {
+            if (imageDataUrl == null) {
+                continue;
+            }
+
+            String trimmed = imageDataUrl.trim();
+            if (trimmed.isBlank()) {
+                continue;
+            }
+
+            String normalizedDataUrl = trimmed.startsWith("data:image/")
+                    ? trimmed
+                    : "data:image/jpeg;base64," + trimmed;
+
+            if (!normalizedDataUrl.startsWith("data:image/") || !normalizedDataUrl.contains(";base64,")) {
+                throw new IllegalArgumentException("图片格式无效，请上传 PNG/JPG/WebP 图片");
+            }
+
+            if (normalizedDataUrl.length() > MAX_IMAGE_DATA_URL_LENGTH) {
+                throw new IllegalArgumentException("上传图片过大，请压缩后重试（单张不超过约5MB）");
+            }
+
+            normalized.add(normalizedDataUrl);
+            if (normalized.size() >= MAX_IMAGE_COUNT) {
+                break;
+            }
+        }
+
+        return normalized;
+    }
+
+    private String callOpenAIAPI(String prompt, List<String> imageDataUrls, String traceId, String stage) throws IOException {
+        List<String> normalizedImageDataUrls = normalizeImageDataUrls(imageDataUrls);
+
+        try {
+            return doCallOpenAIAPI(prompt, normalizedImageDataUrls, traceId, stage);
+        } catch (IOException imageModeException) {
+            if (normalizedImageDataUrls.isEmpty()) {
+                throw imageModeException;
+            }
+
+            logger.warn("[AI-CONSILIUM][{}][{}] 多模态调用失败，回退文本模式: {}",
+                    traceId,
+                    stage,
+                    imageModeException.getMessage());
+
+            String textOnlyPrompt = prompt + "\n\n补充说明：用户还上传了"
+                    + normalizedImageDataUrls.size()
+                    + "张故障图片，请在缺少图像细节时给出保守诊断建议。";
+
+            return doCallOpenAIAPI(textOnlyPrompt, List.of(), traceId, stage + "_TEXT_ONLY_FALLBACK");
+        }
+    }
+
+    private String doCallOpenAIAPI(String prompt, List<String> imageDataUrls, String traceId, String stage) throws IOException {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("model", model);
+        payload.put("temperature", 0.7);
+
+        Map<String, Object> userMessage = new LinkedHashMap<>();
+        userMessage.put("role", "user");
+
+        if (imageDataUrls == null || imageDataUrls.isEmpty()) {
+            userMessage.put("content", prompt);
+        } else {
+            List<Object> contentList = new ArrayList<>();
+
+            Map<String, Object> textBlock = new LinkedHashMap<>();
+            textBlock.put("type", "text");
+            textBlock.put("text", prompt);
+            contentList.add(textBlock);
+
+            for (String imageDataUrl : imageDataUrls) {
+                Map<String, Object> imageBlock = new LinkedHashMap<>();
+                imageBlock.put("type", "image_url");
+                imageBlock.put("image_url", Map.of("url", imageDataUrl));
+                contentList.add(imageBlock);
+            }
+
+            userMessage.put("content", contentList);
+        }
+
+        payload.put("messages", List.of(userMessage));
+        String requestBody = objectMapper.writeValueAsString(payload);
 
         Request request = new Request.Builder()
                 .url(baseUrl + "/chat/completions")

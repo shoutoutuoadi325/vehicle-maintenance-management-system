@@ -1,12 +1,13 @@
 package org.com.repair.DTO;
 
-import jakarta.validation.constraints.NotBlank;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AIDiagnosisRequest {
-    @NotBlank(message = "问题描述不能为空")
     private String problemDescription;
     private String role = "customer";
     private Long technicianId;
+    private List<String> imageDataUrls = new ArrayList<>();
 
     public AIDiagnosisRequest() {
     }
@@ -24,6 +25,16 @@ public class AIDiagnosisRequest {
         this.problemDescription = problemDescription;
         this.role = role;
         this.technicianId = technicianId;
+    }
+
+    public AIDiagnosisRequest(String problemDescription,
+                              String role,
+                              Long technicianId,
+                              List<String> imageDataUrls) {
+        this.problemDescription = problemDescription;
+        this.role = role;
+        this.technicianId = technicianId;
+        this.imageDataUrls = imageDataUrls;
     }
 
     public String getProblemDescription() {
@@ -48,5 +59,13 @@ public class AIDiagnosisRequest {
 
     public void setTechnicianId(Long technicianId) {
         this.technicianId = technicianId;
+    }
+
+    public List<String> getImageDataUrls() {
+        return imageDataUrls;
+    }
+
+    public void setImageDataUrls(List<String> imageDataUrls) {
+        this.imageDataUrls = imageDataUrls;
     }
 }
