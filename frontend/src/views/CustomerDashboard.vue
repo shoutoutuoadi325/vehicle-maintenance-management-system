@@ -457,17 +457,32 @@
               </div>
 
               <div class="diagnosis-media-uploader">
-                <label class="diagnosis-media-upload-btn">
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    multiple
+                <div class="diagnosis-media-actions">
+                  <label class="diagnosis-media-upload-btn">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      multiple
+                      :disabled="diagnosisLoading"
+                      @change="onDiagnosisImageSelected"
+                    >
+                    上传故障图片
+                  </label>
+                  <button
+                    type="button"
+                    class="diagnosis-media-voice-btn"
                     :disabled="diagnosisLoading"
-                    @change="onDiagnosisImageSelected"
+                    @click="toggleDiagnosisVoiceInput"
                   >
-                  上传故障图片
-                </label>
+                    <i class="fas" :class="diagnosisVoiceListening ? 'fa-microphone-slash' : 'fa-microphone'"></i>
+                    {{ diagnosisVoiceListening ? '停止语音' : '语音输入' }}
+                  </button>
+                </div>
                 <span class="diagnosis-media-hint">最多 {{ diagnosisMaxImageCount }} 张，单张不超过 {{ diagnosisMaxImageSizeMB }}MB</span>
+              </div>
+              <div v-if="diagnosisVoiceListening" class="diagnosis-voice-status">
+                <i class="fas fa-microphone"></i>
+                正在听写，请开始说话...
               </div>
               <div v-if="diagnosisImages.length" class="diagnosis-media-preview-grid">
                 <div
@@ -1007,6 +1022,9 @@ export default {
       diagnosisImages: [],
       diagnosisMaxImageCount: 3,
       diagnosisMaxImageSizeMB: 4,
+      diagnosisVoiceRecognition: null,
+      diagnosisVoiceSupported: false,
+      diagnosisVoiceListening: false,
       ecoTips: [
         '平稳起步可减少约 15% 的能耗与碳排放。',
         '提前观察路况减少急刹急加速，可显著降低油耗。',
@@ -1046,9 +1064,11 @@ export default {
     this.loadDiagnosisHistory();
     this.loadEcoTips();
     this.applyDiagnosisOrderFromRoute();
+    this.diagnosisVoiceSupported = !!this.getSpeechRecognitionCtor();
   },
   beforeDestroy() {
     this.stopEcoTipRotation();
+    this.stopDiagnosisVoiceInput();
   },
   methods: {
     loadUserInfo() {
@@ -1669,6 +1689,96 @@ export default {
         this.ecoTipTimer = null;
       }
     },
+    getSpeechRecognitionCtor() {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    },
+    ensureDiagnosisVoiceRecognition() {
+      const SpeechRecognitionCtor = this.getSpeechRecognitionCtor();
+      this.diagnosisVoiceSupported = !!SpeechRecognitionCtor;
+      if (!SpeechRecognitionCtor) {
+        return null;
+      }
+
+      if (this.diagnosisVoiceRecognition) {
+        return this.diagnosisVoiceRecognition;
+      }
+
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = 'zh-CN';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const segment = event.results[i][0]?.transcript || '';
+          if (event.results[i].isFinal && segment.trim()) {
+            transcript += segment.trim();
+          }
+        }
+
+        if (!transcript) {
+          return;
+        }
+
+        this.diagnosisForm.problemDescription = [
+          (this.diagnosisForm.problemDescription || '').trim(),
+          transcript
+        ].filter(Boolean).join('\n');
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          this.diagnosisError = '语音权限被拒绝，请在浏览器中允许麦克风访问';
+        } else if (event.error === 'no-speech') {
+          this.diagnosisError = '未识别到语音，请重试';
+        } else {
+          this.diagnosisError = '语音识别失败，请稍后重试';
+        }
+      };
+
+      recognition.onend = () => {
+        this.diagnosisVoiceListening = false;
+      };
+
+      this.diagnosisVoiceRecognition = recognition;
+      return recognition;
+    },
+    toggleDiagnosisVoiceInput() {
+      if (this.diagnosisVoiceListening) {
+        this.stopDiagnosisVoiceInput();
+        return;
+      }
+
+      const recognition = this.ensureDiagnosisVoiceRecognition();
+      if (!recognition) {
+        this.diagnosisError = '当前浏览器不支持语音输入，请使用最新版 Chrome 或 Edge';
+        this.$emit('message', this.diagnosisError, 'error');
+        return;
+      }
+
+      this.diagnosisError = null;
+      try {
+        recognition.start();
+        this.diagnosisVoiceListening = true;
+      } catch (error) {
+        this.diagnosisError = '语音识别启动失败，请稍后重试';
+      }
+    },
+    stopDiagnosisVoiceInput() {
+      if (this.diagnosisVoiceRecognition) {
+        try {
+          this.diagnosisVoiceRecognition.stop();
+        } catch (error) {
+          // Ignore stop failures from browser recognition state races.
+        }
+      }
+      this.diagnosisVoiceListening = false;
+    },
     async onDiagnosisImageSelected(event) {
       const files = Array.from(event.target.files || []);
       event.target.value = '';
@@ -1734,6 +1844,7 @@ export default {
         return;
       }
 
+      this.stopDiagnosisVoiceInput();
       this.diagnosisLoading = true;
       this.diagnosisError = null;
       this.diagnosisResult = null;
@@ -1799,6 +1910,7 @@ export default {
       }
     },
     clearDiagnosis() {
+      this.stopDiagnosisVoiceInput();
       this.diagnosisForm.problemDescription = '';
       this.diagnosisResult = null;
       this.diagnosisError = null;
@@ -2635,6 +2747,13 @@ export default {
   flex-wrap: wrap;
 }
 
+.diagnosis-media-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .diagnosis-media-upload-btn {
   display: inline-flex;
   align-items: center;
@@ -2651,9 +2770,36 @@ export default {
   display: none;
 }
 
+.diagnosis-media-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.65rem;
+  background: #ffffff;
+  color: #1f2937;
+  padding: 0.42rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.diagnosis-media-voice-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .diagnosis-media-hint {
   font-size: 0.8rem;
   color: #64748b;
+}
+
+.diagnosis-voice-status {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #2563eb;
+  font-size: 0.82rem;
 }
 
 .diagnosis-media-preview-grid {

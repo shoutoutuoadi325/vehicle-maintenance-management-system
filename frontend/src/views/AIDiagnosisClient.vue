@@ -51,18 +51,29 @@
           placeholder="例如：冷车启动抖动，怠速不稳，伴随发动机故障灯偶发点亮。"
         ></textarea>
         <div class="composer-media">
-          <label class="media-upload-btn">
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              multiple
+          <div class="media-actions">
+            <label class="media-upload-btn">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                :disabled="loading"
+                @change="onImageSelected"
+              >
+              <span>上传图片</span>
+            </label>
+            <button
+              type="button"
+              class="media-voice-btn"
               :disabled="loading"
-              @change="onImageSelected"
+              @click="toggleVoiceInput"
             >
-            <span>上传图片</span>
-          </label>
+              {{ voiceListening ? '停止语音' : '语音输入' }}
+            </button>
+          </div>
           <span class="media-upload-hint">最多 {{ maxImageCount }} 张，单张不超过 {{ maxImageSizeMB }}MB</span>
         </div>
+        <div v-if="voiceListening" class="voice-status">正在听写，请开始说话...</div>
         <div v-if="selectedImages.length" class="media-preview-grid">
           <div
             v-for="(image, index) in selectedImages"
@@ -150,12 +161,107 @@ export default {
       lastDiagnosisInput: '',
       selectedImages: [],
       maxImageCount: 3,
-      maxImageSizeMB: 4
+      maxImageSizeMB: 4,
+      voiceRecognition: null,
+      voiceSupported: false,
+      voiceListening: false
     }
+  },
+  mounted() {
+    this.voiceSupported = !!this.getSpeechRecognitionCtor()
+  },
+  beforeDestroy() {
+    this.stopVoiceInput()
   },
   methods: {
     renderMarkdown(text) {
       return marked.parse(text || '')
+    },
+    getSpeechRecognitionCtor() {
+      if (typeof window === 'undefined') {
+        return null
+      }
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null
+    },
+    ensureVoiceRecognition() {
+      const SpeechRecognitionCtor = this.getSpeechRecognitionCtor()
+      this.voiceSupported = !!SpeechRecognitionCtor
+      if (!SpeechRecognitionCtor) {
+        return null
+      }
+
+      if (this.voiceRecognition) {
+        return this.voiceRecognition
+      }
+
+      const recognition = new SpeechRecognitionCtor()
+      recognition.lang = 'zh-CN'
+      recognition.continuous = false
+      recognition.interimResults = true
+      recognition.maxAlternatives = 1
+
+      recognition.onresult = (event) => {
+        let transcript = ''
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const segment = event.results[i][0]?.transcript || ''
+          if (event.results[i].isFinal && segment.trim()) {
+            transcript += segment.trim()
+          }
+        }
+
+        if (!transcript) {
+          return
+        }
+
+        this.problemDescription = [this.problemDescription.trim(), transcript].filter(Boolean).join('\n')
+      }
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          this.error = '语音权限被拒绝，请在浏览器中允许麦克风访问'
+        } else if (event.error === 'no-speech') {
+          this.error = '未识别到语音，请重试'
+        } else {
+          this.error = '语音识别失败，请稍后重试'
+        }
+      }
+
+      recognition.onend = () => {
+        this.voiceListening = false
+      }
+
+      this.voiceRecognition = recognition
+      return recognition
+    },
+    toggleVoiceInput() {
+      if (this.voiceListening) {
+        this.stopVoiceInput()
+        return
+      }
+
+      const recognition = this.ensureVoiceRecognition()
+      if (!recognition) {
+        this.error = '当前浏览器不支持语音输入，请使用最新版 Chrome 或 Edge'
+        return
+      }
+
+      this.error = ''
+      try {
+        recognition.start()
+        this.voiceListening = true
+      } catch (err) {
+        this.error = '语音识别启动失败，请稍后重试'
+      }
+    },
+    stopVoiceInput() {
+      if (this.voiceRecognition) {
+        try {
+          this.voiceRecognition.stop()
+        } catch (err) {
+          // Ignore stop failures from browser recognition state races.
+        }
+      }
+      this.voiceListening = false
     },
     async onImageSelected(event) {
       const files = Array.from(event.target.files || [])
@@ -219,6 +325,7 @@ export default {
         return
       }
 
+      this.stopVoiceInput()
       this.loading = true
       this.error = ''
       this.lastDiagnosisInput = input || `用户上传了 ${imageDataUrls.length} 张故障图片（未填写文字描述）`
@@ -307,6 +414,7 @@ export default {
       this.messages = []
       this.lastDiagnosisInput = ''
       this.clearSelectedImages()
+      this.stopVoiceInput()
     }
   }
 }
@@ -425,6 +533,13 @@ export default {
   gap: 0.5rem;
 }
 
+.media-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
 .media-upload-btn {
   display: inline-flex;
   align-items: center;
@@ -442,9 +557,30 @@ export default {
   display: none;
 }
 
+.media-voice-btn {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.55rem;
+  padding: 0.35rem 0.75rem;
+  color: #334155;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.media-voice-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .media-upload-hint {
   font-size: 0.78rem;
   color: #64748b;
+}
+
+.voice-status {
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+  color: #2563eb;
 }
 
 .media-preview-grid {

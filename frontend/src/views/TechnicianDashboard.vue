@@ -428,17 +428,32 @@
           placeholder="例如：冷车启动抖动，怠速不稳，故障灯偶发点亮，P0301..."
         ></textarea>
         <div class="copilot-media-uploader">
-          <label class="copilot-media-upload-btn">
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              multiple
+          <div class="copilot-media-actions">
+            <label class="copilot-media-upload-btn">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                :disabled="copilotLoading"
+                @change="onCopilotImageSelected"
+              >
+              上传故障图片
+            </label>
+            <button
+              type="button"
+              class="copilot-media-voice-btn"
               :disabled="copilotLoading"
-              @change="onCopilotImageSelected"
+              @click="toggleCopilotVoiceInput"
             >
-            上传故障图片
-          </label>
+              <i class="fas" :class="copilotVoiceListening ? 'fa-microphone-slash' : 'fa-microphone'"></i>
+              {{ copilotVoiceListening ? '停止语音' : '语音输入' }}
+            </button>
+          </div>
           <span class="copilot-media-hint">最多 {{ copilotMaxImageCount }} 张，单张不超过 {{ copilotMaxImageSizeMB }}MB</span>
+        </div>
+        <div v-if="copilotVoiceListening" class="copilot-voice-status">
+          <i class="fas fa-microphone"></i>
+          正在听写，请开始说话...
         </div>
         <div v-if="copilotImages.length" class="copilot-media-preview-grid">
           <div
@@ -803,7 +818,10 @@ export default {
       copilotLoading: false,
       copilotImages: [],
       copilotMaxImageCount: 3,
-      copilotMaxImageSizeMB: 4
+      copilotMaxImageSizeMB: 4,
+      copilotVoiceRecognition: null,
+      copilotVoiceSupported: false,
+      copilotVoiceListening: false
     }
   },
   computed: {
@@ -836,6 +854,10 @@ export default {
   created() {
     this.loadUserInfo();
     this.loadData();
+    this.copilotVoiceSupported = !!this.getSpeechRecognitionCtor();
+  },
+  beforeDestroy() {
+    this.stopCopilotVoiceInput();
   },
   methods: {
     loadUserInfo() {
@@ -868,6 +890,95 @@ export default {
         console.error('加载数据失败:', error);
         this.$emit('message', '加载数据失败', 'error');
       }
+    },
+    getSpeechRecognitionCtor() {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    },
+    ensureCopilotVoiceRecognition() {
+      const SpeechRecognitionCtor = this.getSpeechRecognitionCtor();
+      this.copilotVoiceSupported = !!SpeechRecognitionCtor;
+      if (!SpeechRecognitionCtor) {
+        return null;
+      }
+
+      if (this.copilotVoiceRecognition) {
+        return this.copilotVoiceRecognition;
+      }
+
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = 'zh-CN';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const segment = event.results[i][0]?.transcript || '';
+          if (event.results[i].isFinal && segment.trim()) {
+            transcript += segment.trim();
+          }
+        }
+
+        if (!transcript) {
+          return;
+        }
+
+        this.copilotProblemDescription = [
+          (this.copilotProblemDescription || '').trim(),
+          transcript
+        ].filter(Boolean).join('\n');
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          this.copilotError = '语音权限被拒绝，请在浏览器中允许麦克风访问';
+        } else if (event.error === 'no-speech') {
+          this.copilotError = '未识别到语音，请重试';
+        } else {
+          this.copilotError = '语音识别失败，请稍后重试';
+        }
+      };
+
+      recognition.onend = () => {
+        this.copilotVoiceListening = false;
+      };
+
+      this.copilotVoiceRecognition = recognition;
+      return recognition;
+    },
+    toggleCopilotVoiceInput() {
+      if (this.copilotVoiceListening) {
+        this.stopCopilotVoiceInput();
+        return;
+      }
+
+      const recognition = this.ensureCopilotVoiceRecognition();
+      if (!recognition) {
+        this.copilotError = '当前浏览器不支持语音输入，请使用最新版 Chrome 或 Edge';
+        return;
+      }
+
+      this.copilotError = '';
+      try {
+        recognition.start();
+        this.copilotVoiceListening = true;
+      } catch (error) {
+        this.copilotError = '语音识别启动失败，请稍后重试';
+      }
+    },
+    stopCopilotVoiceInput() {
+      if (this.copilotVoiceRecognition) {
+        try {
+          this.copilotVoiceRecognition.stop();
+        } catch (error) {
+          // Ignore stop failures from browser recognition state races.
+        }
+      }
+      this.copilotVoiceListening = false;
     },
     async onCopilotImageSelected(event) {
       const files = Array.from(event.target.files || []);
@@ -932,6 +1043,7 @@ export default {
         return;
       }
 
+      this.stopCopilotVoiceInput();
       this.copilotLoading = true;
       this.copilotError = '';
 
@@ -1603,6 +1715,13 @@ export default {
   flex-wrap: wrap;
 }
 
+.copilot-media-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .copilot-media-upload-btn {
   display: inline-flex;
   align-items: center;
@@ -1620,9 +1739,36 @@ export default {
   display: none;
 }
 
+.copilot-media-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.6rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  color: #f9fafb;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.copilot-media-voice-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .copilot-media-hint {
   color: #9ca3af;
   font-size: 0.78rem;
+}
+
+.copilot-voice-status {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #93c5fd;
+  font-size: 0.8rem;
 }
 
 .copilot-media-preview-grid {
