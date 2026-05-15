@@ -40,6 +40,13 @@ public class AIDiagnosisService {
     private static final int MAX_DESCRIPTION_LENGTH = 2000;
     private static final double BASE_BYPASS_CONFIDENCE = 0.9;
     private static final double SAFETY_NET_THRESHOLD = 0.85;
+    private static final double MAX_HIGH_FREQUENCY_CONFIDENCE = 0.96;
+    private static final double MAX_MULTI_PATTERN_CONFIDENCE = 0.95;
+    private static final double CONFIDENCE_BOOST_PER_PATTERN = 0.03;
+    private static final double MIN_CONFLICT_CONFIDENCE = 0.35;
+    private static final double CONFLICT_CONFIDENCE_PENALTY = 0.08;
+    private static final int DETAILED_RESPONSE_LENGTH_THRESHOLD = 200;
+    private static final double DETAILED_RESPONSE_CONFIDENCE_BOOST = 0.05;
     private static final String PRE_DIAG_PROMPT = "你是一个预诊客服。请从车主的描述中提取关键信息，严格输出JSON格式的故障特征表，包含：核心症状、疑似部位、触发条件。不要给出最终结论。";
     private static final String MAIN_AGENT_PROMPT = "你是主治维修工程师。请根据以下结构化特征表，给出初步排查路径和概率最高的三个故障点。";
     private static final String RED_TEAM_PROMPT = "你是专挑刺的QA工程师（红队）。请仔细审视主治工程师的结论，指出他可能忽略的低概率/高风险长尾故障，或者排查逻辑中的漏洞。";
@@ -258,19 +265,19 @@ public class AIDiagnosisService {
         List<RulePattern> patterns = List.of(
                 new RulePattern("启动困难", Pattern.compile("无法启动|打不着火|启动困难"), "启动系统故障",
                         "检查电瓶、电源线路与点火系统，必要时读取启动故障码。", 0.88, 2.5),
-                new RulePattern("刹车异常", Pattern.compile("刹车.*(失灵|变软|偏软|踩不动|异响)"), "制动系统异常",
+                new RulePattern("刹车异常", Pattern.compile("刹车.{0,10}(失灵|变软|偏软|踩不动|异响)"), "制动系统异常",
                         "检查刹车油液位、真空助力和刹车片磨损情况。", 0.92, 3.0),
-                new RulePattern("发动机异响", Pattern.compile("发动机.*(异响|抖动|怠速不稳|动力不足)"), "发动机运行异常",
+                new RulePattern("发动机异响", Pattern.compile("发动机.{0,10}(异响|抖动|怠速不稳|动力不足)"), "发动机运行异常",
                         "检查点火、喷油与机脚垫，必要时进行压缩比测试。", 0.85, 4.0),
-                new RulePattern("变速箱顿挫", Pattern.compile("变速箱.*(顿挫|异响|打滑)|换挡.*(顿挫|迟缓)"), "变速箱/传动异常",
+                new RulePattern("变速箱顿挫", Pattern.compile("变速箱.{0,10}(顿挫|异响|打滑)|换挡.{0,10}(顿挫|迟缓)"), "变速箱/传动异常",
                         "检查变速箱油位与油质，必要时进行离合器与阀体诊断。", 0.84, 4.5),
-                new RulePattern("空调异常", Pattern.compile("空调.*(不制冷|异味|不出风|不制热)"), "空调系统异常",
+                new RulePattern("空调异常", Pattern.compile("空调.{0,10}(不制冷|异味|不出风|不制热)"), "空调系统异常",
                         "检查冷媒压力、压缩机与鼓风机工作状态。", 0.82, 3.5),
-                new RulePattern("轮胎异常", Pattern.compile("轮胎.*(漏气|爆胎|胎压)|方向.*(跑偏|抖动)"), "轮胎/行驶安全异常",
+                new RulePattern("轮胎异常", Pattern.compile("轮胎.{0,10}(漏气|爆胎|胎压)|方向.{0,10}(跑偏|抖动)"), "轮胎/行驶安全异常",
                         "检查胎压与轮胎磨损，必要时进行动平衡与四轮定位。", 0.83, 2.0),
                 new RulePattern("电气风险", Pattern.compile("冒烟|烧焦味|焦糊味|短路"), "电气/高温风险",
                         "立即断电检查线束与保险丝，排查局部过热源。", 0.9, 2.5),
-                new RulePattern("电瓶亏电", Pattern.compile("电瓶.*(亏电|没电|老化)|电池.*(亏电|没电)"), "供电系统异常",
+                new RulePattern("电瓶亏电", Pattern.compile("电瓶.{0,6}(亏电|没电|老化)|电池.{0,6}(亏电|没电)"), "供电系统异常",
                         "检查电瓶寿命、发电机输出与静态漏电。", 0.86, 2.5)
         );
 
@@ -311,7 +318,7 @@ public class AIDiagnosisService {
         if (highFrequencyMatch.isPresent()) {
             HighFrequencyFault fault = highFrequencyMatch.get();
             signals.add("高频故障库:" + fault.label());
-            confidence = Math.min(0.96, confidence + fault.confidenceBoost());
+            confidence = Math.min(MAX_HIGH_FREQUENCY_CONFIDENCE, confidence + fault.confidenceBoost());
             if (primary == null) {
                 faultType = fault.faultType();
                 suggestion = fault.suggestion();
@@ -319,7 +326,7 @@ public class AIDiagnosisService {
         }
 
         if (matched.size() > 1) {
-            confidence = Math.min(0.95, confidence + 0.03 * (matched.size() - 1));
+            confidence = Math.min(MAX_MULTI_PATTERN_CONFIDENCE, confidence + CONFIDENCE_BOOST_PER_PATTERN * (matched.size() - 1));
         }
 
         boolean bypass = confidence >= BASE_BYPASS_CONFIDENCE;
@@ -405,15 +412,26 @@ public class AIDiagnosisService {
             });
         }
 
-        for (String materialName : candidateMaterials) {
-            List<MaterialResponse> materials = materialService.getMaterialsByName(materialName);
-            for (MaterialResponse material : materials) {
-                Integer stock = material.stockQuantity();
-                Integer minimum = material.minimumStockLevel();
-                materialHints.add(material.name() + "(库存:" + stock + ")");
-                if (stock != null && minimum != null && stock < minimum) {
-                    lowStockHints.add(material.name());
-                }
+        Set<String> candidateMaterialTokens = candidateMaterials.stream()
+                .filter(Objects::nonNull)
+                .map(String::toLowerCase)
+                .collect(Collectors.toSet());
+        List<MaterialResponse> allMaterials = materialService.getAllMaterials();
+        for (MaterialResponse material : allMaterials) {
+            String name = material.name();
+            if (name == null) {
+                continue;
+            }
+            String lowerName = name.toLowerCase();
+            boolean matched = candidateMaterialTokens.stream().anyMatch(lowerName::contains);
+            if (!matched) {
+                continue;
+            }
+            Integer stock = material.stockQuantity();
+            Integer minimum = material.minimumStockLevel();
+            materialHints.add(name + "(库存:" + stock + ")");
+            if (stock != null && minimum != null && stock < minimum) {
+                lowStockHints.add(name);
             }
         }
 
@@ -441,32 +459,18 @@ public class AIDiagnosisService {
     }
 
     private AgentEvidence runHistoricalAgent(HybridDiagnosisContext context, RulePreprocessResult ruleResult) {
-        List<String> keywords = extractKeywords(context.problemDescription());
+        List<String> keywords = new ArrayList<>(extractKeywords(context.problemDescription()));
         if (keywords.isEmpty() && !ruleResult.signals().isEmpty()) {
-            keywords = ruleResult.signals();
+            keywords.addAll(ruleResult.signals());
         }
 
-        List<RepairOrder> orders = new ArrayList<>();
-        for (String keyword : keywords) {
-            if (keyword == null || keyword.isBlank()) {
-                continue;
-            }
-            orders.addAll(repairOrderRepository.findTop5ByDescriptionContainingIgnoreCaseOrderByCreatedAtDesc(keyword));
-            if (orders.size() >= 5) {
-                break;
-            }
-        }
-
-        Map<Long, RepairOrder> deduped = new LinkedHashMap<>();
-        for (RepairOrder order : orders) {
-            if (order != null && order.getId() != null) {
-                deduped.put(order.getId(), order);
-            }
-        }
-        List<RepairOrder> recentOrders = new ArrayList<>(deduped.values());
-        if (recentOrders.size() > 5) {
-            recentOrders = recentOrders.subList(0, 5);
-        }
+        String primaryKeyword = keywords.stream()
+                .filter(keyword -> keyword != null && !keyword.isBlank())
+                .findFirst()
+                .orElse(null);
+        List<RepairOrder> recentOrders = primaryKeyword == null
+                ? List.of()
+                : repairOrderRepository.findTop5ByDescriptionContainingIgnoreCaseOrderByCreatedAtDesc(primaryKeyword);
 
         String summary;
         if (recentOrders.isEmpty()) {
@@ -536,10 +540,10 @@ public class AIDiagnosisService {
         boolean conflict = ruleCategory.isPresent() && agentCategory.isPresent()
                 && !Objects.equals(ruleCategory.get(), agentCategory.get());
         if (conflict) {
-            confidence = Math.max(0.35, confidence - 0.08);
+            confidence = Math.max(MIN_CONFLICT_CONFIDENCE, confidence - CONFLICT_CONFIDENCE_PENALTY);
         }
 
-        String report = buildFusionReport(context, ruleResult, agentResult, finalFault, confidence, conflict);
+        String report = buildFusionReport(context, ruleResult, agentResult, finalFault, confidence, conflict, ruleWeight, agentWeight);
         report = privacyReport.restore(report);
 
         List<String> decisionPath = new ArrayList<>();
@@ -616,7 +620,9 @@ public class AIDiagnosisService {
                                      MultiAgentResult agentResult,
                                      String finalFault,
                                      double confidence,
-                                     boolean conflict) {
+                                     boolean conflict,
+                                     double ruleWeight,
+                                     double agentWeight) {
         StringBuilder builder = new StringBuilder();
         builder.append("## 综合诊断报告\n\n");
         builder.append("### 规则预处理层\n");
@@ -639,7 +645,11 @@ public class AIDiagnosisService {
         }
 
         builder.append("### 决策融合层\n");
-        builder.append("- 迟融合策略：规则权重45%，Agent权重55%。\n");
+        builder.append("- 迟融合策略：规则权重")
+                .append(String.format("%.0f", ruleWeight * 100))
+                .append("%，Agent权重")
+                .append(String.format("%.0f", agentWeight * 100))
+                .append("%。\n");
         builder.append("- 加权证据推理：综合置信度 ").append(String.format("%.2f", confidence)).append("。\n");
         if (conflict) {
             builder.append("- 冲突消解：规则与Agent结论不一致，已按加权证据重新排序。\n");
@@ -721,8 +731,8 @@ public class AIDiagnosisService {
         if (response.contains("不确定") || response.contains("无法判断")) {
             score -= 0.1;
         }
-        if (response.length() > 200) {
-            score += 0.05;
+        if (response.length() > DETAILED_RESPONSE_LENGTH_THRESHOLD) {
+            score += DETAILED_RESPONSE_CONFIDENCE_BOOST;
         }
         return Math.min(0.9, Math.max(0.35, score));
     }
