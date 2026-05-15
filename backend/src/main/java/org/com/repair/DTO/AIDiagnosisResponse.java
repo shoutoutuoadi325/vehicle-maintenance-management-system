@@ -9,6 +9,10 @@ public class AIDiagnosisResponse {
     private Integer estimatedCostMax;
     private Integer estimatedHoursMin;
     private Integer estimatedHoursMax;
+    private Double confidenceScore;
+    private String workflowStatus;
+    private java.util.List<String> ruleHits = new java.util.ArrayList<>();
+    private java.util.List<String> agentSummaries = new java.util.ArrayList<>();
     private boolean success;
     private String errorMessage;
 
@@ -88,6 +92,38 @@ public class AIDiagnosisResponse {
 
     public void setEstimatedHoursMax(Integer estimatedHoursMax) {
         this.estimatedHoursMax = estimatedHoursMax;
+    }
+
+    public Double getConfidenceScore() {
+        return confidenceScore;
+    }
+
+    public void setConfidenceScore(Double confidenceScore) {
+        this.confidenceScore = confidenceScore;
+    }
+
+    public String getWorkflowStatus() {
+        return workflowStatus;
+    }
+
+    public void setWorkflowStatus(String workflowStatus) {
+        this.workflowStatus = workflowStatus;
+    }
+
+    public java.util.List<String> getRuleHits() {
+        return ruleHits;
+    }
+
+    public void setRuleHits(java.util.List<String> ruleHits) {
+        this.ruleHits = ruleHits;
+    }
+
+    public java.util.List<String> getAgentSummaries() {
+        return agentSummaries;
+    }
+
+    public void setAgentSummaries(java.util.List<String> agentSummaries) {
+        this.agentSummaries = agentSummaries;
     }
 
     public boolean isSuccess() {

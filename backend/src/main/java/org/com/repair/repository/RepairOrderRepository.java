@@ -44,6 +44,13 @@ public interface RepairOrderRepository extends JpaRepository<RepairOrder, Long> 
      */
     List<RepairOrder> findByVehicleId(Long vehicleId);
 
+    /**
+     * 根据描述关键词获取最近的维修工单
+     * @param keyword 关键词
+     * @return 最近工单列表
+     */
+    List<RepairOrder> findTop5ByDescriptionContainingIgnoreCaseOrderByCreatedAtDesc(String keyword);
+
        /**
         * 判断车辆是否存在进行中的维修工单
         * @param vehicleId 车辆ID
