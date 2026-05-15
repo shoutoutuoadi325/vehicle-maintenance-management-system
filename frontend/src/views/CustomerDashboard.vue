@@ -452,15 +452,61 @@
 - 刹车异常、方向盘抖动
 - 油耗增加、动力不足
 等等，描述越详细，诊断结果越准确。"
-                  required
                   :disabled="diagnosisLoading"
                 ></textarea>
+              </div>
+
+              <div class="diagnosis-media-uploader">
+                <div class="diagnosis-media-actions">
+                  <label class="diagnosis-media-upload-btn">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      multiple
+                      :disabled="diagnosisLoading"
+                      @change="onDiagnosisImageSelected"
+                    >
+                    上传故障图片
+                  </label>
+                  <button
+                    type="button"
+                    class="diagnosis-media-voice-btn"
+                    :disabled="diagnosisLoading"
+                    @click="toggleDiagnosisVoiceInput"
+                  >
+                    <i class="fas" :class="diagnosisVoiceListening ? 'fa-microphone-slash' : 'fa-microphone'"></i>
+                    {{ diagnosisVoiceListening ? '停止语音' : '语音输入' }}
+                  </button>
+                </div>
+                <span class="diagnosis-media-hint">最多 {{ diagnosisMaxImageCount }} 张，单张不超过 {{ diagnosisMaxImageSizeMB }}MB</span>
+              </div>
+              <div v-if="diagnosisVoiceListening" class="diagnosis-voice-status">
+                <i class="fas fa-microphone"></i>
+                正在听写，请开始说话...
+              </div>
+              <div v-if="diagnosisImages.length" class="diagnosis-media-preview-grid">
+                <div
+                  v-for="(image, index) in diagnosisImages"
+                  :key="image.id"
+                  class="diagnosis-media-preview-item"
+                >
+                  <img :src="image.previewUrl" :alt="`诊断附件${index + 1}`">
+                  <button
+                    type="button"
+                    class="diagnosis-media-remove-btn"
+                    :disabled="diagnosisLoading"
+                    @click="removeDiagnosisImage(index)"
+                    aria-label="删除图片"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
               
               <button 
                 type="submit" 
                 class="btn btn-primary btn-large"
-                :disabled="diagnosisLoading || !diagnosisForm.problemDescription.trim()"
+                :disabled="diagnosisLoading || (!diagnosisForm.problemDescription.trim() && !diagnosisImages.length)"
               >
                 <i :class="diagnosisLoading ? 'fas fa-spinner fa-spin' : 'fas fa-search'"></i>
                 {{ diagnosisLoading ? 'AI诊断中...' : '开始诊断' }}
@@ -973,6 +1019,12 @@ export default {
       diagnosisError: null,
       diagnosisLoading: false,
       diagnosisHistory: [],
+      diagnosisImages: [],
+      diagnosisMaxImageCount: 3,
+      diagnosisMaxImageSizeMB: 4,
+      diagnosisVoiceRecognition: null,
+      diagnosisVoiceSupported: false,
+      diagnosisVoiceListening: false,
       ecoTips: [
         '平稳起步可减少约 15% 的能耗与碳排放。',
         '提前观察路况减少急刹急加速，可显著降低油耗。',
@@ -1012,9 +1064,11 @@ export default {
     this.loadDiagnosisHistory();
     this.loadEcoTips();
     this.applyDiagnosisOrderFromRoute();
+    this.diagnosisVoiceSupported = !!this.getSpeechRecognitionCtor();
   },
   beforeDestroy() {
     this.stopEcoTipRotation();
+    this.stopDiagnosisVoiceInput();
   },
   methods: {
     loadUserInfo() {
@@ -1635,7 +1689,162 @@ export default {
         this.ecoTipTimer = null;
       }
     },
+    getSpeechRecognitionCtor() {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    },
+    ensureDiagnosisVoiceRecognition() {
+      const SpeechRecognitionCtor = this.getSpeechRecognitionCtor();
+      this.diagnosisVoiceSupported = !!SpeechRecognitionCtor;
+      if (!SpeechRecognitionCtor) {
+        return null;
+      }
+
+      if (this.diagnosisVoiceRecognition) {
+        return this.diagnosisVoiceRecognition;
+      }
+
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = 'zh-CN';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const segment = event.results[i][0]?.transcript || '';
+          if (event.results[i].isFinal && segment.trim()) {
+            transcript += segment.trim();
+          }
+        }
+
+        if (!transcript) {
+          return;
+        }
+
+        this.diagnosisForm.problemDescription = [
+          (this.diagnosisForm.problemDescription || '').trim(),
+          transcript
+        ].filter(Boolean).join('\n');
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          this.diagnosisError = '语音权限被拒绝，请在浏览器中允许麦克风访问';
+        } else if (event.error === 'no-speech') {
+          this.diagnosisError = '未识别到语音，请重试';
+        } else {
+          this.diagnosisError = '语音识别失败，请稍后重试';
+        }
+      };
+
+      recognition.onend = () => {
+        this.diagnosisVoiceListening = false;
+      };
+
+      this.diagnosisVoiceRecognition = recognition;
+      return recognition;
+    },
+    toggleDiagnosisVoiceInput() {
+      if (this.diagnosisVoiceListening) {
+        this.stopDiagnosisVoiceInput();
+        return;
+      }
+
+      const recognition = this.ensureDiagnosisVoiceRecognition();
+      if (!recognition) {
+        this.diagnosisError = '当前浏览器不支持语音输入，请使用最新版 Chrome 或 Edge';
+        this.$emit('message', this.diagnosisError, 'error');
+        return;
+      }
+
+      this.diagnosisError = null;
+      try {
+        recognition.start();
+        this.diagnosisVoiceListening = true;
+      } catch (error) {
+        this.diagnosisError = '语音识别启动失败，请稍后重试';
+      }
+    },
+    stopDiagnosisVoiceInput() {
+      if (this.diagnosisVoiceRecognition) {
+        try {
+          this.diagnosisVoiceRecognition.stop();
+        } catch (error) {
+          // Ignore stop failures from browser recognition state races.
+        }
+      }
+      this.diagnosisVoiceListening = false;
+    },
+    async onDiagnosisImageSelected(event) {
+      const files = Array.from(event.target.files || []);
+      event.target.value = '';
+      if (!files.length) {
+        return;
+      }
+
+      const remainingSlots = this.diagnosisMaxImageCount - this.diagnosisImages.length;
+      if (remainingSlots <= 0) {
+        this.diagnosisError = `最多上传 ${this.diagnosisMaxImageCount} 张图片`;
+        return;
+      }
+
+      const acceptedFiles = files.slice(0, remainingSlots);
+      if (files.length > remainingSlots) {
+        this.diagnosisError = `最多上传 ${this.diagnosisMaxImageCount} 张图片，超出部分已忽略`;
+      }
+
+      for (const file of acceptedFiles) {
+        if (!file.type.startsWith('image/')) {
+          this.diagnosisError = `文件 ${file.name} 不是图片格式`;
+          continue;
+        }
+
+        if (file.size > this.diagnosisMaxImageSizeMB * 1024 * 1024) {
+          this.diagnosisError = `文件 ${file.name} 超过 ${this.diagnosisMaxImageSizeMB}MB 限制`;
+          continue;
+        }
+
+        try {
+          const dataUrl = await this.toDataUrl(file);
+          this.diagnosisImages.push({
+            id: `${Date.now()}-${Math.random()}`,
+            name: file.name,
+            dataUrl,
+            previewUrl: dataUrl
+          });
+        } catch (error) {
+          this.diagnosisError = `文件 ${file.name} 读取失败`;
+        }
+      }
+    },
+    removeDiagnosisImage(index) {
+      this.diagnosisImages.splice(index, 1);
+    },
+    clearDiagnosisImages() {
+      this.diagnosisImages = [];
+    },
+    toDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('read-failed'));
+        reader.readAsDataURL(file);
+      });
+    },
     async submitDiagnosis() {
+      const problemDescription = (this.diagnosisForm.problemDescription || '').trim();
+      const imageDataUrls = this.diagnosisImages.map(item => item.dataUrl);
+      if (!problemDescription && !imageDataUrls.length) {
+        this.diagnosisError = '请至少输入文字描述或上传故障图片';
+        this.$emit('message', this.diagnosisError, 'error');
+        return;
+      }
+
+      this.stopDiagnosisVoiceInput();
       this.diagnosisLoading = true;
       this.diagnosisError = null;
       this.diagnosisResult = null;
@@ -1643,10 +1852,14 @@ export default {
 
       try {
         const response = await this.$axios.post('/ai-diagnosis/diagnose', {
-          problemDescription: this.diagnosisForm.problemDescription
+          problemDescription,
+          imageDataUrls
         });
 
         if (response.data.success) {
+          const normalizedDescription = problemDescription || `上传了 ${imageDataUrls.length} 张故障图片（无文字描述）`;
+          this.diagnosisForm.problemDescription = normalizedDescription;
+
           this.diagnosisResult = {
             faultType: response.data.faultType,
             suggestion: response.data.suggestion,
@@ -1661,7 +1874,8 @@ export default {
           // 保存到历史记录
           this.diagnosisHistory.unshift({
             timestamp: new Date(),
-            problemDescription: this.diagnosisForm.problemDescription,
+            problemDescription: normalizedDescription,
+            imageCount: imageDataUrls.length,
             faultType: response.data.faultType,
             suggestion: response.data.suggestion,
             severityLevel: response.data.severityLevel,
@@ -1681,6 +1895,7 @@ export default {
           localStorage.setItem('diagnosisHistory', JSON.stringify(this.diagnosisHistory));
 
           this.$emit('message', 'AI诊断完成！', 'success');
+          this.clearDiagnosisImages();
         } else {
           this.diagnosisError = response.data.errorMessage || 'AI诊断失败，请稍后重试';
           this.$emit('message', this.diagnosisError, 'error');
@@ -1695,9 +1910,11 @@ export default {
       }
     },
     clearDiagnosis() {
+      this.stopDiagnosisVoiceInput();
       this.diagnosisForm.problemDescription = '';
       this.diagnosisResult = null;
       this.diagnosisError = null;
+      this.clearDiagnosisImages();
     },
     createOrderFromDiagnosis() {
       // 切换到维修记录页面并打开新建维修单对话框
@@ -2519,6 +2736,106 @@ export default {
   font-size: 1rem;
   line-height: 1.6;
   resize: vertical;
+}
+
+.diagnosis-media-uploader {
+  margin-top: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.diagnosis-media-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.diagnosis-media-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.65rem;
+  background: #ffffff;
+  color: #1f2937;
+  padding: 0.42rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.diagnosis-media-upload-btn input {
+  display: none;
+}
+
+.diagnosis-media-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.65rem;
+  background: #ffffff;
+  color: #1f2937;
+  padding: 0.42rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.diagnosis-media-voice-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.diagnosis-media-hint {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.diagnosis-voice-status {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #2563eb;
+  font-size: 0.82rem;
+}
+
+.diagnosis-media-preview-grid {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.6rem;
+}
+
+.diagnosis-media-preview-item {
+  position: relative;
+  border: 1px solid #dbe2ea;
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.diagnosis-media-preview-item img {
+  width: 100%;
+  height: 82px;
+  object-fit: cover;
+  display: block;
+}
+
+.diagnosis-media-remove-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 21px;
+  height: 21px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.75);
+  color: #ffffff;
+  cursor: pointer;
+  line-height: 21px;
 }
 
 .btn-large {

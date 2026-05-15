@@ -20,7 +20,17 @@
         >
           <div class="bubble">
             <div class="role-label">{{ item.role === 'user' ? '你' : 'AI 诊断助手' }}</div>
-            <div class="content" v-if="item.role === 'user'">{{ item.text }}</div>
+            <template v-if="item.role === 'user'">
+              <div class="content">{{ item.text || '（仅上传了故障图片）' }}</div>
+              <div v-if="item.images && item.images.length" class="message-image-list">
+                <img
+                  v-for="(image, index) in item.images"
+                  :key="`${item.id}-image-${index}`"
+                  :src="image"
+                  alt="故障图片"
+                />
+              </div>
+            </template>
             <div class="content markdown" v-else v-html="renderMarkdown(item.text)"></div>
           </div>
         </div>
@@ -40,8 +50,50 @@
           :disabled="loading"
           placeholder="例如：冷车启动抖动，怠速不稳，伴随发动机故障灯偶发点亮。"
         ></textarea>
+        <div class="composer-media">
+          <div class="media-actions">
+            <label class="media-upload-btn">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                :disabled="loading"
+                @change="onImageSelected"
+              >
+              <span>上传图片</span>
+            </label>
+            <button
+              type="button"
+              class="media-voice-btn"
+              :disabled="loading"
+              @click="toggleVoiceInput"
+            >
+              {{ voiceListening ? '停止语音' : '语音输入' }}
+            </button>
+          </div>
+          <span class="media-upload-hint">最多 {{ maxImageCount }} 张，单张不超过 {{ maxImageSizeMB }}MB</span>
+        </div>
+        <div v-if="voiceListening" class="voice-status">正在听写，请开始说话...</div>
+        <div v-if="selectedImages.length" class="media-preview-grid">
+          <div
+            v-for="(image, index) in selectedImages"
+            :key="image.id"
+            class="media-preview-item"
+          >
+            <img :src="image.previewUrl" :alt="`附件${index + 1}`">
+            <button
+              type="button"
+              class="media-remove-btn"
+              :disabled="loading"
+              @click="removeSelectedImage(index)"
+              aria-label="删除图片"
+            >
+              ×
+            </button>
+          </div>
+        </div>
         <div class="composer-actions">
-          <button class="btn btn-primary" type="submit" :disabled="loading || !problemDescription.trim()">
+          <button class="btn btn-primary" type="submit" :disabled="loading || (!problemDescription.trim() && !selectedImages.length)">
             {{ loading ? '诊断中...' : '发送诊断' }}
           </button>
         </div>
@@ -106,33 +158,190 @@ export default {
       error: '',
       messages: [],
       diagnosisResult: null,
-      lastDiagnosisInput: ''
+      lastDiagnosisInput: '',
+      selectedImages: [],
+      maxImageCount: 3,
+      maxImageSizeMB: 4,
+      voiceRecognition: null,
+      voiceSupported: false,
+      voiceListening: false
     }
+  },
+  mounted() {
+    this.voiceSupported = !!this.getSpeechRecognitionCtor()
+  },
+  beforeDestroy() {
+    this.stopVoiceInput()
   },
   methods: {
     renderMarkdown(text) {
       return marked.parse(text || '')
     },
-    async submitDiagnosis() {
-      const input = this.problemDescription.trim()
-      if (!input || this.loading) {
+    getSpeechRecognitionCtor() {
+      if (typeof window === 'undefined') {
+        return null
+      }
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null
+    },
+    ensureVoiceRecognition() {
+      const SpeechRecognitionCtor = this.getSpeechRecognitionCtor()
+      this.voiceSupported = !!SpeechRecognitionCtor
+      if (!SpeechRecognitionCtor) {
+        return null
+      }
+
+      if (this.voiceRecognition) {
+        return this.voiceRecognition
+      }
+
+      const recognition = new SpeechRecognitionCtor()
+      recognition.lang = 'zh-CN'
+      recognition.continuous = false
+      recognition.interimResults = true
+      recognition.maxAlternatives = 1
+
+      recognition.onresult = (event) => {
+        let transcript = ''
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const segment = event.results[i][0]?.transcript || ''
+          if (event.results[i].isFinal && segment.trim()) {
+            transcript += segment.trim()
+          }
+        }
+
+        if (!transcript) {
+          return
+        }
+
+        this.problemDescription = [this.problemDescription.trim(), transcript].filter(Boolean).join('\n')
+      }
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          this.error = '语音权限被拒绝，请在浏览器中允许麦克风访问'
+        } else if (event.error === 'no-speech') {
+          this.error = '未识别到语音，请重试'
+        } else {
+          this.error = '语音识别失败，请稍后重试'
+        }
+      }
+
+      recognition.onend = () => {
+        this.voiceListening = false
+      }
+
+      this.voiceRecognition = recognition
+      return recognition
+    },
+    toggleVoiceInput() {
+      if (this.voiceListening) {
+        this.stopVoiceInput()
         return
       }
 
+      const recognition = this.ensureVoiceRecognition()
+      if (!recognition) {
+        this.error = '当前浏览器不支持语音输入，请使用最新版 Chrome 或 Edge'
+        return
+      }
+
+      this.error = ''
+      try {
+        recognition.start()
+        this.voiceListening = true
+      } catch (err) {
+        this.error = '语音识别启动失败，请稍后重试'
+      }
+    },
+    stopVoiceInput() {
+      if (this.voiceRecognition) {
+        try {
+          this.voiceRecognition.stop()
+        } catch (err) {
+          // Ignore stop failures from browser recognition state races.
+        }
+      }
+      this.voiceListening = false
+    },
+    async onImageSelected(event) {
+      const files = Array.from(event.target.files || [])
+      event.target.value = ''
+      if (!files.length) {
+        return
+      }
+
+      const remainingSlots = this.maxImageCount - this.selectedImages.length
+      if (remainingSlots <= 0) {
+        this.error = `最多上传 ${this.maxImageCount} 张图片`
+        return
+      }
+
+      const acceptedFiles = files.slice(0, remainingSlots)
+      if (files.length > remainingSlots) {
+        this.error = `最多上传 ${this.maxImageCount} 张图片，超出部分已忽略`
+      }
+
+      for (const file of acceptedFiles) {
+        if (!file.type.startsWith('image/')) {
+          this.error = `文件 ${file.name} 不是图片格式`
+          continue
+        }
+        if (file.size > this.maxImageSizeMB * 1024 * 1024) {
+          this.error = `文件 ${file.name} 超过 ${this.maxImageSizeMB}MB 限制`
+          continue
+        }
+
+        try {
+          const dataUrl = await this.toDataUrl(file)
+          this.selectedImages.push({
+            id: `${Date.now()}-${Math.random()}`,
+            name: file.name,
+            dataUrl,
+            previewUrl: dataUrl
+          })
+        } catch (err) {
+          this.error = `文件 ${file.name} 读取失败`
+        }
+      }
+    },
+    removeSelectedImage(index) {
+      this.selectedImages.splice(index, 1)
+    },
+    clearSelectedImages() {
+      this.selectedImages = []
+    },
+    toDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => reject(new Error('read-failed'))
+        reader.readAsDataURL(file)
+      })
+    },
+    async submitDiagnosis() {
+      const input = this.problemDescription.trim()
+      const imageDataUrls = this.selectedImages.map(item => item.dataUrl)
+      if ((!input && !imageDataUrls.length) || this.loading) {
+        return
+      }
+
+      this.stopVoiceInput()
       this.loading = true
       this.error = ''
-      this.lastDiagnosisInput = input
+      this.lastDiagnosisInput = input || `用户上传了 ${imageDataUrls.length} 张故障图片（未填写文字描述）`
 
       this.messages.push({
         id: Date.now() + '-u',
         role: 'user',
-        text: input
+        text: input || '（仅上传了故障图片）',
+        images: imageDataUrls
       })
 
       try {
         const response = await this.$axios.post('/ai-diagnosis/diagnose', {
           problemDescription: input,
-          role: 'customer'
+          role: 'customer',
+          imageDataUrls
         })
 
         const payload = response.data || {}
@@ -163,6 +372,7 @@ export default {
         })
 
         this.problemDescription = ''
+        this.clearSelectedImages()
         this.$nextTick(this.scrollToBottom)
       } catch (err) {
         this.error = err.response?.data?.errorMessage || err.message || 'AI 诊断服务暂不可用'
@@ -203,6 +413,8 @@ export default {
       this.error = ''
       this.messages = []
       this.lastDiagnosisInput = ''
+      this.clearSelectedImages()
+      this.stopVoiceInput()
     }
   }
 }
@@ -310,6 +522,117 @@ export default {
   display: flex;
   justify-content: flex-end;
   margin-top: 0.6rem;
+}
+
+.composer-media {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.media-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.media-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.55rem;
+  padding: 0.35rem 0.75rem;
+  color: #334155;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.media-upload-btn input {
+  display: none;
+}
+
+.media-voice-btn {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.55rem;
+  padding: 0.35rem 0.75rem;
+  color: #334155;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.media-voice-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.media-upload-hint {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.voice-status {
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+  color: #2563eb;
+}
+
+.media-preview-grid {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+  gap: 0.5rem;
+}
+
+.media-preview-item {
+  position: relative;
+  border: 1px solid #dbe2ea;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.media-preview-item img {
+  width: 100%;
+  height: 76px;
+  object-fit: cover;
+  display: block;
+}
+
+.media-remove-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  border: none;
+  border-radius: 999px;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.7);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.message-image-list {
+  margin-top: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 0.4rem;
+}
+
+.message-image-list img {
+  width: 100%;
+  height: 70px;
+  object-fit: cover;
+  border-radius: 0.45rem;
+  border: 1px solid #dbe2ea;
 }
 
 .result-grid {

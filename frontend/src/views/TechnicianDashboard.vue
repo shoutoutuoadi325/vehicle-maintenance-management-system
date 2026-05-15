@@ -427,11 +427,57 @@
           rows="4"
           placeholder="例如：冷车启动抖动，怠速不稳，故障灯偶发点亮，P0301..."
         ></textarea>
+        <div class="copilot-media-uploader">
+          <div class="copilot-media-actions">
+            <label class="copilot-media-upload-btn">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                :disabled="copilotLoading"
+                @change="onCopilotImageSelected"
+              >
+              上传故障图片
+            </label>
+            <button
+              type="button"
+              class="copilot-media-voice-btn"
+              :disabled="copilotLoading"
+              @click="toggleCopilotVoiceInput"
+            >
+              <i class="fas" :class="copilotVoiceListening ? 'fa-microphone-slash' : 'fa-microphone'"></i>
+              {{ copilotVoiceListening ? '停止语音' : '语音输入' }}
+            </button>
+          </div>
+          <span class="copilot-media-hint">最多 {{ copilotMaxImageCount }} 张，单张不超过 {{ copilotMaxImageSizeMB }}MB</span>
+        </div>
+        <div v-if="copilotVoiceListening" class="copilot-voice-status">
+          <i class="fas fa-microphone"></i>
+          正在听写，请开始说话...
+        </div>
+        <div v-if="copilotImages.length" class="copilot-media-preview-grid">
+          <div
+            v-for="(image, index) in copilotImages"
+            :key="image.id"
+            class="copilot-media-preview-item"
+          >
+            <img :src="image.previewUrl" :alt="`Copilot附件${index + 1}`">
+            <button
+              type="button"
+              class="copilot-media-remove-btn"
+              :disabled="copilotLoading"
+              @click="removeCopilotImage(index)"
+              aria-label="删除图片"
+            >
+              ×
+            </button>
+          </div>
+        </div>
         <div class="copilot-actions">
           <button
             class="btn btn-primary"
             type="button"
-            :disabled="copilotLoading || !copilotProblemDescription.trim()"
+            :disabled="copilotLoading || (!copilotProblemDescription.trim() && !copilotImages.length)"
             @click="askTechnicianCopilot"
           >
             <i class="fas" :class="copilotLoading ? 'fa-spinner fa-spin' : 'fa-paper-plane'"></i>
@@ -769,7 +815,13 @@ export default {
       copilotSuggestion: '',
       copilotFaultType: '',
       copilotError: '',
-      copilotLoading: false
+      copilotLoading: false,
+      copilotImages: [],
+      copilotMaxImageCount: 3,
+      copilotMaxImageSizeMB: 4,
+      copilotVoiceRecognition: null,
+      copilotVoiceSupported: false,
+      copilotVoiceListening: false
     }
   },
   computed: {
@@ -802,6 +854,10 @@ export default {
   created() {
     this.loadUserInfo();
     this.loadData();
+    this.copilotVoiceSupported = !!this.getSpeechRecognitionCtor();
+  },
+  beforeDestroy() {
+    this.stopCopilotVoiceInput();
   },
   methods: {
     loadUserInfo() {
@@ -835,12 +891,159 @@ export default {
         this.$emit('message', '加载数据失败', 'error');
       }
     },
-    async askTechnicianCopilot() {
-      const problemDescription = this.copilotProblemDescription.trim();
-      if (!problemDescription || this.copilotLoading) {
+    getSpeechRecognitionCtor() {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    },
+    ensureCopilotVoiceRecognition() {
+      const SpeechRecognitionCtor = this.getSpeechRecognitionCtor();
+      this.copilotVoiceSupported = !!SpeechRecognitionCtor;
+      if (!SpeechRecognitionCtor) {
+        return null;
+      }
+
+      if (this.copilotVoiceRecognition) {
+        return this.copilotVoiceRecognition;
+      }
+
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = 'zh-CN';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const segment = event.results[i][0]?.transcript || '';
+          if (event.results[i].isFinal && segment.trim()) {
+            transcript += segment.trim();
+          }
+        }
+
+        if (!transcript) {
+          return;
+        }
+
+        this.copilotProblemDescription = [
+          (this.copilotProblemDescription || '').trim(),
+          transcript
+        ].filter(Boolean).join('\n');
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          this.copilotError = '语音权限被拒绝，请在浏览器中允许麦克风访问';
+        } else if (event.error === 'no-speech') {
+          this.copilotError = '未识别到语音，请重试';
+        } else {
+          this.copilotError = '语音识别失败，请稍后重试';
+        }
+      };
+
+      recognition.onend = () => {
+        this.copilotVoiceListening = false;
+      };
+
+      this.copilotVoiceRecognition = recognition;
+      return recognition;
+    },
+    toggleCopilotVoiceInput() {
+      if (this.copilotVoiceListening) {
+        this.stopCopilotVoiceInput();
         return;
       }
 
+      const recognition = this.ensureCopilotVoiceRecognition();
+      if (!recognition) {
+        this.copilotError = '当前浏览器不支持语音输入，请使用最新版 Chrome 或 Edge';
+        return;
+      }
+
+      this.copilotError = '';
+      try {
+        recognition.start();
+        this.copilotVoiceListening = true;
+      } catch (error) {
+        this.copilotError = '语音识别启动失败，请稍后重试';
+      }
+    },
+    stopCopilotVoiceInput() {
+      if (this.copilotVoiceRecognition) {
+        try {
+          this.copilotVoiceRecognition.stop();
+        } catch (error) {
+          // Ignore stop failures from browser recognition state races.
+        }
+      }
+      this.copilotVoiceListening = false;
+    },
+    async onCopilotImageSelected(event) {
+      const files = Array.from(event.target.files || []);
+      event.target.value = '';
+      if (!files.length) {
+        return;
+      }
+
+      const remainingSlots = this.copilotMaxImageCount - this.copilotImages.length;
+      if (remainingSlots <= 0) {
+        this.copilotError = `最多上传 ${this.copilotMaxImageCount} 张图片`;
+        return;
+      }
+
+      const acceptedFiles = files.slice(0, remainingSlots);
+      if (files.length > remainingSlots) {
+        this.copilotError = `最多上传 ${this.copilotMaxImageCount} 张图片，超出部分已忽略`;
+      }
+
+      for (const file of acceptedFiles) {
+        if (!file.type.startsWith('image/')) {
+          this.copilotError = `文件 ${file.name} 不是图片格式`;
+          continue;
+        }
+
+        if (file.size > this.copilotMaxImageSizeMB * 1024 * 1024) {
+          this.copilotError = `文件 ${file.name} 超过 ${this.copilotMaxImageSizeMB}MB 限制`;
+          continue;
+        }
+
+        try {
+          const dataUrl = await this.toDataUrl(file);
+          this.copilotImages.push({
+            id: `${Date.now()}-${Math.random()}`,
+            name: file.name,
+            dataUrl,
+            previewUrl: dataUrl
+          });
+        } catch (error) {
+          this.copilotError = `文件 ${file.name} 读取失败`;
+        }
+      }
+    },
+    removeCopilotImage(index) {
+      this.copilotImages.splice(index, 1);
+    },
+    clearCopilotImages() {
+      this.copilotImages = [];
+    },
+    toDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('read-failed'));
+        reader.readAsDataURL(file);
+      });
+    },
+    async askTechnicianCopilot() {
+      const problemDescription = this.copilotProblemDescription.trim();
+      const imageDataUrls = this.copilotImages.map(item => item.dataUrl);
+      if ((!problemDescription && !imageDataUrls.length) || this.copilotLoading) {
+        return;
+      }
+
+      this.stopCopilotVoiceInput();
       this.copilotLoading = true;
       this.copilotError = '';
 
@@ -848,12 +1051,15 @@ export default {
         const response = await this.$axios.post('/ai-diagnosis/diagnose', {
           problemDescription,
           role: 'technician',
-          technicianId: this.user?.id || null
+          technicianId: this.user?.id || null,
+          imageDataUrls
         });
 
         const payload = response.data || {};
         this.copilotFaultType = payload.faultType || '';
         this.copilotSuggestion = payload.suggestion || '未返回诊断建议';
+        this.copilotProblemDescription = '';
+        this.clearCopilotImages();
       } catch (error) {
         console.error('技师 Copilot 诊断失败:', error);
         this.copilotFaultType = '';
@@ -1498,6 +1704,107 @@ export default {
 
 .copilot-input::placeholder {
   color: #9ca3af;
+}
+
+.copilot-media-uploader {
+  margin-top: 0.65rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.copilot-media-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.copilot-media-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.6rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  color: #f9fafb;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.copilot-media-upload-btn input {
+  display: none;
+}
+
+.copilot-media-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.6rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  color: #f9fafb;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.copilot-media-voice-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.copilot-media-hint {
+  color: #9ca3af;
+  font-size: 0.78rem;
+}
+
+.copilot-voice-status {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #93c5fd;
+  font-size: 0.8rem;
+}
+
+.copilot-media-preview-grid {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+  gap: 0.5rem;
+}
+
+.copilot-media-preview-item {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.copilot-media-preview-item img {
+  width: 100%;
+  height: 74px;
+  display: block;
+  object-fit: cover;
+}
+
+.copilot-media-remove-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.75);
+  color: #ffffff;
+  cursor: pointer;
+  line-height: 20px;
 }
 
 .copilot-actions {

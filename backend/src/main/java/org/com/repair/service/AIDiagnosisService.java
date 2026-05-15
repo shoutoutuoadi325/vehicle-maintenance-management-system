@@ -81,6 +81,17 @@ public class AIDiagnosisService {
         }
     }
 
+    public AIDiagnosisResponse diagnoseFault(String problemDescription,
+                                             String role,
+                                             Long technicianId,
+                                             List<String> imageDataUrls) {
+        String normalizedDescription = problemDescription == null ? "" : problemDescription.trim();
+        if (normalizedDescription.isBlank() && imageDataUrls != null && !imageDataUrls.isEmpty()) {
+            normalizedDescription = "（用户仅上传故障图片，未提供文字描述）";
+        }
+        return diagnoseFault(normalizedDescription, role, technicianId);
+    }
+
     private AIDiagnosisResponse expertConsilium(String problemDescription, String role, Long technicianId, String traceId) throws IOException {
         List<String> ecoTips = gamificationService.getEcoWaitingTips();
         String ecoTipContext = ecoTips.isEmpty() ? "" : ("\n\n绿色导向参考：" + ecoTips.get(0));
