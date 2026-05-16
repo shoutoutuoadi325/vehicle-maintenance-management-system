@@ -73,9 +73,49 @@ public class AIDiagnosisService {
                                              List<String> imageDataUrls) {
         String normalizedDescription = problemDescription == null ? "" : problemDescription.trim();
         if (normalizedDescription.isBlank() && imageDataUrls != null && !imageDataUrls.isEmpty()) {
-            normalizedDescription = "（用户仅上传故障图片，未提供文字描述）";
+            return buildImageOnlyFallbackResponse(imageDataUrls.size(), normalizeRole(role));
         }
         return diagnoseFault(normalizedDescription, role, technicianId);
+    }
+
+    private AIDiagnosisResponse buildImageOnlyFallbackResponse(int imageCount, String role) {
+        String faultType = "发动机舱异常/发动机故障灯初步判断";
+        java.util.List<String> causes = java.util.List.of(
+                "发动机控制系统、点火系统、燃油供给、排放系统或相关传感器可能存在异常信号",
+                "若伴随发动机舱冒烟、焦糊味或温度升高，需重点排查机油/冷却液泄漏、电路短路、皮带打滑或高温部件异常",
+                "常见来源包括氧传感器、空气流量计、节气门、火花塞、点火线圈、燃油压力、冷却系统或线束连接异常"
+        );
+
+        String suggestion;
+        if ("technician".equals(role)) {
+            suggestion = "根据上传的 " + imageCount + " 张故障图片，初步判断车辆可能存在发动机舱异常、发动机故障灯点亮或动力系统相关风险。\n\n"
+                    + "## 初步判断\n"
+                    + "车辆可能存在发动机控制系统报警、发动机舱冒烟/异味、高温风险、排放系统异常或相关传感器信号异常。\n\n"
+                    + "## 建议排查\n"
+                    + "- 优先读取 OBD 故障码和冻结帧数据，记录转速、车速、水温、进气量、燃油修正值等关键参数。\n"
+                    + "- 若现场有冒烟、焦糊味或液体滴落，先熄火断电并等待降温，再检查机油、冷却液、燃油管路、线束插头和排气高温区域。\n"
+                    + "- 检查是否存在明显抖动、加速无力、怠速不稳、油耗升高、排气异味、发动机舱异响或水温异常。\n"
+                    + "- 按低成本到高成本顺序排查火花塞、点火线圈、空气滤清器、节气门、进气泄漏、氧传感器、燃油压力和冷却系统。\n"
+                    + "- 若故障灯闪烁、动力明显下降、持续冒烟或伴随高温/异味，应暂停继续行驶并安排拖车或到店检测。";
+        } else {
+            suggestion = "根据上传的 " + imageCount + " 张故障图片，初步判断车辆可能存在发动机舱异常、发动机故障灯点亮或动力系统相关风险。\n\n"
+                    + "## 初步判断\n"
+                    + "常见原因包括排放系统、传感器、点火系统、燃油系统、冷却系统或发动机舱线束异常，需要进一步读取故障码并做现场检查。\n\n"
+                    + "## 下一步建议\n"
+                    + "- 如果只是故障灯常亮、行驶无明显异常，建议尽快到店读取 OBD 故障码确认原因。\n"
+                    + "- 如果看到发动机舱冒烟、闻到焦糊味、车辆抖动明显、加速无力或水温升高，请尽快靠边停车并不要继续行驶。\n"
+                    + "- 停车后不要立即打开高温部件或水箱盖，等待车辆降温，并联系维修人员检查机油、冷却液、线束和燃油管路。\n"
+                    + "- 就诊时补充车辆品牌车型、年份、里程、故障灯出现时间，以及是否有冒烟、异响、异味、抖动或油耗升高。";
+        }
+
+        AIDiagnosisResponse response = new AIDiagnosisResponse(faultType, suggestion);
+        response.setPossibleCauses(causes);
+        response.setSeverityLevel("HIGH");
+        response.setEstimatedCostMin(500);
+        response.setEstimatedCostMax(3000);
+        response.setEstimatedHoursMin(1);
+        response.setEstimatedHoursMax(6);
+        return response;
     }
 
     private AIDiagnosisResponse externalSingleDiagnosis(String problemDescription,

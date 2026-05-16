@@ -169,7 +169,7 @@
                   @change="toggleMaintenanceAlertSelection(alert.id, $event.target.checked)"
                 >
               </div>
-              <div>
+              <div class="maintenance-alert-body">
                 <div class="alert-title">{{ formatMaintenanceAlertType(alert.alertType) }}</div>
                 <div class="alert-message">{{ alert.message }}</div>
                 <div class="alert-time">{{ formatDateTime(alert.createdAt) }}</div>
@@ -3311,9 +3311,28 @@ export default {
   border: 1px solid #e2e8f0;
   border-radius: 0.6rem;
   padding: 0.65rem;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.5rem;
   align-items: center;
+  column-gap: 0.75rem;
+  min-height: 3.25rem;
+}
+
+.health-item span {
+  color: #475569;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.health-item strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 2.5rem;
+  color: #0f172a;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .maintenance-alert-list {
@@ -3345,9 +3364,14 @@ export default {
 .maintenance-select-all {
   font-size: 0.84rem;
   color: #475569;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.maintenance-select-all input {
+  flex: 0 0 auto;
 }
 
 .maintenance-filter-select {
@@ -3358,32 +3382,47 @@ export default {
   border: 1px solid #e5e7eb;
   border-radius: 0.6rem;
   padding: 0.65rem;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 0.8rem;
 }
 
 .maintenance-alert-checkbox {
-  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.maintenance-alert-body {
+  min-width: 0;
 }
 
 .alert-title {
   font-weight: 700;
   color: #0f172a;
   font-size: 0.88rem;
+  line-height: 1.35;
 }
 
 .alert-message {
   color: #475569;
   font-size: 0.85rem;
   margin-top: 0.2rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .alert-time {
   margin-top: 0.3rem;
   color: #64748b;
   font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.maintenance-alert-item .btn {
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .maintenance-expand-btn {
@@ -3434,8 +3473,13 @@ export default {
   }
 
   .maintenance-alert-item {
-    flex-direction: column;
-    align-items: flex-start;
+    grid-template-columns: 1.25rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .maintenance-alert-item .btn {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 
