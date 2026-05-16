@@ -24,9 +24,9 @@ public class AIDiagnosisApiTest {
 
     // 注意：实际使用时应从环境变量读取 API 密钥
     // 例如: System.getenv("AI_DIAGNOSIS_API_KEY")
-    private final String apiKey = System.getenv("AI_DIAGNOSIS_API_KEY") != null 
-        ? System.getenv("AI_DIAGNOSIS_API_KEY") 
-        : "sk-YlfbboEmR0QGY8bl3bDf1h28NhCEdL4GhFxF9yhfri6UsHvc";
+    private final String apiKey = System.getenv("AI_DIAGNOSIS_API_KEY") != null
+        ? System.getenv("AI_DIAGNOSIS_API_KEY")
+        : "";
     private final String baseUrl = System.getenv("AI_DIAGNOSIS_API_BASE_URL") != null
         ? System.getenv("AI_DIAGNOSIS_API_BASE_URL")
         : "https://api.deerapi.com/v1";

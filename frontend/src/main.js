@@ -8,7 +8,7 @@ Vue.config.productionTip = false
 // 配置axios
 Vue.prototype.$axios = axios.create({
   baseURL: '/api', // 使用代理，简化baseURL
-  timeout: 5000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json'
   }

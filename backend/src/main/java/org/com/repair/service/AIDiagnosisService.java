@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.SocketTimeoutException;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -44,9 +43,9 @@ public class AIDiagnosisService {
         this.gamificationService = gamificationService;
         this.technicianService = technicianService;
         this.client = new OkHttpClient.Builder()
-                .connectTimeout(60, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(60, TimeUnit.SECONDS)
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(45, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
                 .build();
         this.objectMapper = new ObjectMapper();
     }
@@ -58,29 +57,16 @@ public class AIDiagnosisService {
     public AIDiagnosisResponse diagnoseFault(String problemDescription, String role, Long technicianId) {
         String traceId = UUID.randomUUID().toString();
         String normalizedRole = normalizeRole(role);
-        logger.info("[AI-CONSILIUM][{}] 会诊开始, role={}, technicianId={}", traceId, normalizedRole, technicianId);
+        logger.info("[AI-DIAGNOSIS][{}] 诊断开始, role={}, technicianId={}", traceId, normalizedRole, technicianId);
         try {
-            AIDiagnosisResponse response = expertConsilium(problemDescription, normalizedRole, technicianId, traceId);
-            logger.info("[AI-CONSILIUM][{}] 会诊完成", traceId);
+            AIDiagnosisResponse response = externalSingleDiagnosis(problemDescription, normalizedRole, technicianId, traceId);
+            logger.info("[AI-DIAGNOSIS][{}] 外部AI诊断完成", traceId);
             return response;
         } catch (Exception e) {
-            logger.warn("[AI-CONSILIUM][{}] 专家会诊失败，回退单模型诊断: {}", traceId, e.getMessage(), e);
-            try {
-                String fallbackPrompt = buildPrompt(problemDescription, normalizedRole);
-                String fallbackText = callOpenAIAPI(fallbackPrompt, traceId, "FALLBACK_SINGLE");
-                AIDiagnosisResponse fallbackResponse = parseResponse(fallbackText, problemDescription);
-                logger.info("[AI-CONSILIUM][{}] 单模型回退完成", traceId);
-                return fallbackResponse;
-            } catch (SocketTimeoutException timeoutException) {
-                logger.error("[AI-CONSILIUM][{}] AI诊断回退超时", traceId, timeoutException);
-                return new AIDiagnosisResponse("专家会诊超时，请稍后再试");
-            } catch (Exception fallbackException) {
-                logger.error("[AI-CONSILIUM][{}] AI诊断回退失败", traceId, fallbackException);
-                return new AIDiagnosisResponse("AI诊断服务暂时不可用，请稍后再试");
-            }
+            logger.warn("[AI-DIAGNOSIS][{}] 外部AI诊断失败，启用本地规则兜底: {}", traceId, e.getMessage(), e);
+            return buildLocalFallbackResponse(problemDescription, normalizedRole);
         }
     }
-
     public AIDiagnosisResponse diagnoseFault(String problemDescription,
                                              String role,
                                              Long technicianId,
@@ -92,6 +78,49 @@ public class AIDiagnosisService {
         return diagnoseFault(normalizedDescription, role, technicianId);
     }
 
+    private AIDiagnosisResponse externalSingleDiagnosis(String problemDescription,
+                                                        String role,
+                                                        Long technicianId,
+                                                        String traceId) throws IOException {
+        String prompt = buildPrompt(problemDescription, role)
+                + buildOperationalContext(technicianId, traceId)
+                + "\n\n请只输出一个 JSON 对象，不要输出 Markdown，不要输出代码块，不要照抄字段说明。\n"
+                + "JSON 字段必须为：\n"
+                + "{\n"
+                + "  \"faultType\": \"用一句话写出1-3个最可能故障，不要写'故障类型'四个字\",\n"
+                + "  \"suggestion\": \"写出具体排查步骤、是否建议继续行驶、维修风险和安全提醒，不要写'建议'两个字\",\n"
+                + "  \"possibleCauses\": [\"原因1\", \"原因2\", \"原因3\"]\n"
+                + "}";
+
+        String diagnosisText = callOpenAIAPI(prompt, traceId, "SINGLE_DIAGNOSIS");
+        if (diagnosisText == null || diagnosisText.isBlank()) {
+            throw new IOException("外部AI返回空诊断内容");
+        }
+        return parseResponse(diagnosisText, problemDescription);
+    }
+
+    private String buildOperationalContext(Long technicianId, String traceId) {
+        StringBuilder context = new StringBuilder("\n\n业务上下文：");
+
+        try {
+            List<String> ecoTips = gamificationService.getEcoWaitingTips();
+            if (!ecoTips.isEmpty()) {
+                context.append("\n- 绿色维修提示：").append(ecoTips.get(0));
+            }
+        } catch (Exception ex) {
+            logger.warn("[AI-DIAGNOSIS][{}] 获取绿色维修上下文失败，忽略该上下文: {}", traceId, ex.getMessage());
+        }
+
+        double fatigueLevel = resolveTechnicianFatigueLevel(technicianId, traceId);
+        context.append("\n- 当前技师疲劳度：").append(fatigueLevel).append("（0到1之间）");
+        if (fatigueLevel > 0.7) {
+            context.append("\n- 若涉及高压电、燃油、制动或高温部件，请把安全校验步骤写得更明确。");
+        }
+
+        return context.toString();
+    }
+
+    @SuppressWarnings("unused")
     private AIDiagnosisResponse expertConsilium(String problemDescription, String role, Long technicianId, String traceId) throws IOException {
         List<String> ecoTips = gamificationService.getEcoWaitingTips();
         String ecoTipContext = ecoTips.isEmpty() ? "" : ("\n\n绿色导向参考：" + ecoTips.get(0));
@@ -172,10 +201,7 @@ public class AIDiagnosisService {
                     "1. 先给出最可能的故障类型（可列 1-3 个，按概率排序）。\n" +
                     "2. 给出分步骤排查流程（从低成本、低风险到高成本验证）。\n" +
                     "3. 指出建议使用的工具/检测数据（例如 OBD 故障码、万用表、电压、电阻、波形等）。\n" +
-                    "4. 给出维修建议与风险提示（含可能误判点）。\n" +
-                    "请用以下格式回复：\n" +
-                    "故障类型：[具体故障类型，必要时列多个]\n" +
-                    "建议：[分点给出排查与维修建议]";
+                    "4. 给出维修建议与风险提示（含可能误判点）。";
         }
 
         return "你是一个面向车主的汽车维修顾问。请根据以下问题描述，给出易懂的故障判断和建议。\n\n" +
@@ -183,12 +209,104 @@ public class AIDiagnosisService {
                 "输出要求：\n" +
                 "1. 使用非专业用户易懂的语言。\n" +
                 "2. 先说明可能故障，再给出下一步建议（是否继续行驶、是否立即检修）。\n" +
-                "3. 避免过于复杂术语，必要时简要解释。\n" +
-                "请用以下格式回复：\n" +
-                "故障类型：[具体的故障类型]\n" +
-                "建议：[详细的维修建议]";
+                "3. 避免过于复杂术语，必要时简要解释。";
     }
 
+    private AIDiagnosisResponse buildLocalFallbackResponse(String problemDescription, String role) {
+        String text = problemDescription == null ? "" : problemDescription.trim();
+        String normalized = text.toLowerCase();
+        String faultType = "综合故障初诊";
+        java.util.List<String> causes = new java.util.ArrayList<>();
+        java.util.List<String> steps = new java.util.ArrayList<>();
+
+        if (containsAny(normalized, "无法启动", "启动困难", "打不着", "点不着", "熄火")) {
+            faultType = "启动系统/点火供油故障";
+            causes.add("蓄电池电量不足或接线柱松动、氧化");
+            causes.add("起动机、点火线圈、火花塞或燃油泵工作异常");
+            causes.add("曲轴位置传感器、节气门或相关保险丝/继电器异常");
+            steps.add("先检查电瓶电压、接线柱和搭铁线，确认启动瞬间电压是否明显跌落");
+            steps.add("读取 OBD 故障码，重点关注点火、燃油压力、曲轴/凸轮轴传感器相关报码");
+            steps.add("检查火花塞点火状态、燃油泵工作声和油压，按低成本到高成本顺序排查");
+        } else if (containsAny(normalized, "刹车", "制动", "刹不住", "刹车软", "刹车异响")) {
+            faultType = "制动系统故障";
+            causes.add("刹车片/刹车盘磨损或表面异常");
+            causes.add("制动液不足、含水率过高或管路进气");
+            causes.add("制动分泵、总泵或 ABS 相关部件异常");
+            steps.add("立即降低车速并避免继续高速行驶，优先检查制动液液位和泄漏痕迹");
+            steps.add("检查刹车片厚度、刹车盘沟槽和轮端是否有异常发热");
+            steps.add("读取 ABS/ESP 故障码，必要时进行制动管路排气和制动压力测试");
+        } else if (containsAny(normalized, "高温", "水温", "开锅", "冷却液", "防冻液")) {
+            faultType = "冷却系统过热故障";
+            causes.add("冷却液不足、管路泄漏或水箱散热不良");
+            causes.add("节温器、水泵或电子风扇工作异常");
+            causes.add("缸垫密封异常导致冷却系统压力异常");
+            steps.add("停车等待降温后再检查，禁止热车直接打开水箱盖");
+            steps.add("检查冷却液液位、泄漏点、电子风扇和水箱表面堵塞情况");
+            steps.add("观察上下水管温差，必要时检测节温器、水泵循环和冷却系统压力");
+        } else if (containsAny(normalized, "异响", "抖动", "顿挫", "动力不足", "故障灯")) {
+            faultType = "发动机/传动系统运行异常";
+            causes.add("点火系统、进气系统或燃油喷射异常");
+            causes.add("发动机机脚、变速箱控制或传动部件异常");
+            causes.add("传感器报码导致 ECU 限扭或进入保护模式");
+            steps.add("读取 OBD 故障码和冻结帧，记录故障出现时的转速、车速和水温");
+            steps.add("检查火花塞、点火线圈、空气滤清器、节气门和进气漏气情况");
+            steps.add("路试复现异响/抖动场景，区分怠速、加速、制动和转向时是否出现");
+        } else if (containsAny(normalized, "漏油", "漏液", "汽油味", "烧焦味")) {
+            faultType = "油液泄漏/安全风险故障";
+            causes.add("发动机油封、油底壳、变速箱或助力系统存在泄漏");
+            causes.add("燃油管路、冷却管路或制动管路密封异常");
+            causes.add("油液滴落到排气高温部件产生异味");
+            steps.add("优先确认泄漏液体颜色和位置，存在汽油味或大量漏液时停止行驶");
+            steps.add("举升车辆检查底盘、发动机舱和管路接头，清洁后复查渗漏源");
+            steps.add("补足对应油液后做压力/路试检查，确认不再泄漏再交车");
+        } else {
+            causes.add("车辆存在未明确定位的综合异常，需要结合仪表提示和路试现象进一步判断");
+            causes.add("常见来源包括电气连接、传感器、油液状态、磨损件或保养不到位");
+            steps.add("补充车辆品牌车型、年份、里程、故障出现频率和是否亮故障灯");
+            steps.add("先做基础检查：油液、轮胎、电瓶、保险丝、可见泄漏和异味");
+            steps.add("读取 OBD 故障码并结合路试复现，避免仅凭单一症状更换零件");
+        }
+
+        if ("technician".equals(role)) {
+            steps.add("技师侧建议保留检测数据和故障码截图，便于后续复核与维修闭环");
+        } else {
+            steps.add("车主侧建议尽快到店检测；若伴随刹车失灵、高温、漏油、焦糊味或无法启动，请不要继续行驶");
+        }
+
+        String suggestion = "外部AI服务当前连接不可用，已启用本地规则诊断。\n\n"
+                + "## 初步判断\n" + faultType + "\n\n"
+                + "## 可能原因\n" + toMarkdownList(causes) + "\n"
+                + "## 建议处理\n" + toMarkdownList(steps);
+
+        AIDiagnosisResponse response = new AIDiagnosisResponse(faultType, suggestion);
+        response.setPossibleCauses(causes);
+        String severity = evaluateSeverity(text + "\n" + suggestion);
+        response.setSeverityLevel(severity);
+        Integer[] costRange = estimateCostBySeverity(severity);
+        Integer[] hourRange = estimateHoursBySeverity(severity);
+        response.setEstimatedCostMin(costRange[0]);
+        response.setEstimatedCostMax(costRange[1]);
+        response.setEstimatedHoursMin(hourRange[0]);
+        response.setEstimatedHoursMax(hourRange[1]);
+        return response;
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String toMarkdownList(java.util.List<String> items) {
+        StringBuilder builder = new StringBuilder();
+        for (String item : items) {
+            builder.append("- ").append(item).append("\n");
+        }
+        return builder.toString();
+    }
     private String normalizeRole(String role) {
         if (role == null || role.isBlank()) {
             return "customer";
@@ -197,14 +315,17 @@ public class AIDiagnosisService {
     }
 
     private String callOpenAIAPI(String prompt, String traceId, String stage) throws IOException {
-        String requestBody = String.format(
-            "{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}],\"temperature\":0.7}",
-            model,
-            prompt.replace("\"", "\\\"").replace("\n", "\\n")
-        );
+        String requestBody = objectMapper.writeValueAsString(java.util.Map.of(
+                "model", model,
+                "messages", List.of(java.util.Map.of(
+                        "role", "user",
+                        "content", prompt
+                )),
+                "temperature", 0.7
+        ));
 
         Request request = new Request.Builder()
-                .url(baseUrl + "/chat/completions")
+                .url(resolveChatCompletionsUrl())
                 .post(RequestBody.create(requestBody, MediaType.parse("application/json")))
                 .addHeader("Authorization", "Bearer " + apiKey)
                 .addHeader("Content-Type", "application/json")
@@ -216,7 +337,7 @@ public class AIDiagnosisService {
                 throw new IOException("API返回空响应体");
             }
             String responseBody = body.string();
-            
+
             if (!response.isSuccessful()) {
                 throw new IOException("API调用失败，状态码: " + response.code() + ", 响应: " + responseBody);
             }
@@ -226,7 +347,7 @@ public class AIDiagnosisService {
                     stage,
                     response.code(),
                     responseBody != null ? responseBody.length() : 0);
-            
+
             JsonNode jsonNode = objectMapper.readTree(responseBody);
             JsonNode choices = jsonNode.path("choices");
             if (!choices.isArray() || choices.isEmpty()) {
@@ -236,19 +357,61 @@ public class AIDiagnosisService {
         }
     }
 
+    private String resolveChatCompletionsUrl() throws IOException {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IOException("AI diagnosis API base URL is not configured");
+        }
+
+        String normalized = baseUrl.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+
+        if (normalized.endsWith("/chat/completions")) {
+            return normalized;
+        }
+        if (normalized.endsWith("/v1")) {
+            return normalized + "/chat/completions";
+        }
+        return normalized + "/v1/chat/completions";
+    }
+
     private AIDiagnosisResponse parseResponse(String responseText, String problemDescription) {
-        // 解析AI返回的文本
+        String normalizedResponse = responseText == null ? "" : responseText.trim();
         String faultType = "";
         String suggestion = "";
         java.util.List<String> possibleCauses = new java.util.ArrayList<>();
 
-        String[] lines = responseText.split("\n");
+        ParsedDiagnosis structured = parseStructuredResponse(normalizedResponse);
+        if (structured != null) {
+            faultType = structured.faultType;
+            suggestion = structured.suggestion;
+            possibleCauses.addAll(structured.possibleCauses);
+        }
+
+        if (faultType.isBlank()) {
+            faultType = extractLabeledSection(
+                    normalizedResponse,
+                    "(故障类型|故障判断|初步判断|综合结论)",
+                    "(建议|维修建议|诊断建议|处理建议|排查建议|安全提示|风险提示)"
+            );
+        }
+        if (suggestion.isBlank()) {
+            suggestion = extractLabeledSection(
+                    normalizedResponse,
+                    "(建议|维修建议|诊断建议|处理建议|排查建议)",
+                    "(故障类型|故障判断|初步判断|综合结论|安全提示|风险提示)"
+            );
+        }
+
+        String[] lines = normalizedResponse.split("\n");
         for (String line : lines) {
             line = line.trim();
-            if (line.startsWith("故障类型：") || line.startsWith("故障类型:")) {
-                faultType = line.substring(5).trim();
-            } else if (line.startsWith("建议：") || line.startsWith("建议:")) {
-                suggestion = line.substring(3).trim();
+            String plainLine = line.replaceFirst("^#+\\s*", "");
+            if (faultType.isBlank() && (plainLine.startsWith("故障类型：") || plainLine.startsWith("故障类型:"))) {
+                faultType = plainLine.substring(5).trim();
+            } else if (suggestion.isBlank() && (plainLine.startsWith("建议：") || plainLine.startsWith("建议:"))) {
+                suggestion = plainLine.substring(3).trim();
             } else if (line.startsWith("- ") || line.startsWith("* ")) {
                 String cause = line.substring(2).trim();
                 if (!cause.isEmpty() && possibleCauses.size() < 5) {
@@ -257,13 +420,19 @@ public class AIDiagnosisService {
             }
         }
 
-        // 如果没有按格式返回，使用整个响应作为建议
-        if (faultType.isEmpty() && suggestion.isEmpty()) {
-            suggestion = responseText;
+        if (suggestion.isBlank()) {
+            suggestion = buildSuggestionFallback(normalizedResponse, faultType);
+        }
+
+        faultType = sanitizeDiagnosisField(faultType, "故障类型");
+        suggestion = sanitizeDiagnosisField(suggestion, "建议");
+
+        if (faultType.isEmpty() && suggestion.isBlank()) {
+            suggestion = normalizedResponse;
             faultType = "综合诊断";
         }
 
-        String severity = evaluateSeverity(problemDescription + "\n" + responseText);
+        String severity = evaluateSeverity(problemDescription + "\n" + normalizedResponse);
         Integer[] costRange = estimateCostBySeverity(severity);
         Integer[] hourRange = estimateHoursBySeverity(severity);
 
@@ -276,6 +445,143 @@ public class AIDiagnosisService {
         response.setEstimatedHoursMax(hourRange[1]);
 
         return response;
+    }
+
+    private ParsedDiagnosis parseStructuredResponse(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+
+        String jsonCandidate = text.trim();
+        if (jsonCandidate.startsWith("```")) {
+            jsonCandidate = jsonCandidate
+                    .replaceFirst("(?is)^```(?:json)?\\s*", "")
+                    .replaceFirst("(?is)\\s*```$", "")
+                    .trim();
+        }
+
+        int start = jsonCandidate.indexOf('{');
+        int end = jsonCandidate.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return null;
+        }
+
+        jsonCandidate = jsonCandidate.substring(start, end + 1);
+
+        try {
+            JsonNode root = objectMapper.readTree(jsonCandidate);
+            String faultType = firstText(root, "faultType", "fault_type", "diagnosis", "故障类型");
+            String suggestion = firstText(root, "suggestion", "repairSuggestion", "repair_suggestion", "诊断建议", "维修建议", "建议");
+            java.util.List<String> causes = new java.util.ArrayList<>();
+
+            JsonNode causeNode = firstNode(root, "possibleCauses", "possible_causes", "causes", "可能原因");
+            if (causeNode != null && causeNode.isArray()) {
+                for (JsonNode item : causeNode) {
+                    String cause = item.asText("").trim();
+                    if (!cause.isBlank() && causes.size() < 5) {
+                        causes.add(cause);
+                    }
+                }
+            }
+
+            faultType = sanitizeDiagnosisField(faultType, "故障类型");
+            suggestion = sanitizeDiagnosisField(suggestion, "建议");
+            if (faultType.isBlank() && suggestion.isBlank() && causes.isEmpty()) {
+                return null;
+            }
+
+            return new ParsedDiagnosis(faultType, suggestion, causes);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private JsonNode firstNode(JsonNode root, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode node = root.path(fieldName);
+            if (!node.isMissingNode() && !node.isNull()) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private String firstText(JsonNode root, String... fieldNames) {
+        JsonNode node = firstNode(root, fieldNames);
+        return node == null ? "" : node.asText("").trim();
+    }
+
+    private String extractLabeledSection(String text, String startLabels, String stopLabels) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+
+        String pattern = "(?is)(?:^|\\R)\\s*(?:#{1,6}\\s*)?(?:" + startLabels + ")\\s*[:：]?\\s*(.*?)"
+                + "(?=\\R\\s*(?:#{1,6}\\s*)?(?:" + stopLabels + ")\\s*[:：]?|\\z)";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(text);
+        if (!matcher.find()) {
+            return "";
+        }
+
+        return matcher.group(1)
+                .replaceFirst("^\\s*[\\[【]", "")
+                .replaceFirst("[\\]】]\\s*$", "")
+                .trim();
+    }
+
+    private String sanitizeDiagnosisField(String value, String label) {
+        if (value == null) {
+            return "";
+        }
+
+        String cleaned = value.trim()
+                .replaceFirst("^\\s*[\\[【]", "")
+                .replaceFirst("[\\]】]\\s*$", "")
+                .replaceFirst("(?is)^\\s*" + label + "\\s*[:：]?\\s*", "")
+                .trim();
+
+        if (cleaned.equals(label)
+                || cleaned.equals("}")
+                || cleaned.equals("{")
+                || cleaned.matches("(?is)^\\s*(具体|详细|分点|1-3个|用一句话).*")
+                || cleaned.matches("(?is)^\\s*字段.*")) {
+            return "";
+        }
+
+        return cleaned;
+    }
+
+    private String buildSuggestionFallback(String responseText, String faultType) {
+        if (responseText == null || responseText.isBlank()) {
+            return "";
+        }
+
+        String trimmed = responseText.trim();
+        if (faultType != null && !faultType.isBlank()) {
+            String remainder = trimmed.replace(faultType, "").trim();
+            remainder = remainder
+                    .replaceFirst("(?is)^\\s*(?:#{1,6}\\s*)?故障类型\\s*[:：]?\\s*", "")
+                    .replaceFirst("^\\s*[\\[【]\\s*", "")
+                    .replaceFirst("^\\s*[\\]】]\\s*", "")
+                    .trim();
+            if (!remainder.isBlank()) {
+                return remainder;
+            }
+        }
+
+        return trimmed;
+    }
+
+    private static class ParsedDiagnosis {
+        private final String faultType;
+        private final String suggestion;
+        private final java.util.List<String> possibleCauses;
+
+        private ParsedDiagnosis(String faultType, String suggestion, java.util.List<String> possibleCauses) {
+            this.faultType = faultType == null ? "" : faultType;
+            this.suggestion = suggestion == null ? "" : suggestion;
+            this.possibleCauses = possibleCauses == null ? java.util.List.of() : possibleCauses;
+        }
     }
 
     private String evaluateSeverity(String text) {

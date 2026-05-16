@@ -33,7 +33,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.com.repair.event.EmissionReducedEvent;
 
 @Service
-@SuppressWarnings({"null", "unused"})
+@SuppressWarnings("null")
 public class RepairOrderService {
     private static final Logger logger = LoggerFactory.getLogger(RepairOrderService.class);
 

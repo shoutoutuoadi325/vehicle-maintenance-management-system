@@ -84,7 +84,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 @Service
-@SuppressWarnings({"null", "unused"})
+@SuppressWarnings("null")
 public class GamificationService {
 
     private static final Logger logger = LoggerFactory.getLogger(GamificationService.class);

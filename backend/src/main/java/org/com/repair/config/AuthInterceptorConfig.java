@@ -15,6 +15,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class AuthInterceptorConfig implements WebMvcConfigurer {
 
+    @NonNull
+    @SuppressWarnings("null")
     private static final List<String> AUTH_EXCLUDE_PATHS = List.of(
             "/api/users/login",
             "/api/technicians/login",

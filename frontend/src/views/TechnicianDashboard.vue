@@ -427,6 +427,10 @@
           rows="4"
           placeholder="例如：冷车启动抖动，怠速不稳，故障灯偶发点亮，P0301..."
         ></textarea>
+        <div v-if="copilotLastQuestion" class="copilot-last-question">
+          <span>本次问题</span>
+          <p>{{ copilotLastQuestion }}</p>
+        </div>
         <div class="copilot-media-uploader">
           <div class="copilot-media-actions">
             <label class="copilot-media-upload-btn">
@@ -492,6 +496,22 @@
           <h4>诊断建议</h4>
           <p v-if="copilotFaultType" class="copilot-fault-type">故障类型：{{ copilotFaultType }}</p>
           <div class="copilot-markdown" v-html="renderedCopilotSuggestion"></div>
+        </div>
+        <div v-if="copilotHistory.length" class="copilot-history">
+          <div class="copilot-history-title">
+            <span>历史记录</span>
+            <button type="button" @click="clearCopilotHistory">清空</button>
+          </div>
+          <button
+            v-for="item in copilotHistory"
+            :key="item.id"
+            type="button"
+            class="copilot-history-item"
+            @click="restoreCopilotHistory(item)"
+          >
+            <span>{{ item.problemDescription }}</span>
+            <small>{{ item.createdAt }}</small>
+          </button>
         </div>
       </section>
     </main>
@@ -812,6 +832,8 @@ export default {
       ],
       showCopilotPanel: true,
       copilotProblemDescription: '',
+      copilotLastQuestion: '',
+      copilotHistory: [],
       copilotSuggestion: '',
       copilotFaultType: '',
       copilotError: '',
@@ -854,6 +876,7 @@ export default {
   created() {
     this.loadUserInfo();
     this.loadData();
+    this.loadCopilotHistory();
     this.copilotVoiceSupported = !!this.getSpeechRecognitionCtor();
   },
   beforeDestroy() {
@@ -1058,7 +1081,12 @@ export default {
         const payload = response.data || {};
         this.copilotFaultType = payload.faultType || '';
         this.copilotSuggestion = payload.suggestion || '未返回诊断建议';
-        this.copilotProblemDescription = '';
+        this.copilotLastQuestion = problemDescription || '仅上传故障图片';
+        this.addCopilotHistory({
+          problemDescription: this.copilotLastQuestion,
+          faultType: this.copilotFaultType,
+          suggestion: this.copilotSuggestion
+        });
         this.clearCopilotImages();
       } catch (error) {
         console.error('技师 Copilot 诊断失败:', error);
@@ -1068,6 +1096,54 @@ export default {
       } finally {
         this.copilotLoading = false;
       }
+    },
+    getCopilotHistoryKey() {
+      return `technicianCopilotHistory:${this.user?.id || 'anonymous'}`;
+    },
+    loadCopilotHistory() {
+      try {
+        const rawHistory = localStorage.getItem(this.getCopilotHistoryKey());
+        this.copilotHistory = rawHistory ? JSON.parse(rawHistory) : [];
+        if (this.copilotHistory.length) {
+          const latest = this.copilotHistory[0];
+          this.copilotLastQuestion = latest.problemDescription || '';
+          this.copilotFaultType = latest.faultType || '';
+          this.copilotSuggestion = latest.suggestion || '';
+        }
+      } catch (error) {
+        console.warn('读取 Copilot 历史失败，已重置:', error);
+        this.copilotHistory = [];
+        localStorage.removeItem(this.getCopilotHistoryKey());
+      }
+    },
+    saveCopilotHistory() {
+      localStorage.setItem(this.getCopilotHistoryKey(), JSON.stringify(this.copilotHistory));
+    },
+    addCopilotHistory(entry) {
+      const historyItem = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        problemDescription: entry.problemDescription,
+        faultType: entry.faultType || '',
+        suggestion: entry.suggestion || '',
+        createdAt: new Date().toLocaleString()
+      };
+      this.copilotHistory = [
+        historyItem,
+        ...this.copilotHistory.filter(item => item.problemDescription !== historyItem.problemDescription)
+      ].slice(0, 10);
+      this.saveCopilotHistory();
+    },
+    restoreCopilotHistory(item) {
+      this.copilotLastQuestion = item.problemDescription || '';
+      this.copilotProblemDescription = item.problemDescription || '';
+      this.copilotFaultType = item.faultType || '';
+      this.copilotSuggestion = item.suggestion || '';
+      this.copilotError = '';
+    },
+    clearCopilotHistory() {
+      this.copilotHistory = [];
+      this.copilotLastQuestion = '';
+      localStorage.removeItem(this.getCopilotHistoryKey());
     },
     async loadTasks() {
       try {
@@ -1706,6 +1782,29 @@ export default {
   color: #9ca3af;
 }
 
+.copilot-last-question {
+  margin-top: 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.55rem 0.65rem;
+}
+
+.copilot-last-question span {
+  display: block;
+  color: #93c5fd;
+  font-size: 0.74rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.copilot-last-question p {
+  margin: 0;
+  color: #e5e7eb;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .copilot-media-uploader {
   margin-top: 0.65rem;
   display: flex;
@@ -1867,6 +1966,60 @@ export default {
   background: rgba(255, 255, 255, 0.14);
   padding: 0.05rem 0.25rem;
   border-radius: 0.25rem;
+}
+
+.copilot-history {
+  margin-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 0.65rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.copilot-history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #d1d5db;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.copilot-history-title button {
+  border: none;
+  background: transparent;
+  color: #93c5fd;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.copilot-history-item {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f9fafb;
+  cursor: pointer;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+}
+
+.copilot-history-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.copilot-history-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.copilot-history-item small {
+  color: #9ca3af;
+  font-size: 0.72rem;
 }
 
 .tab-content {
