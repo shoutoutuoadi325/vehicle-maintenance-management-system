@@ -9,7 +9,11 @@ public class AIDiagnosisResponse {
     private Integer estimatedCostMax;
     private Integer estimatedHoursMin;
     private Integer estimatedHoursMax;
+    private Double confidence;
+    private String workflowStatus;
     private java.util.List<String> decisionPath = new java.util.ArrayList<>();
+    private java.util.List<String> ruleHits = new java.util.ArrayList<>();
+    private java.util.List<String> agentSummaries = new java.util.ArrayList<>();
     private boolean success;
     private String errorMessage;
 
@@ -91,12 +95,44 @@ public class AIDiagnosisResponse {
         this.estimatedHoursMax = estimatedHoursMax;
     }
 
+    public Double getConfidence() {
+        return confidence;
+    }
+
+    public void setConfidence(Double confidence) {
+        this.confidence = confidence;
+    }
+
+    public String getWorkflowStatus() {
+        return workflowStatus;
+    }
+
+    public void setWorkflowStatus(String workflowStatus) {
+        this.workflowStatus = workflowStatus;
+    }
+
     public java.util.List<String> getDecisionPath() {
         return decisionPath;
     }
 
     public void setDecisionPath(java.util.List<String> decisionPath) {
         this.decisionPath = decisionPath == null ? new java.util.ArrayList<>() : decisionPath;
+    }
+
+    public java.util.List<String> getRuleHits() {
+        return ruleHits;
+    }
+
+    public void setRuleHits(java.util.List<String> ruleHits) {
+        this.ruleHits = ruleHits == null ? new java.util.ArrayList<>() : ruleHits;
+    }
+
+    public java.util.List<String> getAgentSummaries() {
+        return agentSummaries;
+    }
+
+    public void setAgentSummaries(java.util.List<String> agentSummaries) {
+        this.agentSummaries = agentSummaries == null ? new java.util.ArrayList<>() : agentSummaries;
     }
 
     public boolean isSuccess() {

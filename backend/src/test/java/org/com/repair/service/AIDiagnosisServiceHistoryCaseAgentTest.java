@@ -94,7 +94,8 @@ class AIDiagnosisServiceHistoryCaseAgentTest {
                     new PrivacyMaskingService(),
                     new SemanticDiagnosisAgent(),
                     new InventoryDiagnosisAgent(materialServiceWithNoEvidence()),
-                    new HistoryCaseAgent(repository, new PrivacyMaskingService()));
+                    new HistoryCaseAgent(repository, new PrivacyMaskingService()),
+                    new DecisionFusionEngine(new SafetyNetGate()));
         }
 
         @Override

@@ -40,6 +40,7 @@ public class AIDiagnosisService {
     private final SemanticDiagnosisAgent semanticDiagnosisAgent;
     private final InventoryDiagnosisAgent inventoryDiagnosisAgent;
     private final HistoryCaseAgent historyCaseAgent;
+    private final DecisionFusionEngine decisionFusionEngine;
     private final OkHttpClient client;
     private final ObjectMapper objectMapper;
 
@@ -49,7 +50,8 @@ public class AIDiagnosisService {
                               PrivacyMaskingService privacyMaskingService,
                               SemanticDiagnosisAgent semanticDiagnosisAgent,
                               InventoryDiagnosisAgent inventoryDiagnosisAgent,
-                              HistoryCaseAgent historyCaseAgent) {
+                              HistoryCaseAgent historyCaseAgent,
+                              DecisionFusionEngine decisionFusionEngine) {
         this.gamificationService = gamificationService;
         this.technicianService = technicianService;
         this.ruleDiagnosisService = ruleDiagnosisService;
@@ -57,6 +59,7 @@ public class AIDiagnosisService {
         this.semanticDiagnosisAgent = semanticDiagnosisAgent;
         this.inventoryDiagnosisAgent = inventoryDiagnosisAgent;
         this.historyCaseAgent = historyCaseAgent;
+        this.decisionFusionEngine = decisionFusionEngine;
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(45, TimeUnit.SECONDS)
@@ -88,19 +91,15 @@ public class AIDiagnosisService {
                             ruleResult.ruleHit(),
                             ruleResult.confidence());
                     AIDiagnosisResponse response = ruleResult.response();
-                    appendInventoryDecisionPath(response, inventoryEvidence, normalizedRole);
-                    appendHistoryCaseDecisionPath(response, historyCaseEvidence, normalizedRole);
-                    appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
-                    return response;
+                    return finalizeDiagnosisResponse(
+                            response, ruleResult, false, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
                 }
             }
             AIDiagnosisResponse response = externalSingleDiagnosis(
                     maskingResult.maskedText(), normalizedRole, technicianId, traceId, inventoryEvidence, historyCaseEvidence);
-            appendInventoryDecisionPath(response, inventoryEvidence, normalizedRole);
-            appendHistoryCaseDecisionPath(response, historyCaseEvidence, normalizedRole);
-            appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
             logger.info("[AI-DIAGNOSIS][{}] 外部AI诊断完成", traceId);
-            return response;
+            return finalizeDiagnosisResponse(
+                    response, ruleResult, true, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
         } catch (Exception e) {
             if (isTechnicianRole(normalizedRole) && ruleResult.matched()) {
                 logger.warn("[AI-DIAGNOSIS][{}] 外部AI诊断失败，返回已命中的技师端规则结果: ruleHit={}, confidence={}, error={}",
@@ -109,17 +108,13 @@ public class AIDiagnosisService {
                         ruleResult.confidence(),
                         e.getMessage());
                 AIDiagnosisResponse response = ruleResult.response();
-                appendInventoryDecisionPath(response, inventoryEvidence, normalizedRole);
-                appendHistoryCaseDecisionPath(response, historyCaseEvidence, normalizedRole);
-                appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
-                return response;
+                return finalizeDiagnosisResponse(
+                        response, ruleResult, false, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
             }
             logger.warn("[AI-DIAGNOSIS][{}] 外部AI诊断失败，启用本地规则兜底: {}", traceId, e.getMessage(), e);
             AIDiagnosisResponse response = buildLocalFallbackResponse(problemDescription, normalizedRole);
-            appendInventoryDecisionPath(response, inventoryEvidence, normalizedRole);
-            appendHistoryCaseDecisionPath(response, historyCaseEvidence, normalizedRole);
-            appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
-            return response;
+            return finalizeDiagnosisResponse(
+                    response, ruleResult, false, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
         }
     }
     public AIDiagnosisResponse diagnoseFault(String problemDescription,
@@ -128,7 +123,15 @@ public class AIDiagnosisService {
                                              List<String> imageDataUrls) {
         String normalizedDescription = problemDescription == null ? "" : problemDescription.trim();
         if (normalizedDescription.isBlank() && imageDataUrls != null && !imageDataUrls.isEmpty()) {
-            return buildImageOnlyFallbackResponse(imageDataUrls.size(), normalizeRole(role));
+            String normalizedRole = normalizeRole(role);
+            AIDiagnosisResponse response = buildImageOnlyFallbackResponse(imageDataUrls.size(), normalizedRole);
+            return decisionFusionEngine.fuse(new DecisionFusionEngine.FusionInput(
+                    response,
+                    RuleDiagnosisService.RuleDiagnosisResult.noHit(),
+                    false,
+                    null,
+                    null,
+                    isTechnicianRole(normalizedRole)));
         }
         return diagnoseFault(normalizedDescription, role, technicianId);
     }
@@ -202,6 +205,25 @@ public class AIDiagnosisService {
             return "";
         }
         return "\n\nHistory Case Agent context:" + historyCaseEvidence.promptContext();
+    }
+
+    private AIDiagnosisResponse finalizeDiagnosisResponse(AIDiagnosisResponse response,
+                                                          RuleDiagnosisService.RuleDiagnosisResult ruleResult,
+                                                          boolean semanticExecuted,
+                                                          InventoryDiagnosisAgent.InventoryEvidence inventoryEvidence,
+                                                          HistoryCaseAgent.HistoryCaseEvidence historyCaseEvidence,
+                                                          PrivacyMaskingService.MaskingResult maskingResult,
+                                                          String normalizedRole) {
+        appendInventoryDecisionPath(response, inventoryEvidence, normalizedRole);
+        appendHistoryCaseDecisionPath(response, historyCaseEvidence, normalizedRole);
+        appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
+        return decisionFusionEngine.fuse(new DecisionFusionEngine.FusionInput(
+                response,
+                ruleResult,
+                semanticExecuted,
+                inventoryEvidence,
+                historyCaseEvidence,
+                isTechnicianRole(normalizedRole)));
     }
 
     private String semanticJsonOutputContract() {
@@ -608,6 +630,9 @@ public class AIDiagnosisService {
         response.setEstimatedCostMax(costRange[1]);
         response.setEstimatedHoursMin(hourRange[0]);
         response.setEstimatedHoursMax(hourRange[1]);
+        if (structured != null && structured.confidence() != null) {
+            response.setConfidence(structured.confidence());
+        }
 
         return response;
     }
@@ -637,6 +662,7 @@ public class AIDiagnosisService {
             JsonNode root = objectMapper.readTree(jsonCandidate);
             String faultType = firstText(root, "faultType", "fault_type", "diagnosis", "故障类型");
             String suggestion = firstText(root, "suggestion", "repairSuggestion", "repair_suggestion", "诊断建议", "维修建议", "建议");
+            Double confidence = firstDouble(root, "confidence", "score");
             java.util.List<String> causes = new java.util.ArrayList<>();
 
             JsonNode causeNode = firstNode(root, "possibleCauses", "possible_causes", "causes", "可能原因");
@@ -655,7 +681,7 @@ public class AIDiagnosisService {
                 return null;
             }
 
-            return new ParsedDiagnosis(faultType, suggestion, causes);
+            return new ParsedDiagnosis(faultType, suggestion, causes, confidence);
         } catch (Exception ex) {
             return null;
         }
@@ -674,6 +700,15 @@ public class AIDiagnosisService {
     private String firstText(JsonNode root, String... fieldNames) {
         JsonNode node = firstNode(root, fieldNames);
         return node == null ? "" : node.asText("").trim();
+    }
+
+    private Double firstDouble(JsonNode root, String... fieldNames) {
+        JsonNode node = firstNode(root, fieldNames);
+        if (node == null || !node.isNumber()) {
+            return null;
+        }
+        double value = node.asDouble();
+        return Math.max(0.0, Math.min(1.0, value));
     }
 
     private String extractLabeledSection(String text, String startLabels, String stopLabels) {
@@ -741,11 +776,17 @@ public class AIDiagnosisService {
         private final String faultType;
         private final String suggestion;
         private final java.util.List<String> possibleCauses;
+        private final Double confidence;
 
-        private ParsedDiagnosis(String faultType, String suggestion, java.util.List<String> possibleCauses) {
+        private ParsedDiagnosis(String faultType, String suggestion, java.util.List<String> possibleCauses, Double confidence) {
             this.faultType = faultType == null ? "" : faultType;
             this.suggestion = suggestion == null ? "" : suggestion;
             this.possibleCauses = possibleCauses == null ? java.util.List.of() : possibleCauses;
+            this.confidence = confidence;
+        }
+
+        private Double confidence() {
+            return confidence;
         }
     }
 

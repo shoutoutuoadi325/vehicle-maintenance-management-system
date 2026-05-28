@@ -84,7 +84,8 @@ class AIDiagnosisServiceInventoryAgentTest {
                     new PrivacyMaskingService(),
                     new SemanticDiagnosisAgent(),
                     new InventoryDiagnosisAgent(materialService),
-                    mock(HistoryCaseAgent.class));
+                    mock(HistoryCaseAgent.class),
+                    new DecisionFusionEngine(new SafetyNetGate()));
         }
 
         @Override
