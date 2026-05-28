@@ -48,6 +48,7 @@ class AIDiagnosisServiceRulePriorityTest {
                 mock(GamificationService.class),
                 mock(TechnicianService.class),
                 new RuleDiagnosisService(),
-                new PrivacyMaskingService());
+                new PrivacyMaskingService(),
+                new SemanticDiagnosisAgent());
     }
 }

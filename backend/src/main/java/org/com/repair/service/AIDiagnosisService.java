@@ -37,17 +37,20 @@ public class AIDiagnosisService {
     private final TechnicianService technicianService;
     private final RuleDiagnosisService ruleDiagnosisService;
     private final PrivacyMaskingService privacyMaskingService;
+    private final SemanticDiagnosisAgent semanticDiagnosisAgent;
     private final OkHttpClient client;
     private final ObjectMapper objectMapper;
 
     public AIDiagnosisService(GamificationService gamificationService,
                               TechnicianService technicianService,
                               RuleDiagnosisService ruleDiagnosisService,
-                              PrivacyMaskingService privacyMaskingService) {
+                              PrivacyMaskingService privacyMaskingService,
+                              SemanticDiagnosisAgent semanticDiagnosisAgent) {
         this.gamificationService = gamificationService;
         this.technicianService = technicianService;
         this.ruleDiagnosisService = ruleDiagnosisService;
         this.privacyMaskingService = privacyMaskingService;
+        this.semanticDiagnosisAgent = semanticDiagnosisAgent;
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(45, TimeUnit.SECONDS)
@@ -155,21 +158,23 @@ public class AIDiagnosisService {
                                                         String role,
                                                         Long technicianId,
                                                         String traceId) throws IOException {
-        String prompt = buildPrompt(problemDescription, role)
-                + buildOperationalContext(technicianId, traceId)
-                + "\n\n请只输出一个 JSON 对象，不要输出 Markdown，不要输出代码块，不要照抄字段说明。\n"
+        return semanticDiagnosisAgent.analyze(
+                new SemanticDiagnosisAgent.SemanticDiagnosisRequest(problemDescription, role, technicianId, traceId),
+                request -> buildPrompt(request.problemDescription(), request.role())
+                        + buildOperationalContext(request.technicianId(), request.traceId())
+                        + semanticJsonOutputContract(),
+                this::callOpenAIAPI,
+                this::parseResponse);
+    }
+
+    private String semanticJsonOutputContract() {
+        return "\n\n请只输出一个 JSON 对象，不要输出 Markdown，不要输出代码块，不要照抄字段说明。\n"
                 + "JSON 字段必须为：\n"
                 + "{\n"
                 + "  \"faultType\": \"用一句话写出1-3个最可能故障，不要写'故障类型'四个字\",\n"
                 + "  \"suggestion\": \"写出具体排查步骤、是否建议继续行驶、维修风险和安全提醒，不要写'建议'两个字\",\n"
                 + "  \"possibleCauses\": [\"原因1\", \"原因2\", \"原因3\"]\n"
                 + "}";
-
-        String diagnosisText = callOpenAIAPI(prompt, traceId, "SINGLE_DIAGNOSIS");
-        if (diagnosisText == null || diagnosisText.isBlank()) {
-            throw new IOException("外部AI返回空诊断内容");
-        }
-        return parseResponse(diagnosisText, problemDescription);
     }
 
     private String buildOperationalContext(Long technicianId, String traceId) {

@@ -24,6 +24,7 @@ class AIDiagnosisServicePrivacyMaskingTest {
         assertFalse(service.capturedPrompt.contains("LSVFA49J232123456"));
         assertTrue(service.capturedPrompt.contains("[MASKED_PLATE_1]"));
         assertTrue(service.capturedPrompt.contains("[MASKED_VIN_1]"));
+        assertTrue(service.capturedStage.equals("SEMANTIC_AGENT"));
         assertTrue(response.getDecisionPath().stream().anyMatch(step -> step.contains("隐私脱敏: 已执行")));
     }
 
@@ -40,23 +41,27 @@ class AIDiagnosisServicePrivacyMaskingTest {
         assertFalse(service.capturedPrompt.contains("LSVFA49J232123456"));
         assertTrue(service.capturedPrompt.contains("[MASKED_PLATE_1]"));
         assertTrue(service.capturedPrompt.contains("[MASKED_VIN_1]"));
+        assertTrue(service.capturedStage.equals("SEMANTIC_AGENT"));
         assertTrue(response.getDecisionPath().isEmpty());
     }
 
     private static class CapturingAIDiagnosisService extends AIDiagnosisService {
         private String capturedPrompt = "";
+        private String capturedStage = "";
 
         private CapturingAIDiagnosisService() {
             super(
                     mock(GamificationService.class),
                     mock(TechnicianService.class),
                     new RuleDiagnosisService(),
-                    new PrivacyMaskingService());
+                    new PrivacyMaskingService(),
+                    new SemanticDiagnosisAgent());
         }
 
         @Override
         protected String callOpenAIAPI(String prompt, String traceId, String stage) throws IOException {
             this.capturedPrompt = prompt;
+            this.capturedStage = stage;
             return """
                     {
                       "faultType": "漆面磨损",
