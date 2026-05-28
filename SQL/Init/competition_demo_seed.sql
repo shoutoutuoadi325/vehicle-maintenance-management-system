@@ -2,26 +2,26 @@ SET NAMES utf8mb4;
 SET SQL_SAFE_UPDATES = 0;
 
 /*
-  方行唯“AI”智能汽车维修系统 - 比赛演示数据
+  方行唯“AI”智能汽车维修系统 - 本地样例数据
 
-  讲解主线建议：
+  预置账号：
   1. 管理员 admin / 123456
-     看总览指标、库存预警、最近订单、统计分析、调度看板。
+     覆盖总览指标、库存预警、最近订单、统计分析、调度看板。
   2. 客户 user / 123456
-     看车辆健康档案、保养提醒、维修进度、反馈、AI 问诊转工单、零碳旅程。
+     覆盖车辆健康档案、保养提醒、维修进度、反馈、AI 问诊转工单、零碳旅程。
   3. 技师 tech / 123456
-     看个人任务、被催单的进行中工单、收入统计、耗材消耗。
+     覆盖个人任务、催单处理、收入统计、耗材消耗。
 
   数据设计思路：
-  - 多放“能证明能力”的状态：待分配、已分配、进行中、已完成、已催单、低库存、负反馈。
-  - 少放容易暴露短板的脏数据：避免空用户、空车辆、无技师的历史完成单。
-  - 订单集中在最近 45 天，统计图和现场刷新更有存在感。
-  - 前端可见的订单号使用 WX2026-001 这类自然编号，不带技术清理前缀。
+  - 覆盖主要业务状态：待分配、已分配、进行中、已完成、已催单、低库存、负反馈。
+  - 保持关联数据完整：避免空用户、空车辆、无技师的历史完成单。
+  - 订单集中在最近 45 天，便于统计图表和看板刷新。
+  - 前端可见的订单号使用 WX2026-001 这类业务编号。
 */
 
 START TRANSACTION;
 
--- 0) 演示数据清理：兼容旧版 COMP2026-* 和新版 WX2026-*，不影响普通开发数据
+-- 0) 样例数据清理：兼容旧版 COMP2026-* 和新版 WX2026-*，不影响普通开发数据
 DELETE f
 FROM feedback f
 JOIN repair_order ro ON ro.id = f.repair_order_id
@@ -39,20 +39,29 @@ DELETE FROM journey_footprint WHERE event_type LIKE 'COMP_%';
 DELETE FROM green_reward_ledger WHERE source_id LIKE 'COMP_%' OR source_type LIKE 'COMP_%';
 DELETE FROM user_coupon_wallet WHERE source_action LIKE 'COMP_%';
 
-SET @competition_user_id = (SELECT id FROM user WHERE username = 'user' LIMIT 1);
-DELETE FROM journey_completion_record WHERE user_id = @competition_user_id;
-DELETE FROM green_journey_node_state WHERE user_id = @competition_user_id;
-DELETE FROM green_daily_quota WHERE user_id = @competition_user_id;
-DELETE FROM green_energy_account WHERE user_id = @competition_user_id;
+SET @seed_user_id = (SELECT id FROM user WHERE username = 'user' LIMIT 1);
+DELETE FROM user_coupon_wallet
+WHERE user_id = @seed_user_id
+  AND source_action LIKE 'JOURNEY_COUPON_DRAW_%';
+DELETE FROM journey_footprint
+WHERE user_id = @seed_user_id
+  AND event_type IN ('CHECKIN_CITY', 'TRIGGER_RANDOM_EVENT', 'DRAW_COUPON', 'REACH_DESTINATION');
+DELETE FROM green_reward_ledger
+WHERE user_id = @seed_user_id
+  AND source_type = 'JOURNEY_CITY';
+DELETE FROM journey_completion_record WHERE user_id = @seed_user_id;
+DELETE FROM green_journey_node_state WHERE user_id = @seed_user_id;
+DELETE FROM green_daily_quota WHERE user_id = @seed_user_id;
+DELETE FROM green_energy_account WHERE user_id = @seed_user_id;
 
 DELETE FROM vehicle WHERE license_plate LIKE 'COMP-%';
 DELETE FROM material WHERE name LIKE 'COMP-%';
 DELETE FROM coupon WHERE coupon_title LIKE 'COMP-%';
 
--- 1) 账号：现场演示固定三类入口
+-- 1) 账号：预置三类用户入口
 INSERT INTO admin (username, password, name, phone, email, role)
 VALUES
-  ('admin', '123456', '林岚（运营总监）', '13820260001', 'admin.competition@example.com', 'SUPER_ADMIN')
+  ('admin', '123456', '林岚（运营总监）', '13820260001', 'admin.system@example.com', 'SUPER_ADMIN')
 ON DUPLICATE KEY UPDATE
   password = VALUES(password),
   name = VALUES(name),
@@ -97,7 +106,7 @@ SET @t_diag = (SELECT id FROM technician WHERE username = 'diag' LIMIT 1);
 SET @t_body = (SELECT id FROM technician WHERE username = 'body' LIMIT 1);
 SET @t_paint = (SELECT id FROM technician WHERE username = 'paint' LIMIT 1);
 
--- 2) 车辆：品牌和里程刻意拉开，方便统计、保养提醒、客户视角展示
+-- 2) 车辆：品牌和里程保持差异，便于统计、保养提醒和客户视角查询
 INSERT INTO vehicle (license_plate, brand, model, year, color, vin, current_mileage, last_maintenance_mileage, last_maintenance_at, user_id)
 VALUES
   ('COMP-SH-AI01', '蔚来', 'ET5 Touring', 2024, '星灰', 'COMPVIN00000000001', 28680, 18600, DATE_SUB(NOW(), INTERVAL 235 DAY), @u_chen),
@@ -205,7 +214,7 @@ VALUES
 -- 5) 反馈：既有五星样板，也有可被管理员追踪的负反馈
 INSERT INTO feedback (rating, comment, created_at, repair_order_id, user_id)
 VALUES
-  (5, '检测报告非常清楚，技师解释了电池健康度和后续保养建议，适合现场展示服务闭环。', DATE_SUB(NOW(), INTERVAL 40 DAY), @o001, @u_chen),
+  (5, '检测报告非常清楚，技师解释了电池健康度和后续保养建议，服务闭环体验完整。', DATE_SUB(NOW(), INTERVAL 40 DAY), @o001, @u_chen),
   (2, '交车时间比承诺晚，且制动顿挫复现后沟通不够及时，建议主管复盘。', DATE_SUB(NOW(), INTERVAL 34 DAY), @o002, @u_li),
   (5, '钣金修复后雷达标定一次通过，车队批量维保效率很高。', DATE_SUB(NOW(), INTERVAL 28 DAY), @o003, @u_fleet),
   (4, '空调异味解决明显，低碳驾驶建议有帮助。', DATE_SUB(NOW(), INTERVAL 22 DAY), @o004, @u_fleet),
@@ -221,7 +230,7 @@ VALUES
   (@u_chen, @v_byd, CONCAT('COMP:', @u_chen, ':', @v_byd, ':MILEAGE_NOTICE'), 'MILEAGE_OVERDUE',
    '比亚迪汉 EV 即将到达下一保养里程，可提前预约避免排队。', DATE_SUB(NOW(), INTERVAL 6 HOUR), 'READ', DATE_SUB(NOW(), INTERVAL 6 HOUR), DATE_SUB(NOW(), INTERVAL 4 HOUR));
 
--- 7) 零碳旅程：让客户进入页面时“差一步领奖”，最适合现场点一下完成闭环
+-- 7) 零碳旅程：预置接近完成的路线状态，便于验证完整权益闭环
 INSERT INTO journey_map (map_name, enabled, update_time)
 VALUES ('COMP-318 川藏零碳服务线', 1, NOW())
 ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), update_time = VALUES(update_time);
@@ -255,7 +264,7 @@ WHERE id IN (SELECT id FROM tmp_bad_comp_maps);
 
 DROP TEMPORARY TABLE IF EXISTS tmp_bad_comp_maps;
 
--- 禁用重复路线副本，只保留一个正确的比赛路线入口。
+-- 禁用重复路线副本，只保留一个正确的路线入口。
 UPDATE journey_map
 SET enabled = 0, update_time = NOW()
 WHERE map_name LIKE 'COMP-318%'
@@ -393,14 +402,14 @@ WHERE t.id IN (@t_mechanic, @t_electric, @t_diag, @t_body, @t_paint);
 
 COMMIT;
 
--- 10) 现场导入后快速核对
+-- 10) 导入后快速核对
 SELECT 'login-admin' AS item, username, password FROM admin WHERE username = 'admin'
 UNION ALL
 SELECT 'login-customer', username, password FROM user WHERE username = 'user'
 UNION ALL
 SELECT 'login-technician', username, password FROM technician WHERE username = 'tech';
 
-SELECT 'competition_orders' AS metric, COUNT(*) AS value FROM repair_order WHERE order_number LIKE 'WX2026-%'
+SELECT 'sample_orders' AS metric, COUNT(*) AS value FROM repair_order WHERE order_number LIKE 'WX2026-%'
 UNION ALL
 SELECT 'active_inventory_alerts', COUNT(*) FROM inventory_alert_notification WHERE material_name LIKE 'COMP-%' AND status = 'ACTIVE'
 UNION ALL

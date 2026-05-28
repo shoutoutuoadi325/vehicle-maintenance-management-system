@@ -35,13 +35,16 @@ public class AIDiagnosisService {
 
     private final GamificationService gamificationService;
     private final TechnicianService technicianService;
+    private final RuleDiagnosisService ruleDiagnosisService;
     private final OkHttpClient client;
     private final ObjectMapper objectMapper;
 
     public AIDiagnosisService(GamificationService gamificationService,
-                              TechnicianService technicianService) {
+                              TechnicianService technicianService,
+                              RuleDiagnosisService ruleDiagnosisService) {
         this.gamificationService = gamificationService;
         this.technicianService = technicianService;
+        this.ruleDiagnosisService = ruleDiagnosisService;
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(45, TimeUnit.SECONDS)
@@ -58,11 +61,30 @@ public class AIDiagnosisService {
         String traceId = UUID.randomUUID().toString();
         String normalizedRole = normalizeRole(role);
         logger.info("[AI-DIAGNOSIS][{}] 诊断开始, role={}, technicianId={}", traceId, normalizedRole, technicianId);
+        RuleDiagnosisService.RuleDiagnosisResult ruleResult = RuleDiagnosisService.RuleDiagnosisResult.noHit();
         try {
+            if (isTechnicianRole(normalizedRole)) {
+                ruleResult = ruleDiagnosisService.diagnose(problemDescription);
+                if (ruleResult.directReturn()) {
+                    logger.info("[AI-DIAGNOSIS][{}] 技师端规则高置信直出, ruleHit={}, confidence={}",
+                            traceId,
+                            ruleResult.ruleHit(),
+                            ruleResult.confidence());
+                    return ruleResult.response();
+                }
+            }
             AIDiagnosisResponse response = externalSingleDiagnosis(problemDescription, normalizedRole, technicianId, traceId);
             logger.info("[AI-DIAGNOSIS][{}] 外部AI诊断完成", traceId);
             return response;
         } catch (Exception e) {
+            if (isTechnicianRole(normalizedRole) && ruleResult.matched()) {
+                logger.warn("[AI-DIAGNOSIS][{}] 外部AI诊断失败，返回已命中的技师端规则结果: ruleHit={}, confidence={}, error={}",
+                        traceId,
+                        ruleResult.ruleHit(),
+                        ruleResult.confidence(),
+                        e.getMessage());
+                return ruleResult.response();
+            }
             logger.warn("[AI-DIAGNOSIS][{}] 外部AI诊断失败，启用本地规则兜底: {}", traceId, e.getMessage(), e);
             return buildLocalFallbackResponse(problemDescription, normalizedRole);
         }
@@ -144,7 +166,7 @@ public class AIDiagnosisService {
 
         try {
             List<String> ecoTips = gamificationService.getEcoWaitingTips();
-            if (!ecoTips.isEmpty()) {
+            if (ecoTips != null && !ecoTips.isEmpty()) {
                 context.append("\n- 绿色维修提示：").append(ecoTips.get(0));
             }
         } catch (Exception ex) {
@@ -206,6 +228,10 @@ public class AIDiagnosisService {
 
         try {
             TechnicianFatigueSnapshot snapshot = technicianService.getTechnicianFatigueSnapshot(technicianId);
+            if (snapshot == null) {
+                logger.info("[AI-CONSILIUM][{}] 未获取到技师疲劳度快照，使用默认疲劳度={}", traceId, defaultFatigueLevel);
+                return defaultFatigueLevel;
+            }
             double fatigueLevel = snapshot.getFatigueLevel();
 
             logger.info("[AI-CONSILIUM][{}] 技师疲劳度计算成功, technicianId={}, completedToday={}, continuousHours={}, nightOrdersToday={}, fatigue={}",
@@ -351,7 +377,12 @@ public class AIDiagnosisService {
         if (role == null || role.isBlank()) {
             return "customer";
         }
-        return role.trim().toLowerCase();
+        String normalized = role.trim().toLowerCase();
+        return "admin".equals(normalized) ? "technician" : normalized;
+    }
+
+    private boolean isTechnicianRole(String role) {
+        return "technician".equals(role);
     }
 
     private String callOpenAIAPI(String prompt, String traceId, String stage) throws IOException {
