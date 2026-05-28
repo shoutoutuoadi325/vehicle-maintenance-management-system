@@ -14,6 +14,7 @@ public class AIDiagnosisResponse {
     private java.util.List<String> decisionPath = new java.util.ArrayList<>();
     private java.util.List<String> ruleHits = new java.util.ArrayList<>();
     private java.util.List<String> agentSummaries = new java.util.ArrayList<>();
+    private java.util.List<String> inventoryWarnings = new java.util.ArrayList<>();
     private boolean success;
     private String errorMessage;
 
@@ -133,6 +134,14 @@ public class AIDiagnosisResponse {
 
     public void setAgentSummaries(java.util.List<String> agentSummaries) {
         this.agentSummaries = agentSummaries == null ? new java.util.ArrayList<>() : agentSummaries;
+    }
+
+    public java.util.List<String> getInventoryWarnings() {
+        return inventoryWarnings;
+    }
+
+    public void setInventoryWarnings(java.util.List<String> inventoryWarnings) {
+        this.inventoryWarnings = inventoryWarnings == null ? new java.util.ArrayList<>() : inventoryWarnings;
     }
 
     public boolean isSuccess() {

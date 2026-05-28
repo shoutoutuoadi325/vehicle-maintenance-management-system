@@ -496,6 +496,28 @@
           <h4>诊断建议</h4>
           <p v-if="copilotFaultType" class="copilot-fault-type">故障类型：{{ copilotFaultType }}</p>
           <div class="copilot-markdown" v-html="renderedCopilotSuggestion"></div>
+          <div v-if="hasCopilotEvidence" class="copilot-evidence">
+            <div class="copilot-evidence-summary">
+              <span v-if="copilotWorkflowStatus" class="copilot-status" :class="copilotWorkflowStatus.toLowerCase()">
+                {{ formatCopilotWorkflowStatus(copilotWorkflowStatus) }}
+              </span>
+              <span v-if="copilotConfidence !== null" class="copilot-confidence">
+                置信度 {{ formatCopilotConfidence(copilotConfidence) }}
+              </span>
+            </div>
+            <div v-if="copilotInventoryWarnings.length" class="copilot-inventory-warning">
+              <strong><i class="fas fa-box-open"></i> 库存预警</strong>
+              <ul>
+                <li v-for="(item, index) in copilotInventoryWarnings" :key="`inventory-warning-${index}`">{{ item }}</li>
+              </ul>
+            </div>
+            <div v-if="copilotRuleHits.length" class="copilot-evidence-block">
+              <strong>规则命中</strong>
+              <ul>
+                <li v-for="(item, index) in copilotRuleHits" :key="`rule-${index}`">{{ item }}</li>
+              </ul>
+            </div>
+          </div>
         </div>
         <div v-if="copilotHistory.length" class="copilot-history">
           <div class="copilot-history-title">
@@ -836,6 +858,10 @@ export default {
       copilotHistory: [],
       copilotSuggestion: '',
       copilotFaultType: '',
+      copilotConfidence: null,
+      copilotWorkflowStatus: '',
+      copilotRuleHits: [],
+      copilotInventoryWarnings: [],
       copilotError: '',
       copilotLoading: false,
       copilotImages: [],
@@ -868,6 +894,12 @@ export default {
     },
     renderedCopilotSuggestion() {
       return marked.parse(this.copilotSuggestion || '');
+    },
+    hasCopilotEvidence() {
+      return this.copilotWorkflowStatus
+        || this.copilotConfidence !== null
+        || this.copilotRuleHits.length
+        || this.copilotInventoryWarnings.length;
     },
     renderedTaskAiSuggestion() {
       return marked.parse(this.taskAiSuggestion || '');
@@ -1081,21 +1113,49 @@ export default {
         const payload = response.data || {};
         this.copilotFaultType = payload.faultType || '';
         this.copilotSuggestion = payload.suggestion || '未返回诊断建议';
+        this.applyCopilotEvidence(payload);
         this.copilotLastQuestion = problemDescription || '仅上传故障图片';
         this.addCopilotHistory({
           problemDescription: this.copilotLastQuestion,
           faultType: this.copilotFaultType,
-          suggestion: this.copilotSuggestion
+          suggestion: this.copilotSuggestion,
+          confidence: this.copilotConfidence,
+          workflowStatus: this.copilotWorkflowStatus,
+          ruleHits: this.copilotRuleHits,
+          inventoryWarnings: this.copilotInventoryWarnings
         });
         this.clearCopilotImages();
       } catch (error) {
         console.error('技师 Copilot 诊断失败:', error);
         this.copilotFaultType = '';
         this.copilotSuggestion = '';
+        this.clearCopilotEvidence();
         this.copilotError = error.response?.data?.errorMessage || error.response?.data?.message || 'AI 诊断失败，请稍后重试';
       } finally {
         this.copilotLoading = false;
       }
+    },
+    applyCopilotEvidence(payload) {
+      this.copilotConfidence = typeof payload.confidence === 'number' ? payload.confidence : null;
+      this.copilotWorkflowStatus = payload.workflowStatus || '';
+      this.copilotRuleHits = Array.isArray(payload.ruleHits) ? payload.ruleHits : [];
+      this.copilotInventoryWarnings = Array.isArray(payload.inventoryWarnings) ? payload.inventoryWarnings : [];
+    },
+    clearCopilotEvidence() {
+      this.copilotConfidence = null;
+      this.copilotWorkflowStatus = '';
+      this.copilotRuleHits = [];
+      this.copilotInventoryWarnings = [];
+    },
+    formatCopilotConfidence(confidence) {
+      return `${Math.round(Number(confidence) * 100)}%`;
+    },
+    formatCopilotWorkflowStatus(status) {
+      const statusMap = {
+        VALIDATED: '已通过安全门',
+        SUSPENDED: '需人工复核'
+      };
+      return statusMap[status] || status;
     },
     getCopilotHistoryKey() {
       return `technicianCopilotHistory:${this.user?.id || 'anonymous'}`;
@@ -1109,6 +1169,7 @@ export default {
           this.copilotLastQuestion = latest.problemDescription || '';
           this.copilotFaultType = latest.faultType || '';
           this.copilotSuggestion = latest.suggestion || '';
+          this.applyCopilotEvidence(latest);
         }
       } catch (error) {
         console.warn('读取 Copilot 历史失败，已重置:', error);
@@ -1125,6 +1186,10 @@ export default {
         problemDescription: entry.problemDescription,
         faultType: entry.faultType || '',
         suggestion: entry.suggestion || '',
+        confidence: entry.confidence ?? null,
+        workflowStatus: entry.workflowStatus || '',
+        ruleHits: entry.ruleHits || [],
+        inventoryWarnings: entry.inventoryWarnings || [],
         createdAt: new Date().toLocaleString()
       };
       this.copilotHistory = [
@@ -1138,11 +1203,13 @@ export default {
       this.copilotProblemDescription = item.problemDescription || '';
       this.copilotFaultType = item.faultType || '';
       this.copilotSuggestion = item.suggestion || '';
+      this.applyCopilotEvidence(item);
       this.copilotError = '';
     },
     clearCopilotHistory() {
       this.copilotHistory = [];
       this.copilotLastQuestion = '';
+      this.clearCopilotEvidence();
       localStorage.removeItem(this.getCopilotHistoryKey());
     },
     async loadTasks() {
@@ -1966,6 +2033,105 @@ export default {
   background: rgba(255, 255, 255, 0.14);
   padding: 0.05rem 0.25rem;
   border-radius: 0.25rem;
+}
+
+.copilot-evidence {
+  margin-top: 0.75rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid;
+  gap: 0.65rem;
+}
+
+.copilot-evidence-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.copilot-status,
+.copilot-confidence {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.55rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.copilot-status.validated {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+}
+
+.copilot-status.suspended {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.copilot-confidence {
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+}
+
+.copilot-inventory-warning {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.65rem;
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  border-radius: 0.55rem;
+  background: rgba(245, 158, 11, 0.14);
+  color: #fef3c7;
+  font-size: 0.8rem;
+}
+
+.copilot-inventory-warning strong {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  color: #fde68a;
+  font-size: 0.84rem;
+}
+
+.copilot-inventory-warning ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.copilot-inventory-warning li {
+  margin: 0.16rem 0;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.copilot-evidence-block {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: #dbeafe;
+}
+
+.copilot-evidence-block strong {
+  color: #f8fafc;
+  font-size: 0.8rem;
+}
+
+.copilot-evidence-block ul,
+.copilot-evidence-block ol {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.copilot-evidence-block li {
+  margin: 0.18rem 0;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
 }
 
 .copilot-history {

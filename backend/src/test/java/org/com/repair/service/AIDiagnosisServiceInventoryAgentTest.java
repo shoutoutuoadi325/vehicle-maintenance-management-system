@@ -33,6 +33,7 @@ class AIDiagnosisServiceInventoryAgentTest {
         assertTrue(service.capturedPrompt.contains("Inventory Agent context"));
         assertTrue(service.capturedPrompt.contains("\u6cb9\u6f06"));
         assertTrue(service.capturedPrompt.contains("INVENTORY_LOW_STOCK"));
+        assertTrue(response.getInventoryWarnings().contains("\u6cb9\u6f06\u5f53\u524d\u5e93\u5b58\u4f4e\u4e8e\u5b89\u5168\u5e93\u5b58\uff1a\u5f53\u524d 1\uff0c\u5b89\u5168\u5e93\u5b58 3\uff0c\u8bf7\u5148\u786e\u8ba4\u5907\u4ef6\u3002"));
         assertTrue(response.getDecisionPath().stream()
                 .anyMatch(step -> step.contains("Inventory Agent") && step.contains("INVENTORY_LOW_STOCK")));
         verify(materialService).getAllMaterials();
@@ -54,6 +55,7 @@ class AIDiagnosisServiceInventoryAgentTest {
 
         assertFalse(service.capturedPrompt.contains("Inventory Agent context"));
         assertTrue(response.getDecisionPath().isEmpty());
+        assertTrue(response.getInventoryWarnings().isEmpty());
         verify(materialService, never()).getAllMaterials();
         verify(materialService, never()).getActiveInventoryAlerts();
     }

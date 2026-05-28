@@ -30,8 +30,12 @@ public class InventoryDiagnosisAgent {
                     .filter(alert -> isRelated(alert.getMaterialName(), keywords, problemDescription))
                     .limit(5)
                     .toList();
+            List<String> inventoryWarnings = buildCurrentSafetyStockWarnings(relatedMaterials, relatedAlerts);
 
             List<String> riskTags = new ArrayList<>();
+            if (!inventoryWarnings.isEmpty()) {
+                riskTags.add("INVENTORY_BELOW_SAFETY_STOCK");
+            }
             if (!relatedAlerts.isEmpty()) {
                 riskTags.add("INVENTORY_LOW_STOCK");
             }
@@ -42,11 +46,15 @@ public class InventoryDiagnosisAgent {
                 riskTags.add("INVENTORY_NO_RELATED_EVIDENCE");
             }
 
-            return new InventoryEvidence(buildSummary(relatedMaterials, relatedAlerts, riskTags), riskTags);
+            return new InventoryEvidence(
+                    buildSummary(relatedMaterials, relatedAlerts, riskTags),
+                    riskTags,
+                    inventoryWarnings);
         } catch (Exception ex) {
             return new InventoryEvidence(
                     "Inventory Agent: inventory lookup unavailable; tags=INVENTORY_LOOKUP_FAILED",
-                    List.of("INVENTORY_LOOKUP_FAILED"));
+                    List.of("INVENTORY_LOOKUP_FAILED"),
+                    List.of());
         }
     }
 
@@ -154,6 +162,53 @@ public class InventoryDiagnosisAgent {
         return summary.toString();
     }
 
+    private List<String> buildCurrentSafetyStockWarnings(List<MaterialResponse> materials,
+                                                         List<InventoryAlertNotification> alerts) {
+        List<String> warnings = new ArrayList<>();
+        Set<String> warnedNames = new LinkedHashSet<>();
+        if (materials != null) {
+            for (MaterialResponse material : materials) {
+                String warning = buildCurrentStockWarning(
+                        material.name(),
+                        material.stockQuantity(),
+                        material.minimumStockLevel());
+                if (warning != null && warnedNames.add(normalize(material.name()))) {
+                    warnings.add(warning);
+                }
+            }
+        }
+
+        if (alerts != null) {
+            for (InventoryAlertNotification alert : alerts) {
+                String warning = buildCurrentStockWarning(
+                        alert.getMaterialName(),
+                        alert.getCurrentStock(),
+                        alert.getMinimumStockLevel());
+                if (warning != null && warnedNames.add(normalize(alert.getMaterialName()))) {
+                    warnings.add(warning);
+                }
+            }
+        }
+
+        return warnings;
+    }
+
+    private String buildCurrentStockWarning(String materialName,
+                                            Integer currentStock,
+                                            Integer minimumStockLevel) {
+        int current = nullToZero(currentStock);
+        int minimum = nullToZero(minimumStockLevel);
+        if (current >= minimum) {
+            return null;
+        }
+        return materialName
+                + "\u5f53\u524d\u5e93\u5b58\u4f4e\u4e8e\u5b89\u5168\u5e93\u5b58\uff1a\u5f53\u524d "
+                + current
+                + "\uff0c\u5b89\u5168\u5e93\u5b58 "
+                + minimum
+                + "\uff0c\u8bf7\u5148\u786e\u8ba4\u5907\u4ef6\u3002";
+    }
+
     private int nullToZero(Integer value) {
         return value == null ? 0 : value;
     }
@@ -162,9 +217,11 @@ public class InventoryDiagnosisAgent {
         return text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
     }
 
-    public record InventoryEvidence(String summary, List<String> riskTags) {
+    public record InventoryEvidence(String summary, List<String> riskTags, List<String> lowStockWarnings) {
         public boolean hasLowStockRisk() {
-            return riskTags != null && riskTags.contains("INVENTORY_LOW_STOCK");
+            return riskTags != null
+                    && (riskTags.contains("INVENTORY_LOW_STOCK")
+                    || riskTags.contains("INVENTORY_BELOW_SAFETY_STOCK"));
         }
 
         public String promptContext() {

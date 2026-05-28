@@ -91,6 +91,92 @@ class AIDiagnosisControllerContractTest {
     }
 
     @Test
+    void shouldAllowImageOnlyPayloadFromFrontendEntries() throws Exception {
+        when(requestUserContextResolver.requireRole(any())).thenReturn("customer");
+        when(aiDiagnosisService.diagnoseFault(eq(""), eq("customer"), eq(null), anyList()))
+                .thenReturn(new AIDiagnosisResponse("visual precheck", "inspect visible damage and add text if needed"));
+
+        mockMvc.perform(post("/api/ai-diagnosis/diagnose")
+                .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                .content("""
+                        {
+                          "problemDescription": "   ",
+                          "imageDataUrls": [
+                            " data:image/png;base64,front1 ",
+                            "",
+                            "data:image/jpeg;base64,front2"
+                          ]
+                        }
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.faultType").value("visual precheck"))
+                .andExpect(jsonPath("$.suggestion").value("inspect visible damage and add text if needed"));
+
+        verify(aiDiagnosisService).diagnoseFault(
+                "",
+                "customer",
+                null,
+                List.of("data:image/png;base64,front1", "data:image/jpeg;base64,front2"));
+    }
+
+    @Test
+    void shouldSerializeLegacyAndTechnicianEvidenceFields() throws Exception {
+        when(requestUserContextResolver.requireRole(any())).thenReturn("technician");
+
+        AIDiagnosisResponse response = new AIDiagnosisResponse("brake system", "check brake fluid first");
+        response.setSeverityLevel("HIGH");
+        response.setPossibleCauses(List.of("low brake fluid"));
+        response.setEstimatedCostMin(120);
+        response.setEstimatedCostMax(480);
+        response.setEstimatedHoursMin(1);
+        response.setEstimatedHoursMax(3);
+        response.setConfidence(0.91);
+        response.setWorkflowStatus("VALIDATED");
+        response.setRuleHits(List.of("brake-fluid-low"));
+        response.setAgentSummaries(List.of("Inventory Agent: brake fluid available"));
+        response.setInventoryWarnings(List.of("brake fluid当前库存低于安全库存：当前 1，安全库存 3，请先确认备件。"));
+        response.setDecisionPath(List.of("Decision Fusion: confidence=0.91"));
+
+        when(aiDiagnosisService.diagnoseFault(eq("brake pedal feels soft"), eq("technician"), eq(7L), eq(List.of())))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/ai-diagnosis/diagnose")
+                .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                .content("{\"problemDescription\":\"brake pedal feels soft\",\"technicianId\":7}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.faultType").value("brake system"))
+                .andExpect(jsonPath("$.suggestion").value("check brake fluid first"))
+                .andExpect(jsonPath("$.severityLevel").value("HIGH"))
+                .andExpect(jsonPath("$.possibleCauses[0]").value("low brake fluid"))
+                .andExpect(jsonPath("$.estimatedCostMin").value(120))
+                .andExpect(jsonPath("$.estimatedCostMax").value(480))
+                .andExpect(jsonPath("$.estimatedHoursMin").value(1))
+                .andExpect(jsonPath("$.estimatedHoursMax").value(3))
+                .andExpect(jsonPath("$.confidence").value(0.91))
+                .andExpect(jsonPath("$.workflowStatus").value("VALIDATED"))
+                .andExpect(jsonPath("$.ruleHits[0]").value("brake-fluid-low"))
+                .andExpect(jsonPath("$.agentSummaries[0]").value("Inventory Agent: brake fluid available"))
+                .andExpect(jsonPath("$.inventoryWarnings[0]").value("brake fluid当前库存低于安全库存：当前 1，安全库存 3，请先确认备件。"))
+                .andExpect(jsonPath("$.decisionPath[0]").value("Decision Fusion: confidence=0.91"));
+    }
+
+    @Test
+    void shouldKeepLegacyDiagnosisEndpointAliasCompatible() throws Exception {
+        when(requestUserContextResolver.requireRole(any())).thenReturn("customer");
+        when(aiDiagnosisService.diagnoseFault(eq("engine noise"), eq("customer"), eq(null), eq(List.of())))
+                .thenReturn(new AIDiagnosisResponse("engine noise", "book a basic inspection"));
+
+        mockMvc.perform(post("/api/diagnosis")
+                .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                .content("{\"problemDescription\":\"engine noise\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.faultType").value("engine noise"))
+                .andExpect(jsonPath("$.suggestion").value("book a basic inspection"));
+
+        verify(aiDiagnosisService).diagnoseFault("engine noise", "customer", null, List.of());
+    }
+
+    @Test
     void shouldReturn400WhenTextAndImageAreBothMissing() throws Exception {
         when(requestUserContextResolver.requireRole(any())).thenReturn("customer");
 

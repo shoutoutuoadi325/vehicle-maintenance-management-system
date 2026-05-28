@@ -34,6 +34,7 @@ public class DecisionFusionEngine {
             response.setWorkflowStatus(null);
             response.setRuleHits(List.of());
             response.setAgentSummaries(List.of());
+            response.setInventoryWarnings(List.of());
             return response;
         }
 
@@ -47,6 +48,7 @@ public class DecisionFusionEngine {
         response.setWorkflowStatus(workflowStatus);
         response.setRuleHits(ruleHits);
         response.setAgentSummaries(agentSummaries);
+        response.setInventoryWarnings(buildInventoryWarnings(input.inventoryEvidence()));
         response.setDecisionPath(buildDecisionPath(response, weights, confidence, workflowStatus));
         return response;
     }
@@ -70,6 +72,13 @@ public class DecisionFusionEngine {
             summaries.add(input.historyCaseEvidence().summary());
         }
         return summaries;
+    }
+
+    private List<String> buildInventoryWarnings(InventoryDiagnosisAgent.InventoryEvidence inventoryEvidence) {
+        if (inventoryEvidence == null || inventoryEvidence.lowStockWarnings() == null) {
+            return List.of();
+        }
+        return inventoryEvidence.lowStockWarnings();
     }
 
     private WeightProfile resolveWeights(RuleDiagnosisService.RuleDiagnosisResult ruleResult, boolean semanticExecuted) {

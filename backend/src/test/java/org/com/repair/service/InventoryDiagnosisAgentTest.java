@@ -34,7 +34,9 @@ class InventoryDiagnosisAgentTest {
         assertTrue(evidence.hasLowStockRisk());
         assertTrue(evidence.summary().contains("Inventory Agent"));
         assertTrue(evidence.summary().contains("\u5239\u8f66\u7247"));
+        assertTrue(evidence.summary().contains("INVENTORY_BELOW_SAFETY_STOCK"));
         assertTrue(evidence.summary().contains("INVENTORY_LOW_STOCK"));
+        assertTrue(evidence.lowStockWarnings().contains("\u5239\u8f66\u7247\u5f53\u524d\u5e93\u5b58\u4f4e\u4e8e\u5b89\u5168\u5e93\u5b58\uff1a\u5f53\u524d 2\uff0c\u5b89\u5168\u5e93\u5b58 5\uff0c\u8bf7\u5148\u786e\u8ba4\u5907\u4ef6\u3002"));
         verify(materialService).getAllMaterials();
         verify(materialService).getActiveInventoryAlerts();
         verify(materialService, never()).consumeMaterialStock(anyLong(), anyInt());
@@ -51,6 +53,20 @@ class InventoryDiagnosisAgentTest {
         InventoryDiagnosisAgent.InventoryEvidence evidence = agent.analyze("\u5239\u8f66\u5f02\u54cd");
 
         assertTrue(evidence.summary().contains("INVENTORY_LOOKUP_FAILED"));
+    }
+
+    @Test
+    void shouldNotWarnWhenProjectedStockStaysAboveSafetyLevel() {
+        MaterialService materialService = mock(MaterialService.class);
+        InventoryDiagnosisAgent agent = new InventoryDiagnosisAgent(materialService);
+
+        when(materialService.getAllMaterials()).thenReturn(List.of(
+                new MaterialResponse(1L, "\u5239\u8f66\u7247", 90.0, 8, 5)));
+        when(materialService.getActiveInventoryAlerts()).thenReturn(List.of());
+
+        InventoryDiagnosisAgent.InventoryEvidence evidence = agent.analyze("\u5239\u8f66\u7247\u9700\u8981\u68c0\u67e5");
+
+        assertTrue(evidence.lowStockWarnings().isEmpty());
     }
 
     private InventoryAlertNotification lowStockAlert(Long materialId, String materialName, int stock, int minimum) {
