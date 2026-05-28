@@ -83,7 +83,8 @@ class AIDiagnosisServiceInventoryAgentTest {
                     new RuleDiagnosisService(),
                     new PrivacyMaskingService(),
                     new SemanticDiagnosisAgent(),
-                    new InventoryDiagnosisAgent(materialService));
+                    new InventoryDiagnosisAgent(materialService),
+                    mock(HistoryCaseAgent.class));
         }
 
         @Override

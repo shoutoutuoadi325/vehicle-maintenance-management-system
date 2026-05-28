@@ -50,6 +50,7 @@ class AIDiagnosisServiceRulePriorityTest {
                 new RuleDiagnosisService(),
                 new PrivacyMaskingService(),
                 new SemanticDiagnosisAgent(),
-                new InventoryDiagnosisAgent(mock(MaterialService.class)));
+                new InventoryDiagnosisAgent(mock(MaterialService.class)),
+                mock(HistoryCaseAgent.class));
     }
 }
