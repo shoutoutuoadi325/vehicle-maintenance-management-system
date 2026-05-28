@@ -11,14 +11,11 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * AI诊断API测试类
- * 用于测试deerapi服务是否可以正常调用
- * 
- * 注意：这些测试需要网络连接才能运行。如果在CI环境或无网络环境中，测试将被禁用。
- * 要在本地环境运行这些测试，请移除 @Disabled 注解。
- * 
- * 安全提示：在实际测试中，应该从环境变量或测试配置文件中读取API密钥，
- * 而不是硬编码在代码中。这里为了演示目的保留了默认值。
+ * AI diagnosis API integration checks.
+ *
+ * These tests require network access and a valid API token, so they remain
+ * disabled by default and can be enabled manually in a local verification run.
+ * API credentials are read from environment variables.
  */
 public class AIDiagnosisApiTest {
 
