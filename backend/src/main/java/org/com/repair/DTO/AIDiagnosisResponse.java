@@ -9,6 +9,7 @@ public class AIDiagnosisResponse {
     private Integer estimatedCostMax;
     private Integer estimatedHoursMin;
     private Integer estimatedHoursMax;
+    private java.util.List<String> decisionPath = new java.util.ArrayList<>();
     private boolean success;
     private String errorMessage;
 
@@ -88,6 +89,14 @@ public class AIDiagnosisResponse {
 
     public void setEstimatedHoursMax(Integer estimatedHoursMax) {
         this.estimatedHoursMax = estimatedHoursMax;
+    }
+
+    public java.util.List<String> getDecisionPath() {
+        return decisionPath;
+    }
+
+    public void setDecisionPath(java.util.List<String> decisionPath) {
+        this.decisionPath = decisionPath == null ? new java.util.ArrayList<>() : decisionPath;
     }
 
     public boolean isSuccess() {

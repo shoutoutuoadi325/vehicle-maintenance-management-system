@@ -36,15 +36,18 @@ public class AIDiagnosisService {
     private final GamificationService gamificationService;
     private final TechnicianService technicianService;
     private final RuleDiagnosisService ruleDiagnosisService;
+    private final PrivacyMaskingService privacyMaskingService;
     private final OkHttpClient client;
     private final ObjectMapper objectMapper;
 
     public AIDiagnosisService(GamificationService gamificationService,
                               TechnicianService technicianService,
-                              RuleDiagnosisService ruleDiagnosisService) {
+                              RuleDiagnosisService ruleDiagnosisService,
+                              PrivacyMaskingService privacyMaskingService) {
         this.gamificationService = gamificationService;
         this.technicianService = technicianService;
         this.ruleDiagnosisService = ruleDiagnosisService;
+        this.privacyMaskingService = privacyMaskingService;
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(45, TimeUnit.SECONDS)
@@ -62,6 +65,7 @@ public class AIDiagnosisService {
         String normalizedRole = normalizeRole(role);
         logger.info("[AI-DIAGNOSIS][{}] 诊断开始, role={}, technicianId={}", traceId, normalizedRole, technicianId);
         RuleDiagnosisService.RuleDiagnosisResult ruleResult = RuleDiagnosisService.RuleDiagnosisResult.noHit();
+        PrivacyMaskingService.MaskingResult maskingResult = privacyMaskingService.mask(problemDescription);
         try {
             if (isTechnicianRole(normalizedRole)) {
                 ruleResult = ruleDiagnosisService.diagnose(problemDescription);
@@ -70,10 +74,13 @@ public class AIDiagnosisService {
                             traceId,
                             ruleResult.ruleHit(),
                             ruleResult.confidence());
-                    return ruleResult.response();
+                    AIDiagnosisResponse response = ruleResult.response();
+                    appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
+                    return response;
                 }
             }
-            AIDiagnosisResponse response = externalSingleDiagnosis(problemDescription, normalizedRole, technicianId, traceId);
+            AIDiagnosisResponse response = externalSingleDiagnosis(maskingResult.maskedText(), normalizedRole, technicianId, traceId);
+            appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
             logger.info("[AI-DIAGNOSIS][{}] 外部AI诊断完成", traceId);
             return response;
         } catch (Exception e) {
@@ -83,10 +90,14 @@ public class AIDiagnosisService {
                         ruleResult.ruleHit(),
                         ruleResult.confidence(),
                         e.getMessage());
-                return ruleResult.response();
+                AIDiagnosisResponse response = ruleResult.response();
+                appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
+                return response;
             }
             logger.warn("[AI-DIAGNOSIS][{}] 外部AI诊断失败，启用本地规则兜底: {}", traceId, e.getMessage(), e);
-            return buildLocalFallbackResponse(problemDescription, normalizedRole);
+            AIDiagnosisResponse response = buildLocalFallbackResponse(problemDescription, normalizedRole);
+            appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
+            return response;
         }
     }
     public AIDiagnosisResponse diagnoseFault(String problemDescription,
@@ -385,7 +396,24 @@ public class AIDiagnosisService {
         return "technician".equals(role);
     }
 
-    private String callOpenAIAPI(String prompt, String traceId, String stage) throws IOException {
+    private void appendPrivacyDecisionPath(AIDiagnosisResponse response,
+                                           PrivacyMaskingService.MaskingResult maskingResult,
+                                           String normalizedRole) {
+        if (response == null || !isTechnicianRole(normalizedRole)) {
+            return;
+        }
+
+        java.util.List<String> decisionPath = new java.util.ArrayList<>(response.getDecisionPath());
+        if (maskingResult.changed()) {
+            decisionPath.add("隐私脱敏: 已执行, VIN=" + maskingResult.vinCount()
+                    + ", 车牌=" + maskingResult.licensePlateCount());
+        } else {
+            decisionPath.add("隐私脱敏: 未发现车牌/VIN");
+        }
+        response.setDecisionPath(decisionPath);
+    }
+
+    protected String callOpenAIAPI(String prompt, String traceId, String stage) throws IOException {
         String requestBody = objectMapper.writeValueAsString(java.util.Map.of(
                 "model", model,
                 "messages", List.of(java.util.Map.of(

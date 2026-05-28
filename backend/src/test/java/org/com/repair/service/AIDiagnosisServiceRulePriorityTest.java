@@ -47,6 +47,7 @@ class AIDiagnosisServiceRulePriorityTest {
         return new AIDiagnosisService(
                 mock(GamificationService.class),
                 mock(TechnicianService.class),
-                new RuleDiagnosisService());
+                new RuleDiagnosisService(),
+                new PrivacyMaskingService());
     }
 }
