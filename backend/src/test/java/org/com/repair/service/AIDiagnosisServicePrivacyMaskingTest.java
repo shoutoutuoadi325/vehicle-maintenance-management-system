@@ -55,7 +55,8 @@ class AIDiagnosisServicePrivacyMaskingTest {
                     mock(TechnicianService.class),
                     new RuleDiagnosisService(),
                     new PrivacyMaskingService(),
-                    new SemanticDiagnosisAgent());
+                    new SemanticDiagnosisAgent(),
+                    new InventoryDiagnosisAgent(mock(MaterialService.class)));
         }
 
         @Override

@@ -38,6 +38,7 @@ public class AIDiagnosisService {
     private final RuleDiagnosisService ruleDiagnosisService;
     private final PrivacyMaskingService privacyMaskingService;
     private final SemanticDiagnosisAgent semanticDiagnosisAgent;
+    private final InventoryDiagnosisAgent inventoryDiagnosisAgent;
     private final OkHttpClient client;
     private final ObjectMapper objectMapper;
 
@@ -45,12 +46,14 @@ public class AIDiagnosisService {
                               TechnicianService technicianService,
                               RuleDiagnosisService ruleDiagnosisService,
                               PrivacyMaskingService privacyMaskingService,
-                              SemanticDiagnosisAgent semanticDiagnosisAgent) {
+                              SemanticDiagnosisAgent semanticDiagnosisAgent,
+                              InventoryDiagnosisAgent inventoryDiagnosisAgent) {
         this.gamificationService = gamificationService;
         this.technicianService = technicianService;
         this.ruleDiagnosisService = ruleDiagnosisService;
         this.privacyMaskingService = privacyMaskingService;
         this.semanticDiagnosisAgent = semanticDiagnosisAgent;
+        this.inventoryDiagnosisAgent = inventoryDiagnosisAgent;
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(45, TimeUnit.SECONDS)
@@ -69,20 +72,25 @@ public class AIDiagnosisService {
         logger.info("[AI-DIAGNOSIS][{}] 诊断开始, role={}, technicianId={}", traceId, normalizedRole, technicianId);
         RuleDiagnosisService.RuleDiagnosisResult ruleResult = RuleDiagnosisService.RuleDiagnosisResult.noHit();
         PrivacyMaskingService.MaskingResult maskingResult = privacyMaskingService.mask(problemDescription);
+        InventoryDiagnosisAgent.InventoryEvidence inventoryEvidence = null;
         try {
             if (isTechnicianRole(normalizedRole)) {
                 ruleResult = ruleDiagnosisService.diagnose(problemDescription);
+                inventoryEvidence = inventoryDiagnosisAgent.analyze(problemDescription);
                 if (ruleResult.directReturn()) {
                     logger.info("[AI-DIAGNOSIS][{}] 技师端规则高置信直出, ruleHit={}, confidence={}",
                             traceId,
                             ruleResult.ruleHit(),
                             ruleResult.confidence());
                     AIDiagnosisResponse response = ruleResult.response();
+                    appendInventoryDecisionPath(response, inventoryEvidence, normalizedRole);
                     appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
                     return response;
                 }
             }
-            AIDiagnosisResponse response = externalSingleDiagnosis(maskingResult.maskedText(), normalizedRole, technicianId, traceId);
+            AIDiagnosisResponse response = externalSingleDiagnosis(
+                    maskingResult.maskedText(), normalizedRole, technicianId, traceId, inventoryEvidence);
+            appendInventoryDecisionPath(response, inventoryEvidence, normalizedRole);
             appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
             logger.info("[AI-DIAGNOSIS][{}] 外部AI诊断完成", traceId);
             return response;
@@ -94,11 +102,13 @@ public class AIDiagnosisService {
                         ruleResult.confidence(),
                         e.getMessage());
                 AIDiagnosisResponse response = ruleResult.response();
+                appendInventoryDecisionPath(response, inventoryEvidence, normalizedRole);
                 appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
                 return response;
             }
             logger.warn("[AI-DIAGNOSIS][{}] 外部AI诊断失败，启用本地规则兜底: {}", traceId, e.getMessage(), e);
             AIDiagnosisResponse response = buildLocalFallbackResponse(problemDescription, normalizedRole);
+            appendInventoryDecisionPath(response, inventoryEvidence, normalizedRole);
             appendPrivacyDecisionPath(response, maskingResult, normalizedRole);
             return response;
         }
@@ -157,14 +167,23 @@ public class AIDiagnosisService {
     private AIDiagnosisResponse externalSingleDiagnosis(String problemDescription,
                                                         String role,
                                                         Long technicianId,
-                                                        String traceId) throws IOException {
+                                                        String traceId,
+                                                        InventoryDiagnosisAgent.InventoryEvidence inventoryEvidence) throws IOException {
         return semanticDiagnosisAgent.analyze(
                 new SemanticDiagnosisAgent.SemanticDiagnosisRequest(problemDescription, role, technicianId, traceId),
                 request -> buildPrompt(request.problemDescription(), request.role())
                         + buildOperationalContext(request.technicianId(), request.traceId())
+                        + buildInventoryPromptContext(inventoryEvidence, request.role())
                         + semanticJsonOutputContract(),
                 this::callOpenAIAPI,
                 this::parseResponse);
+    }
+
+    private String buildInventoryPromptContext(InventoryDiagnosisAgent.InventoryEvidence inventoryEvidence, String role) {
+        if (!isTechnicianRole(role) || inventoryEvidence == null) {
+            return "";
+        }
+        return "\n\nInventory Agent context:" + inventoryEvidence.promptContext();
     }
 
     private String semanticJsonOutputContract() {
@@ -399,6 +418,18 @@ public class AIDiagnosisService {
 
     private boolean isTechnicianRole(String role) {
         return "technician".equals(role);
+    }
+
+    private void appendInventoryDecisionPath(AIDiagnosisResponse response,
+                                             InventoryDiagnosisAgent.InventoryEvidence inventoryEvidence,
+                                             String normalizedRole) {
+        if (response == null || !isTechnicianRole(normalizedRole) || inventoryEvidence == null) {
+            return;
+        }
+
+        java.util.List<String> decisionPath = new java.util.ArrayList<>(response.getDecisionPath());
+        decisionPath.add(inventoryEvidence.summary());
+        response.setDecisionPath(decisionPath);
     }
 
     private void appendPrivacyDecisionPath(AIDiagnosisResponse response,
