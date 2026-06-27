@@ -175,7 +175,10 @@
 | `backend/src/main/java/org/com/repair/service/FeedbackSelfIterationService.java` | 反馈自迭代 |
 | `backend/src/main/java/org/com/repair/controller/AIDiagnosisController.java` | REST API 入口 |
 | `backend/src/main/java/org/com/repair/architecture/agent/HybridDiagnosisEngine.java` | 独立展示用引擎（非 Spring 管理） |
-| `docs/architecture/agent-architecture.md` | 架构流程图（Mermaid） |
-| `docs/ai-diagnosis/mission.md` | 需求文档 |
-| `docs/ai-diagnosis/tech-stack.md` | 技术架构 |
-| `docs/ai-diagnosis/roadmap.md` | 实施路线 |
+| `docs/ai-diagnosis/missing_features_report.md` | 缺失功能清单与待完善项 |
+
+## 文档与质量纪律
+
+1. **文档同步更新**: 每次修改代码或文件后，必须检查 `CLAUDE.md` 和 `agents.md` 是否需要同步更新（如适用），并在必要时立即更新。包括但不限于：新增/删除文件或目录、变更 Agent 架构或组件、调整诊断流程。
+2. **代码验证**: 每次修改代码之后，必须进行检查与测试（如适用，运行相关单元测试或 E2E 测试），确保代码没有问题。
+3. **文档二次复核**: 每次修改 `agents.md` 或 `CLAUDE.md` 之后，必须进行二次复核，确认内容与代码实际状态一致、无遗漏或错误。

@@ -31,25 +31,11 @@
 ├── LICENSE
 │
 ├── docs/                           # 所有文档集中存放
-│   ├── architecture/               # 架构设计
-│   │   ├── agent-architecture.md   # Agent 架构流程图（Mermaid）
-│   │   ├── EVENT_DRIVEN_DESIGN.md  # 事件驱动设计
-│   │   └── ARCHITECTURE_DEBT_LEDGER.md  # 技术债务清单
-│   ├── operations/                 # 运维发布
-│   │   ├── RELEASE_CHECKLIST.md    # 发布检查清单
-│   │   ├── GRAY_RELEASE_PLAYBOOK.md # 灰度发布手册
-│   │   └── OPERABILITY_RUNBOOK.md  # 运维 SOP
-│   ├── features/                   # 功能说明
-│   │   ├── AI_DIAGNOSIS_README.md  # AI 诊断环境配置
-│   │   ├── 绿色导向功能说明.md      # 碳排放评估功能
-│   │   └── 数据库表结构说明.md      # 数据库表结构（仅覆盖原始 8 表）
 │   └── ai-diagnosis/               # AI 诊断设计文档
-│       ├── mission.md              # 需求与目标
-│       ├── tech-stack.md           # 技术架构
-│       ├── roadmap.md              # 8 阶段实施路线
-│       └── plan.md                 # Demo 开发计划
+│       └── missing_features_report.md  # 缺失功能清单与待完善项
 │
 ├── SQL/                            # 所有数据库脚本
+│   ├── README.md                   # 数据库脚本使用说明
 │   ├── schema/                     # Schema 定义
 │   │   ├── car_repair.sql          # 完整数据库导出（Navicat 格式）
 │   │   └── backend_schema_from_code.sql  # 权威 Schema DDL
@@ -78,7 +64,7 @@
 │   │   └── service/                # 业务逻辑（含 green/ 子包）
 │   ├── src/main/resources/
 │   │   ├── application.properties
-│   │   └── db/migration/           # Flyway 迁移 V3-V23
+│   │   └── db/migration/           # Flyway 迁移 V3-V24
 │   ├── src/test/                   # JUnit 测试
 │   └── scripts/                    # PowerShell 质量/发布脚本
 │
@@ -89,7 +75,7 @@
     │   ├── router/index.js
     │   ├── store/index.js
     │   ├── components/             # IdentitySelection, AuthForm, Chart
-    │   └── views/                  # 8 个页面视图
+    │   └── views/                  # 7 个页面视图
     ├── tests/e2e/                  # Playwright E2E 测试
     └── vue.config.js
 ```
@@ -115,9 +101,10 @@
 1. **核心维修流程**: User → Vehicle → RepairOrder → Technician（多对多） → Feedback
 2. **AI 诊断**: `AIDiagnosisService` 编排规则引擎 + 多 Agent + 外部 LLM，详见 [agents.md](./agents.md)
 3. **零碳旅程游戏化**: `GamificationService`（~1560 行）管理能量账户、城市签到、答题、随机事件、优惠券、排行榜、大奖
-4. **维保预警**: `MaintenanceAlertService` 定时扫描车辆里程/时间，生成维保提醒
-5. **库存预警**: `MaterialService` 消耗库存时自动检测低库存并生成告警
-6. **反馈自迭代**: `FeedbackSelfIterationService` 基于反馈数据自动调整派单权重和 AI Prompt 模板
+4. **绿碳高级算法与评级映射**: `GreenEmissionEngine` 基于工时、材料因子、维保策略因子和返工惩罚因子计算工单相对碳排放，映射为 S/A/B/C 四级绿色指数；`EmissionCalculatorService` 维护生命周期碳数据重算节点，支持历史样本线性回归系数校准
+5. **维保预警**: `MaintenanceAlertService` 定时扫描车辆里程/时间，生成维保提醒
+6. **库存预警**: `MaterialService` 消耗库存时自动检测低库存并生成告警
+7. **反馈自迭代**: `FeedbackSelfIterationService` 基于反馈数据自动调整派单权重和 AI Prompt 模板
 
 ### 安全模型
 
@@ -128,7 +115,7 @@
 
 ### 数据库
 
-- **Schema 管理**: Flyway，基线版本 V22，当前迁移 V3-V23
+- **Schema 管理**: Flyway，基线版本 V22，当前迁移 V3-V24
 - **JPA 配置**: `ddl-auto=validate`（仅验证，由 Flyway 管理结构）
 - **锁策略**: 悲观锁用于库存消耗和游戏化状态，乐观锁用于能量账户和优惠券钱包
 - **权威 Schema**: `SQL/schema/backend_schema_from_code.sql`
@@ -187,7 +174,7 @@ mysql -u root -p car_repair < SQL/seed/demo-seed.sql
 | `SPRING_DATASOURCE_USERNAME` | 数据库用户名 | `root` |
 | `SPRING_DATASOURCE_PASSWORD` | 数据库密码 | `root` |
 | `AI_DIAGNOSIS_API_KEY` | AI 诊断 API 密钥 | (需配置) |
-| `AI_DIAGNOSIS_API_BASE_URL` | AI 诊断 API 地址 | `https://api.apiyi.com` |
+| `AI_DIAGNOSIS_API_BASE_URL` | AI 诊断 API 地址 | `https://api.xiaomimimo.com/v1` |
 | `AI_DIAGNOSIS_API_MODEL` | AI 模型名称 | `mimo-v2.5` |
 | `JWT_SECRET_KEY` | JWT 签名密钥 | (内置默认值) |
 
@@ -200,3 +187,9 @@ mysql -u root -p car_repair < SQL/seed/demo-seed.sql
 5. **幂等设计**: 游戏化奖励使用 `(sourceType, sourceId, actionKey)` 幂等键；维保预警使用 `dedupKey` 去重
 6. **并发控制**: 库存消耗使用 `PESSIMISTIC_WRITE`，能量账户使用 `@Version` 乐观锁
 7. **测试**: 使用 H2 内存数据库，测试配置在 `src/test/resources/application.properties`
+
+## 文档与质量纪律
+
+1. **文档同步更新**: 每次修改代码或文件后，必须检查 `CLAUDE.md` 和 `agents.md` 是否需要同步更新（如适用），并在必要时立即更新。包括但不限于：新增/删除文件或目录、变更技术栈版本、调整架构设计、修改环境变量或配置项。
+2. **代码验证**: 每次修改代码之后，必须进行检查与测试（如适用，运行相关单元测试或 E2E 测试），确保代码没有问题。
+3. **文档二次复核**: 每次修改 `CLAUDE.md` 或 `agents.md` 之后，必须进行二次复核，确认内容与代码实际状态一致、无遗漏或错误。
