@@ -99,7 +99,7 @@
 ### 关键业务模块
 
 1. **核心维修流程**: User → Vehicle → RepairOrder → Technician（多对多） → Feedback
-2. **AI 诊断**: `AIDiagnosisService` 编排规则引擎 + 多 Agent + 外部 LLM，详见 [agents.md](./agents.md)
+2. **AI 诊断**: `AIDiagnosisService` 编排规则引擎 + 外部 LLM；车主端使用单次语义诊断，技师/admin 端非高置信规则直出场景通过单次 `AI_CONSILIUM` 请求完成 `PRE_DIAG → MAIN_AGENT → RED_TEAM → ARBITRATOR` 四阶段协同会诊，详见 [agents.md](./agents.md)
 3. **零碳旅程游戏化**: `GamificationService`（~1560 行）管理能量账户、城市签到、答题、随机事件、优惠券、排行榜、大奖
 4. **绿碳高级算法与评级映射**: `GreenEmissionEngine` 基于工时、材料因子、维保策略因子和返工惩罚因子计算工单相对碳排放，映射为 S/A/B/C 四级绿色指数；`EmissionCalculatorService` 维护生命周期碳数据重算节点，支持历史样本线性回归系数校准
 5. **智能派单**: `AutoAssignmentService` 读取 `dispatch_weight_config` 动态权重，结合评分、工作负载、经验、`TechnicianService` 疲劳度快照和 `AgingAntiStarvationDispatchPolicy` 等待老化策略进行派单

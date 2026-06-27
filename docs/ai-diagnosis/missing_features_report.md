@@ -75,9 +75,15 @@ AutoAssignmentService.calculateTechnicianScore()  →  score -= fatigueLevel * f
 * **文档描述**：文档中多次提及“深度集成大语言模型与计算机视觉技术”，“FlexVAI mAP@50 达到 0.986，进行宏观渗漏检测和微观零件分析”。
 * **代码现状**：在先前的修改中，已经将外部模型切换为支持多模态的小米 mimo v2.5，重构了 `AIDiagnosisService`，使其在用户上传图片时（包含或不包含文本），均会将图片 URL 和文本一并构建为多模态负载发给大模型，真正利用了大模型的 Vision 视觉能力。
 
-## 4. 混合诊断中“多 Agent 协同推理”流程并未接入主控链路
+## 4. 混合诊断中“多 Agent 协同推理”流程并未接入主控链路（已实现）
 * **文档描述**：设计了包括“主治工程师”、“红队QA”和“总控车间主任（Arbitrator）”的多阶段协同问诊机制。
-* **代码现状**：在 `AIDiagnosisService.java` 中，虽然存在完整的 `expertConsilium` 方法以及相关的 Prompt 定义（红队、主治、裁判），但该方法被标注了 `@SuppressWarnings("unused")` 并且在主流程 `diagnoseFault` 中**完全没有被调用**。目前线上的主流程仅仅是调用 `externalSingleDiagnosis` 发起单次 LLM 请求。
+* **代码现状**：`AIDiagnosisService.diagnoseFault()` 已将技师端/admin 端非规则直出路径接入 `expertConsilium()`，在一次外部 LLM 请求内按 `PRE_DIAG → MAIN_AGENT → RED_TEAM → ARBITRATOR` 完成协同推理，避免 4 次串行网络调用导致前端交互超时。车主端仍保留 `externalSingleDiagnosis()` 单次语义诊断，避免向普通用户暴露过深的专业会诊链路。
+* **已接入上下文**：
+  - `PRE_DIAG` 阶段使用脱敏后的用户描述，并支持图片/语音多模态证据输入。
+  - `MAIN_AGENT` 与 `ARBITRATOR` 阶段注入 `InventoryDiagnosisAgent` 库存证据和 `HistoryCaseAgent` 历史案例证据。
+  - `ARBITRATOR` 阶段继续消费技师疲劳度上下文，疲劳度高于 0.7 时要求插入更细粒度安全校验步骤。
+  - `DecisionFusionEngine` 已能在 Agent 摘要中区分 `AI Consilium: multi-stage diagnosis parsed` 与单次 `Semantic Agent` 诊断。
+* **测试覆盖**：`AIDiagnosisServiceFusionTest.technicianLowConfidenceSemanticResultShouldBeSuspended()` 验证技师端低置信场景会通过 `AI_CONSILIUM` 单次外部调用执行，Prompt 内包含 `PRE_DIAG → MAIN_AGENT → RED_TEAM → ARBITRATOR` 四阶段协同要求，并进入 SafetyNet 人工复核分支；隐私、库存、历史案例测试同步覆盖四阶段链路中的脱敏与上下文注入。
 
 ## 5. 算法自演进闭环机制缺少执行与审批端点
 * **文档描述**：基于业务数据反馈的算法自演进闭环，"零算力损耗的免重训自演进架构"，系统能够自动生成 Prompt 补丁并调整派单权重。

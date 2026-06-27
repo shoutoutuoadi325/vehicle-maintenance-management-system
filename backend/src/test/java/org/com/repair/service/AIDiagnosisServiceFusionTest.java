@@ -47,9 +47,15 @@ class AIDiagnosisServiceFusionTest {
         assertNotNull(response.getConfidence());
         assertTrue(response.getConfidence() < SafetyNetGate.REVIEW_THRESHOLD);
         assertTrue(response.getRuleHits().isEmpty());
-        assertTrue(response.getAgentSummaries().stream().anyMatch(summary -> summary.contains("Semantic Agent")));
+        assertTrue(response.getAgentSummaries().stream().anyMatch(summary -> summary.contains("AI Consilium")));
+        assertTrue(response.getDecisionPath().stream().anyMatch(step -> step.contains("AI Consilium")));
         assertTrue(response.getDecisionPath().stream().anyMatch(step -> step.contains("manual review required")));
         assertEquals(1, service.externalCallCount);
+        assertEquals(List.of("AI_CONSILIUM"), service.stages);
+        assertTrue(service.prompts.get(0).contains("PRE_DIAG"));
+        assertTrue(service.prompts.get(0).contains("MAIN_AGENT"));
+        assertTrue(service.prompts.get(0).contains("RED_TEAM"));
+        assertTrue(service.prompts.get(0).contains("ARBITRATOR"));
     }
 
     @Test
@@ -70,6 +76,8 @@ class AIDiagnosisServiceFusionTest {
 
     private static class CapturingAIDiagnosisService extends AIDiagnosisService {
         private final double semanticConfidence;
+        private final List<String> stages = new java.util.ArrayList<>();
+        private final List<String> prompts = new java.util.ArrayList<>();
         private int externalCallCount;
 
         private CapturingAIDiagnosisService(double semanticConfidence) {
@@ -88,6 +96,8 @@ class AIDiagnosisServiceFusionTest {
         @Override
         protected String callOpenAIAPI(String prompt, java.util.List<String> imageDataUrls, String audioDataUrl, String traceId, String stage) throws IOException {
             externalCallCount++;
+            stages.add(stage);
+            prompts.add(prompt);
             return """
                     {
                       "faultType": "paint surface wear",

@@ -111,8 +111,28 @@ public class AIDiagnosisService {
                             response, ruleResult, false, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
                 }
             }
-            AIDiagnosisResponse response = externalSingleDiagnosis(
-                    maskingResult.maskedText(), normalizedRole, technicianId, traceId, inventoryEvidence, historyCaseEvidence, imageDataUrls, audioDataUrl);
+            AIDiagnosisResponse response;
+            if (isTechnicianRole(normalizedRole)) {
+                response = expertConsilium(
+                        maskingResult.maskedText(),
+                        normalizedRole,
+                        technicianId,
+                        traceId,
+                        inventoryEvidence,
+                        historyCaseEvidence,
+                        imageDataUrls,
+                        audioDataUrl);
+            } else {
+                response = externalSingleDiagnosis(
+                        maskingResult.maskedText(),
+                        normalizedRole,
+                        technicianId,
+                        traceId,
+                        inventoryEvidence,
+                        historyCaseEvidence,
+                        imageDataUrls,
+                        audioDataUrl);
+            }
             logger.info("[AI-DIAGNOSIS][{}] 外部AI诊断完成", traceId);
             return finalizeDiagnosisResponse(
                     response, ruleResult, true, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
@@ -220,41 +240,60 @@ public class AIDiagnosisService {
         return context.toString();
     }
 
-    @SuppressWarnings("unused")
-    private AIDiagnosisResponse expertConsilium(String problemDescription, String role, Long technicianId, String traceId) throws IOException {
-        List<String> ecoTips = gamificationService.getEcoWaitingTips();
+    private AIDiagnosisResponse expertConsilium(String problemDescription,
+                                                String role,
+                                                Long technicianId,
+                                                String traceId,
+                                                InventoryDiagnosisAgent.InventoryEvidence inventoryEvidence,
+                                                HistoryCaseAgent.HistoryCaseEvidence historyCaseEvidence,
+                                                List<String> imageDataUrls,
+                                                String audioDataUrl) throws IOException {
+        List<String> ecoTips = resolveEcoTips(traceId);
         String ecoTipContext = ecoTips.isEmpty() ? "" : ("\n\n绿色导向参考：" + ecoTips.get(0));
         double fatigueLevel = resolveTechnicianFatigueLevel(technicianId, traceId);
 
         logger.info("[AI-CONSILIUM][{}] 融合上下文: ecoTips={}, fatigueLevel={}", traceId, ecoTips.size(), fatigueLevel);
 
-        String preDiagInput = PRE_DIAG_PROMPT + "\n\n车主描述：" + problemDescription + ecoTipContext;
-        String structuredFeatures = runAgentStep("PRE_DIAG", preDiagInput, traceId);
+        String consiliumInput = "你是一个车辆维修多 Agent 协同诊断系统。请在一次响应中完成以下内部协作流程：\n"
+                + "1. PRE_DIAG: " + PRE_DIAG_PROMPT + "\n"
+                + "2. MAIN_AGENT: " + MAIN_AGENT_PROMPT + "\n"
+                + "3. RED_TEAM: " + RED_TEAM_PROMPT + "\n"
+                + "4. ARBITRATOR: " + ARBITRATOR_PROMPT + "\n\n"
+                + "车主描述：" + problemDescription
+                + (hasMediaEvidence(imageDataUrls, audioDataUrl) ? "\n\n如有图片或语音证据，请在 PRE_DIAG 阶段一并提取可见/可听线索。" : "")
+                + "\n\n角色上下文：" + role
+                + ecoTipContext
+                + buildInventoryPromptContext(inventoryEvidence, role)
+                + buildHistoryCasePromptContext(historyCaseEvidence, role)
+                + "\n\n当前被派单技师的疲劳度指标为：" + fatigueLevel + " (0到1之间)。"
+                + "\n极其重要的动态安全规则：如果该指标大于 0.7，你必须在报告中将原本复杂的排查步骤进行最细粒度拆解，并在涉及高压电、燃油等高危操作前，强制插入带有 [安全高危校验] 标签的物理确认步骤。如果小于 0.7，则正常输出。"
+                + "\n\n输出要求："
+                + "\n- 你必须先在内部完成 PRE_DIAG、MAIN_AGENT、RED_TEAM、ARBITRATOR 四阶段协作，但最终不要输出内部草稿。"
+                + "\n- suggestion 字段中用 Markdown 写出 `## 综合结论`、`## 分步排查`、`## 风险与安全提示`。"
+                + "\n- 请只输出一个 JSON 对象，不要输出 Markdown 代码块。"
+                + "\n{\n"
+                + "  \"faultType\": \"用一句话写出1-3个最可能故障\",\n"
+                + "  \"suggestion\": \"最终综合报告，包含分步排查、风险与安全提示\",\n"
+                + "  \"possibleCauses\": [\"原因1\", \"原因2\", \"原因3\"],\n"
+                + "  \"confidence\": 0.0\n"
+                + "}";
+        String finalReport = runAgentStep("AI_CONSILIUM", consiliumInput, traceId, imageDataUrls, audioDataUrl);
 
-        String mainAgentInput = MAIN_AGENT_PROMPT +
-                "\n\n角色上下文：" + role +
-                "\n\n结构化特征表：\n" + structuredFeatures;
-        String initialDiagnosis = runAgentStep("MAIN_AGENT", mainAgentInput, traceId);
+        AIDiagnosisResponse response = parseResponse(finalReport, problemDescription);
+        java.util.List<String> decisionPath = new java.util.ArrayList<>(response.getDecisionPath());
+        decisionPath.add("AI Consilium: PRE_DIAG -> MAIN_AGENT -> RED_TEAM -> ARBITRATOR (single external round-trip)");
+        response.setDecisionPath(decisionPath);
+        return response;
+    }
 
-        String redTeamInput = RED_TEAM_PROMPT +
-                "\n\n结构化特征表：\n" + structuredFeatures +
-                "\n\n主治诊断：\n" + initialDiagnosis;
-        String critique = runAgentStep("RED_TEAM", redTeamInput, traceId);
-
-        String arbitratorInput = ARBITRATOR_PROMPT +
-                "\n\n结构化特征表：\n" + structuredFeatures +
-                "\n\n【主治诊断】\n" + initialDiagnosis +
-                "\n\n【红队质疑】\n" + critique +
-                "\n\n当前被派单技师的疲劳度指标为：" + fatigueLevel + " (0到1之间)。" +
-                "\n极其重要的动态安全规则：如果该指标大于 0.7，你必须在报告中将原本复杂的排查步骤进行最细粒度的'傻瓜式'拆解，并在涉及高压电、燃油等高危操作前，强制插入带有 [安全高危校验] 标签的物理确认步骤。如果小于 0.7，则正常输出。" +
-                "\n\n最终输出必须使用 Markdown 格式，至少包含：\n" +
-                "- `## 综合结论`\n" +
-                "- `## 分步排查`\n" +
-                "- `## 风险与安全提示`\n" +
-                "- 必要时在步骤中插入 `[安全高危校验]` 标记。";
-        String finalReport = runAgentStep("ARBITRATOR", arbitratorInput, traceId);
-
-        return parseResponse(finalReport, problemDescription);
+    private List<String> resolveEcoTips(String traceId) {
+        try {
+            List<String> ecoTips = gamificationService.getEcoWaitingTips();
+            return ecoTips == null ? List.of() : ecoTips;
+        } catch (Exception ex) {
+            logger.warn("[AI-CONSILIUM][{}] 获取绿色维修上下文失败，忽略该上下文: {}", traceId, ex.getMessage());
+            return List.of();
+        }
     }
 
     private double resolveTechnicianFatigueLevel(Long technicianId, String traceId) {
@@ -287,13 +326,26 @@ public class AIDiagnosisService {
     }
 
     private String runAgentStep(String stage, String prompt, String traceId) throws IOException {
+        return runAgentStep(stage, prompt, traceId, null, null);
+    }
+
+    private String runAgentStep(String stage,
+                                String prompt,
+                                String traceId,
+                                List<String> imageDataUrls,
+                                String audioDataUrl) throws IOException {
         logger.info("[AI-CONSILIUM][{}][{}] 调用开始, promptLength={}", traceId, stage, prompt != null ? prompt.length() : 0);
-        String result = callOpenAIAPI(prompt, null, traceId, stage);
+        String result = callOpenAIAPI(prompt, imageDataUrls, audioDataUrl, traceId, stage);
         if (result == null || result.isBlank()) {
             throw new IOException(stage + " 阶段返回空结果");
         }
         logger.info("[AI-CONSILIUM][{}][{}] 调用完成, resultLength={}", traceId, stage, result.length());
         return result;
+    }
+
+    private boolean hasMediaEvidence(List<String> imageDataUrls, String audioDataUrl) {
+        return (imageDataUrls != null && !imageDataUrls.isEmpty())
+                || (audioDataUrl != null && !audioDataUrl.isBlank());
     }
 
     private String buildPrompt(String problemDescription, String role) {

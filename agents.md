@@ -40,11 +40,14 @@
     │    │
     │    ▼
     │  ┌──────────────────┐
-    │  │ 多 Agent 并行推理  │
+    │  │ 技师端多 Agent 协同推理 │
     │  ├──────────────────┤
-    │  │ SemanticDiagnosisAgent │ ← 外部 LLM API（小米mimo v2.5）
+    │  │ PRE_DIAG          │ ← 结构化故障特征提取，支持图片/语音证据
+    │  │ MAIN_AGENT        │ ← 主治维修工程师初诊
+    │  │ RED_TEAM          │ ← 红队 QA 质疑长尾/高危漏判
+    │  │ ARBITRATOR        │ ← 总控车间主任融合裁决
     │  │ InventoryDiagnosisAgent │ ← 库存匹配 + 低库存预警
-    │  │ HistoryCaseAgent │ ← 历史工单相似案例检索
+    │  │ HistoryCaseAgent  │ ← 历史工单相似案例检索
     │  └────────┬─────────┘
     │           │
     │           ▼
@@ -87,8 +90,20 @@
 **实现**: 通过函数式接口（`PromptComposer`、`ExternalAiCaller`、`ResponseParser`）解耦，便于测试和替换 LLM 提供商。
 
 **角色区分**:
-- 客户角色：返回通俗易懂的故障描述和建议
-- 技师角色：返回技术性诊断，附加决策路径说明
+- 客户角色：通过 `externalSingleDiagnosis()` 返回通俗易懂的故障描述和建议
+- 技师/admin 角色：非高置信规则直出场景进入 `expertConsilium()`，在一次外部 LLM 请求内完成四阶段协同会诊（`PRE_DIAG → MAIN_AGENT → RED_TEAM → ARBITRATOR`），附加决策路径说明
+
+### 2.5. ExpertConsilium — 技师端四阶段协同会诊
+
+**职责**: 将设计文档中的“主治工程师 / 红队 QA / 总控车间主任”协同问诊接入 `AIDiagnosisService.diagnoseFault()` 主控链路。为避免技师工作台交互超时，四阶段协作在单次 `AI_CONSILIUM` 外部请求中完成，而不是 4 次串行网络调用。
+
+**阶段**:
+- `PRE_DIAG`：基于脱敏后的用户描述提取结构化故障特征；如请求包含图片或语音，则在该阶段一并提取多模态线索。
+- `MAIN_AGENT`：主治维修工程师基于结构化特征、库存证据和历史案例证据输出初诊路径。
+- `RED_TEAM`：红队 QA 审视初诊结论，补充低概率高风险故障和逻辑漏洞。
+- `ARBITRATOR`：总控车间主任融合主治诊断、红队质疑、库存/历史证据和技师疲劳度，生成最终报告。
+
+**安全规则**: 当技师疲劳度 `> 0.7` 时，`ARBITRATOR` 必须拆解高危步骤，并在高压电、燃油等操作前插入 `[安全高危校验]`。
 
 ### 3. InventoryDiagnosisAgent — 库存诊断 Agent
 

@@ -4,6 +4,8 @@ import org.com.repair.DTO.AIDiagnosisResponse;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,11 +22,14 @@ class AIDiagnosisServicePrivacyMaskingTest {
                 "technician",
                 7L);
 
-        assertFalse(service.capturedPrompt.contains("沪B67890"));
-        assertFalse(service.capturedPrompt.contains("LSVFA49J232123456"));
-        assertTrue(service.capturedPrompt.contains("[MASKED_PLATE_1]"));
-        assertTrue(service.capturedPrompt.contains("[MASKED_VIN_1]"));
-        assertTrue(service.capturedStage.equals("SEMANTIC_AGENT"));
+        assertTrue(service.capturedPrompts.stream().noneMatch(prompt -> prompt.contains("沪B67890")));
+        assertTrue(service.capturedPrompts.stream().noneMatch(prompt -> prompt.contains("LSVFA49J232123456")));
+        assertTrue(service.capturedPrompts.stream().anyMatch(prompt -> prompt.contains("[MASKED_PLATE_1]")));
+        assertTrue(service.capturedPrompts.stream().anyMatch(prompt -> prompt.contains("[MASKED_VIN_1]")));
+        assertTrue(service.capturedStages.contains("AI_CONSILIUM"));
+        assertTrue(service.capturedPrompts.get(0).contains("PRE_DIAG"));
+        assertTrue(service.capturedPrompts.get(0).contains("ARBITRATOR"));
+        assertFalse(service.capturedStages.contains("SEMANTIC_AGENT"));
         assertTrue(response.getDecisionPath().stream().anyMatch(step -> step.contains("隐私脱敏: 已执行")));
     }
 
@@ -37,17 +42,17 @@ class AIDiagnosisServicePrivacyMaskingTest {
                 "customer",
                 null);
 
-        assertFalse(service.capturedPrompt.contains("沪B67890"));
-        assertFalse(service.capturedPrompt.contains("LSVFA49J232123456"));
-        assertTrue(service.capturedPrompt.contains("[MASKED_PLATE_1]"));
-        assertTrue(service.capturedPrompt.contains("[MASKED_VIN_1]"));
-        assertTrue(service.capturedStage.equals("SEMANTIC_AGENT"));
+        assertFalse(service.capturedPrompts.get(0).contains("沪B67890"));
+        assertFalse(service.capturedPrompts.get(0).contains("LSVFA49J232123456"));
+        assertTrue(service.capturedPrompts.get(0).contains("[MASKED_PLATE_1]"));
+        assertTrue(service.capturedPrompts.get(0).contains("[MASKED_VIN_1]"));
+        assertTrue(service.capturedStages.get(0).equals("SEMANTIC_AGENT"));
         assertTrue(response.getDecisionPath().isEmpty());
     }
 
     private static class CapturingAIDiagnosisService extends AIDiagnosisService {
-        private String capturedPrompt = "";
-        private String capturedStage = "";
+        private final List<String> capturedPrompts = new ArrayList<>();
+        private final List<String> capturedStages = new ArrayList<>();
 
         private CapturingAIDiagnosisService() {
             super(
@@ -63,8 +68,8 @@ class AIDiagnosisServicePrivacyMaskingTest {
 
         @Override
         protected String callOpenAIAPI(String prompt, java.util.List<String> imageDataUrls, String audioDataUrl, String traceId, String stage) throws IOException {
-            this.capturedPrompt = prompt;
-            this.capturedStage = stage;
+            this.capturedPrompts.add(prompt);
+            this.capturedStages.add(stage);
             return """
                     {
                       "faultType": "漆面磨损",

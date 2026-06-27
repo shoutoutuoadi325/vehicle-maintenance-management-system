@@ -63,7 +63,11 @@ public class DecisionFusionEngine {
     private List<String> buildAgentSummaries(FusionInput input) {
         List<String> summaries = new ArrayList<>();
         if (input.semanticExecuted()) {
-            summaries.add("Semantic Agent: response parsed");
+            if (input.response().getDecisionPath().stream().anyMatch(step -> step.contains("AI Consilium"))) {
+                summaries.add("AI Consilium: multi-stage diagnosis parsed");
+            } else {
+                summaries.add("Semantic Agent: response parsed");
+            }
         }
         if (input.inventoryEvidence() != null) {
             summaries.add(input.inventoryEvidence().summary());
