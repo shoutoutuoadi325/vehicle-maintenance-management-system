@@ -32,9 +32,9 @@
 
 ### 产出物
 
-- `specs/mission.md`
-- `specs/tech-stack.md`
-- `specs/roadmap.md`
+- `docs/ai-diagnosis/mission.md`
+- `docs/ai-diagnosis/tech-stack.md`
+- `docs/ai-diagnosis/roadmap.md`
 
 ### 验收标准
 
@@ -290,7 +290,7 @@
 
 - 在 README 增加 AI 维修模块说明。
 - 标明已实现能力和 roadmap 能力。
-- 更新 `agent-architecture/README.md`，去掉“真实项目运行不依赖该模块”的旧说法，或改为“已按该架构服务化接入”。
+- 更新 `docs/architecture/agent-architecture.md`，去掉”真实项目运行不依赖该模块”的旧说法，或改为”已按该架构服务化接入”。
 - 准备 Demo 脚本。
 
 ### 产出物

@@ -85,14 +85,14 @@
 - [ ] T+15：执行冒烟
 - [ ] T+30：观察监控曲线、确认放量
 - [ ] T+60：发布结论与风险复盘
-- [ ] 按灰度模板执行放量与回滚判据：`backend/GRAY_RELEASE_PLAYBOOK.md`
+- [ ] 按灰度模板执行放量与回滚判据：`docs/operations/GRAY_RELEASE_PLAYBOOK.md`
 
 ## 10. 发布后 24h 关注项
 - [ ] 错误日志 Top10（去重）
 - [ ] 接口耗时回归（特别是统计与并发奖励）
 - [ ] 数据一致性抽样（工单、奖励、卡券状态）
 - [ ] 用户反馈与客服工单聚类
-- [ ] 告警响应与值班执行符合 SOP（见 `backend/OPERABILITY_RUNBOOK.md`）
+- [ ] 告警响应与值班执行符合 SOP（见 `docs/operations/OPERABILITY_RUNBOOK.md`）
 
 ---
 
@@ -109,4 +109,4 @@ Set-Location ..
 
 ## 备注
 - 当前仓库已完成多轮“无破坏优化”，建议上线前仅做必要修复，避免新增功能插入发布窗口。
-- 灰度放量建议统一使用模板：`backend/GRAY_RELEASE_PLAYBOOK.md`。
+- 灰度放量建议统一使用模板：`docs/operations/GRAY_RELEASE_PLAYBOOK.md`。
