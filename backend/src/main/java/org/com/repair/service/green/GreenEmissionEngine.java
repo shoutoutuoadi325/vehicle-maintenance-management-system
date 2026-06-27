@@ -3,6 +3,8 @@ package org.com.repair.service.green;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.stereotype.Service;
+
 /**
  * 绿色维修碳排放计算引擎。
  *
@@ -12,6 +14,7 @@ import java.util.List;
  * 3. 维护工单生命周期中的碳数据重算节点。
  * 4. 基于历史样本进行线性回归系数校准。
  */
+@Service
 public class GreenEmissionEngine {
 
     /**

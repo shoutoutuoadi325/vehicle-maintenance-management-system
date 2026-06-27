@@ -16,6 +16,8 @@ import org.com.repair.DTO.NewRepairOrderRequest;
 import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.User;
 import org.com.repair.entity.Vehicle;
+import org.com.repair.service.green.GreenIndexGrade;
+import org.com.repair.service.green.GreenIndexMappingResult;
 import org.com.repair.repository.RepairOrderRepository;
 import org.com.repair.repository.TechnicianRepository;
 import org.com.repair.repository.UserRepository;
@@ -141,6 +143,7 @@ class RepairOrderCreateValidationTest {
                 RepairOrder.RepairStatus.IN_PROGRESS)))
             .thenReturn(false);
         when(repairOrderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(emissionCalculatorService.calculateAndMap(any())).thenReturn(new GreenIndexMappingResult(GreenIndexGrade.S, 10.0, "Test"));
 
         assertDoesNotThrow(() -> repairOrderService.createRepairOrder(request));
         verify(repairOrderRepository).save(any());

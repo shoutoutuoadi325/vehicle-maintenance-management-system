@@ -1,13 +1,14 @@
 package org.com.repair.service;
 
 import org.com.repair.entity.RepairOrder;
+import org.com.repair.service.green.GreenEmissionEngine;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class EmissionCalculatorServiceTest {
     @Test
     public void testEmissionCalculation() {
-        EmissionCalculatorService service = new EmissionCalculatorService();
+        EmissionCalculatorService service = new EmissionCalculatorService(new GreenEmissionEngine());
         RepairOrder order = new RepairOrder();
         order.setEstimatedHours(2.0);
         order.setEcoMaterial(true);
@@ -19,7 +20,7 @@ public class EmissionCalculatorServiceTest {
 
     @Test
     public void testEmissionCalculationWithReworkAndReplace() {
-        EmissionCalculatorService service = new EmissionCalculatorService();
+        EmissionCalculatorService service = new EmissionCalculatorService(new GreenEmissionEngine());
         RepairOrder order = new RepairOrder();
         order.setEstimatedHours(2.0);
         order.setEcoMaterial(false);

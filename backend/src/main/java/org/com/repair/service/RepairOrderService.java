@@ -123,9 +123,10 @@ public class RepairOrderService {
         repairOrder.setReworkCount(request.reworkCount() != null ? request.reworkCount() : 0);
         repairOrder.setRepairType(request.repairType() != null ? request.repairType() : "repair");
         // 计算碳排放
-        repairOrder.setEstimatedEmission(
-            emissionCalculatorService.calculate(repairOrder)
-        );
+        org.com.repair.service.green.GreenIndexMappingResult greenResult = emissionCalculatorService.calculateAndMap(repairOrder);
+        repairOrder.setEstimatedEmission(greenResult.estimatedEmission());
+        repairOrder.setGreenIndex(greenResult.grade().code());
+        repairOrder.setGreenRecommendation(greenResult.recommendation());
 
         RepairOrder savedOrder = repairOrderRepository.save(repairOrder);
         return new RepairOrderResponse(savedOrder);
@@ -220,6 +221,12 @@ public class RepairOrderService {
                 totalEstimatedHours += autoAssignmentService.estimateWorkHours(repairOrder.getDescription(), skillType);
             }
             repairOrder.setEstimatedHours(totalEstimatedHours);
+            
+            // 重新计算碳排放
+            org.com.repair.service.green.GreenIndexMappingResult greenResult = emissionCalculatorService.calculateAndMap(repairOrder);
+            repairOrder.setEstimatedEmission(greenResult.estimatedEmission());
+            repairOrder.setGreenIndex(greenResult.grade().code());
+            repairOrder.setGreenRecommendation(greenResult.recommendation());
         }
         
         RepairOrder updatedOrder = repairOrderRepository.save(repairOrder);

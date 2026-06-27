@@ -852,6 +852,13 @@
                   <div class="emission-label">预估碳排放量</div>
                 </div>
               </div>
+              <div class="emission-badge" v-if="selectedOrder.greenIndex">
+                <i class="fas fa-award"></i>
+                <div>
+                  <div class="emission-value">{{ selectedOrder.greenIndex }}</div>
+                  <div class="emission-label">绿色评级</div>
+                </div>
+              </div>
               <div class="emission-details">
                 <div class="emission-detail-item">
                   <span class="detail-label">维修方案:</span>
@@ -866,7 +873,11 @@
                   <span class="detail-value">{{ selectedOrder.reworkCount || 0 }} 次</span>
                 </div>
               </div>
-              <div class="emission-tips">
+              <div class="emission-tips" v-if="selectedOrder.greenRecommendation">
+                <i class="fas fa-lightbulb"></i>
+                <span>{{ selectedOrder.greenRecommendation }}</span>
+              </div>
+              <div class="emission-tips" v-else>
                 <i class="fas fa-info-circle"></i>
                 <span>选择修复方案和环保材料可以有效降低碳排放</span>
               </div>

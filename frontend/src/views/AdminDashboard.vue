@@ -810,6 +810,13 @@
                     <div class="emission-label">预估碳排放量</div>
                   </div>
                 </div>
+                <div class="emission-badge" v-if="selectedOrderDetail.greenIndex">
+                  <i class="fas fa-award"></i>
+                  <div>
+                    <div class="emission-value">{{ selectedOrderDetail.greenIndex }}</div>
+                    <div class="emission-label">绿色评级</div>
+                  </div>
+                </div>
                 <div class="emission-details">
                   <div class="emission-detail-item">
                     <span class="detail-label">维修方案:</span>
@@ -824,7 +831,11 @@
                     <span class="detail-value">{{ selectedOrderDetail.reworkCount || 0 }} 次</span>
                   </div>
                 </div>
-                <div class="emission-tips">
+                <div class="emission-tips" v-if="selectedOrderDetail.greenRecommendation">
+                  <i class="fas fa-lightbulb"></i>
+                  <span>{{ selectedOrderDetail.greenRecommendation }}</span>
+                </div>
+                <div class="emission-tips" v-else>
                   <i class="fas fa-info-circle"></i>
                   <span>该工单的碳排放评估基于维修工时、材料类型和维修方案自动计算</span>
                 </div>

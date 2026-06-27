@@ -68,6 +68,12 @@ public class RepairOrder {
     private Double estimatedEmission;
 
     @Column
+    private String greenIndex;
+
+    @Column
+    private String greenRecommendation;
+
+    @Column
     private Boolean ecoMaterial; // 是否环保材料
 
     @Column
@@ -150,6 +156,22 @@ public class RepairOrder {
 
     public void setEstimatedEmission(Double estimatedEmission) {
         this.estimatedEmission = estimatedEmission;
+    }
+
+    public String getGreenIndex() {
+        return greenIndex;
+    }
+
+    public void setGreenIndex(String greenIndex) {
+        this.greenIndex = greenIndex;
+    }
+
+    public String getGreenRecommendation() {
+        return greenRecommendation;
+    }
+
+    public void setGreenRecommendation(String greenRecommendation) {
+        this.greenRecommendation = greenRecommendation;
     }
 
     public Boolean isEcoMaterial() {
