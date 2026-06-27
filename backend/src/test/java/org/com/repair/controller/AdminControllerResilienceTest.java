@@ -1,11 +1,18 @@
 package org.com.repair.controller;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+
+import org.com.repair.service.FeedbackSelfIterationService;
 import org.com.repair.security.RequestUserContextResolver;
 import org.com.repair.service.AdminService;
 import org.com.repair.service.AuthTokenService;
@@ -22,6 +29,8 @@ class AdminControllerResilienceTest {
 
     private MockMvc mockMvc;
     private RepairOrderService repairOrderService;
+    private FeedbackSelfIterationService feedbackSelfIterationService;
+    private RequestUserContextResolver requestUserContextResolver;
 
     @BeforeEach
     void setUp() {
@@ -30,7 +39,8 @@ class AdminControllerResilienceTest {
         TechnicianService technicianService = mock(TechnicianService.class);
         AuthTokenService authTokenService = mock(AuthTokenService.class);
         GamificationService gamificationService = mock(GamificationService.class);
-        RequestUserContextResolver requestUserContextResolver = mock(RequestUserContextResolver.class);
+        requestUserContextResolver = mock(RequestUserContextResolver.class);
+        feedbackSelfIterationService = mock(FeedbackSelfIterationService.class);
 
         AdminController adminController = new AdminController(
                 adminService,
@@ -38,7 +48,8 @@ class AdminControllerResilienceTest {
                 technicianService,
                 authTokenService,
                 gamificationService,
-                requestUserContextResolver);
+                requestUserContextResolver,
+                feedbackSelfIterationService);
 
         mockMvc = MockMvcBuilders.standaloneSetup(adminController).build();
     }
@@ -67,5 +78,36 @@ class AdminControllerResilienceTest {
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.error").value("获取统计数据失败: simulated failure"));
+    }
+
+    @Test
+    void shouldGenerateSelfIterationDraftFromAdminEndpoint() throws Exception {
+        FeedbackSelfIterationService.SelfIterationDraft draft = selfIterationDraft();
+        when(feedbackSelfIterationService.buildIterationDraft()).thenReturn(draft);
+
+        mockMvc.perform(post("/api/admins/ai-self-iteration/draft").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aggregate.totalFeedback").value(12))
+                .andExpect(jsonPath("$.dispatchWeightDraft.ratingWeight").value(0.5500));
+
+        verify(requestUserContextResolver).requireAdminRole(org.mockito.ArgumentMatchers.any());
+    }
+
+    private FeedbackSelfIterationService.SelfIterationDraft selfIterationDraft() {
+        FeedbackSelfIterationService.FeedbackAggregate aggregate =
+                new FeedbackSelfIterationService.FeedbackAggregate(30, 12, 3.6, 4, 0.3333, 3);
+        FeedbackSelfIterationService.DispatchWeightDraft weightDraft =
+                new FeedbackSelfIterationService.DispatchWeightDraft(
+                        new BigDecimal("0.5500"),
+                        new BigDecimal("0.2500"),
+                        new BigDecimal("0.2000"),
+                        new BigDecimal("0.1000"),
+                        "根据低分反馈占比生成派单权重调整建议。");
+        return new FeedbackSelfIterationService.SelfIterationDraft(
+                LocalDateTime.now(),
+                aggregate,
+                "prompt patch",
+                weightDraft,
+                List.of("UPDATE dispatch_weight_config ..."));
     }
 }

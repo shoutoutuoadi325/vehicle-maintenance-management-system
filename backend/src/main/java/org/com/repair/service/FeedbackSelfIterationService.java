@@ -4,10 +4,16 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
+import org.com.repair.entity.AgentPromptTemplateConfig;
+import org.com.repair.entity.DispatchWeightConfig;
 import org.com.repair.repository.AgentPromptTemplateConfigRepository;
 import org.com.repair.repository.DispatchWeightConfigRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,20 +25,23 @@ import org.springframework.transaction.annotation.Transactional;
  * dispatch-weight suggestions.
  *
  * Configuration update path:
- * 1. add review/approval UI for the generated draft;
- * 2. write approved values to agent_prompt_template_config and dispatch_weight_config;
- * 3. refresh diagnosis and dispatch configuration caches.
+ * 1. scheduled or admin-triggered draft generation;
+ * 2. admin review/approval through the backoffice API;
+ * 3. approved values are written to agent_prompt_template_config and dispatch_weight_config.
  */
 @Service
 public class FeedbackSelfIterationService {
 
+    private static final Logger logger = LoggerFactory.getLogger(FeedbackSelfIterationService.class);
     private static final int DEFAULT_SAMPLE_WINDOW_DAYS = 30;
+    private static final String DEFAULT_AGENT_ROLE = "ARBITRATOR";
+    private static final String DEFAULT_TEMPLATE_KEY = "default";
+    private static final String DEFAULT_DISPATCH_CONFIG_KEY = "default";
 
     private final JdbcTemplate jdbcTemplate;
-    @SuppressWarnings("unused")
     private final AgentPromptTemplateConfigRepository promptTemplateRepository;
-    @SuppressWarnings("unused")
     private final DispatchWeightConfigRepository dispatchWeightConfigRepository;
+    private volatile SelfIterationDraft latestDraft;
 
     public FeedbackSelfIterationService(
             JdbcTemplate jdbcTemplate,
@@ -61,12 +70,87 @@ public class FeedbackSelfIterationService {
                 - 对制动、高温、漏油、电气短路等高风险场景强制安全兜底。
                 """;
 
-        return new SelfIterationDraft(
+        SelfIterationDraft draft = new SelfIterationDraft(
                 LocalDateTime.now(),
                 aggregate,
                 promptPatch,
                 weightDraft,
                 buildConfigUpsertPreviewSql(promptPatch, weightDraft));
+        latestDraft = draft;
+        return draft;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<SelfIterationDraft> getLatestDraft() {
+        return Optional.ofNullable(latestDraft);
+    }
+
+    /**
+     * Keeps a fresh review draft ready for admins. Approval still requires a manual
+     * API action so scheduled analysis never mutates live scoring or prompt config.
+     */
+    @Scheduled(cron = "0 15 3 * * *")
+    public void refreshScheduledIterationDraft() {
+        try {
+            SelfIterationDraft draft = buildIterationDraft();
+            logger.info("Generated scheduled feedback self-iteration draft, totalFeedback={}, lowRatingRatio={}",
+                    draft.aggregate().totalFeedback(),
+                    draft.aggregate().lowRatingRatio());
+        } catch (Exception e) {
+            logger.warn("Failed to generate scheduled feedback self-iteration draft", e);
+        }
+    }
+
+    /**
+     * Applies the latest reviewed draft to the live configuration tables.
+     */
+    @Transactional
+    public SelfIterationApprovalResult approveLatestDraft(String reviewer, String reviewNote) {
+        SelfIterationDraft draft = Optional.ofNullable(latestDraft)
+                .orElseThrow(() -> new IllegalStateException("暂无待审核自演进草案，请先生成草案"));
+
+        AgentPromptTemplateConfig promptConfig = promptTemplateRepository
+                .findByAgentRoleAndTemplateKey(DEFAULT_AGENT_ROLE, DEFAULT_TEMPLATE_KEY)
+                .orElseGet(() -> AgentPromptTemplateConfig.builder()
+                        .agentRole(DEFAULT_AGENT_ROLE)
+                        .templateKey(DEFAULT_TEMPLATE_KEY)
+                        .promptTemplate("ARBITRATOR 默认会诊提示词")
+                        .enabled(true)
+                        .build());
+        promptConfig.setEnabled(true);
+        promptConfig.setSampleWindowDays(draft.aggregate().sampleWindowDays());
+        promptConfig.setPromptTemplate(appendPromptPatch(promptConfig.getPromptTemplate(), draft.promptPatch()));
+        promptConfig.setUpdateReason(buildReviewReason(reviewer, reviewNote));
+        AgentPromptTemplateConfig savedPromptConfig = promptTemplateRepository.save(promptConfig);
+
+        DispatchWeightConfig dispatchConfig = dispatchWeightConfigRepository
+                .findByConfigKey(DEFAULT_DISPATCH_CONFIG_KEY)
+                .orElseGet(() -> DispatchWeightConfig.builder()
+                        .configKey(DEFAULT_DISPATCH_CONFIG_KEY)
+                        .enabled(true)
+                        .build());
+        dispatchConfig.setEnabled(true);
+        dispatchConfig.setSampleWindowDays(draft.aggregate().sampleWindowDays());
+        dispatchConfig.setRatingWeight(draft.dispatchWeightDraft().ratingWeight());
+        dispatchConfig.setWorkloadWeight(draft.dispatchWeightDraft().workloadWeight());
+        dispatchConfig.setExperienceWeight(draft.dispatchWeightDraft().experienceWeight());
+        dispatchConfig.setFatiguePenaltyWeight(draft.dispatchWeightDraft().fatiguePenaltyWeight());
+        dispatchConfig.setUpdateReason(buildReviewReason(reviewer, reviewNote));
+        DispatchWeightConfig savedDispatchConfig = dispatchWeightConfigRepository.save(dispatchConfig);
+
+        SelfIterationApprovalResult result = new SelfIterationApprovalResult(
+                LocalDateTime.now(),
+                true,
+                normalizeReviewer(reviewer),
+                normalizeReviewNote(reviewNote),
+                savedPromptConfig.getId(),
+                savedDispatchConfig.getId(),
+                draft.aggregate(),
+                draft.promptPatch(),
+                draft.dispatchWeightDraft(),
+                "反馈自演进草案已审批并写入配置表");
+        latestDraft = null;
+        return result;
     }
 
     /**
@@ -77,6 +161,7 @@ public class FeedbackSelfIterationService {
      * prompt reinforcement and dispatch-weight adjustment without model retraining.
      */
     private FeedbackAggregate loadFeedbackAggregate(int sampleWindowDays) {
+        LocalDateTime cutoffTime = LocalDateTime.now().minusDays(sampleWindowDays);
         String sql = """
                 SELECT
                     COUNT(*) AS total_feedback,
@@ -88,7 +173,7 @@ public class FeedbackSelfIterationService {
                 LEFT JOIN order_technician ot ON ot.order_id = r.id
                 LEFT JOIN technician t ON t.id = ot.technician_id
                 WHERE f.rating IS NOT NULL
-                  AND f.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                  AND f.created_at >= ?
                 """;
 
         return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> {
@@ -102,7 +187,7 @@ public class FeedbackSelfIterationService {
                     lowRating,
                     round(lowRatingRatio),
                     rs.getLong("touched_technicians"));
-        }, sampleWindowDays);
+        }, cutoffTime);
     }
 
     /**
@@ -170,6 +255,31 @@ public class FeedbackSelfIterationService {
         return Math.round(value * 10000.0) / 10000.0;
     }
 
+    private String appendPromptPatch(String currentPrompt, String promptPatch) {
+        String basePrompt = currentPrompt == null || currentPrompt.isBlank()
+                ? "ARBITRATOR 默认会诊提示词"
+                : currentPrompt.strip();
+        String patchBlock = "[反馈自演进补丁 " + LocalDateTime.now().withNano(0) + "]\n" + promptPatch.strip();
+        return basePrompt + "\n\n" + patchBlock;
+    }
+
+    private String buildReviewReason(String reviewer, String reviewNote) {
+        String note = normalizeReviewNote(reviewNote);
+        String reason = "feedback aggregate proposal approved by " + normalizeReviewer(reviewer);
+        if (!note.isBlank()) {
+            reason += ": " + note;
+        }
+        return reason.length() > 500 ? reason.substring(0, 500) : reason;
+    }
+
+    private String normalizeReviewer(String reviewer) {
+        return reviewer == null || reviewer.isBlank() ? "admin" : reviewer.strip();
+    }
+
+    private String normalizeReviewNote(String reviewNote) {
+        return reviewNote == null ? "" : reviewNote.strip();
+    }
+
     public record FeedbackAggregate(
             int sampleWindowDays,
             long totalFeedback,
@@ -195,6 +305,20 @@ public class FeedbackSelfIterationService {
             String promptPatch,
             DispatchWeightDraft dispatchWeightDraft,
             List<String> configUpsertPreviewSql
+    ) {
+    }
+
+    public record SelfIterationApprovalResult(
+            LocalDateTime approvedAt,
+            boolean approved,
+            String reviewer,
+            String reviewNote,
+            Long promptTemplateConfigId,
+            Long dispatchWeightConfigId,
+            FeedbackAggregate aggregate,
+            String appliedPromptPatch,
+            DispatchWeightDraft appliedDispatchWeightDraft,
+            String message
     ) {
     }
 }

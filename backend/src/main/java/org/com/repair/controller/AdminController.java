@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.com.repair.DTO.AdminUpdateJourneyShipmentRequest;
+import org.com.repair.DTO.AdminSelfIterationApprovalRequest;
 import org.com.repair.DTO.AdminResponse;
 import org.com.repair.DTO.AuthLoginResponse;
 import org.com.repair.DTO.JourneyGrandPrizeStatusResponse;
@@ -13,6 +14,7 @@ import org.com.repair.DTO.NewAdminRequest;
 import org.com.repair.security.RequestUserContextResolver;
 import org.com.repair.service.AdminService;
 import org.com.repair.service.AuthTokenService;
+import org.com.repair.service.FeedbackSelfIterationService;
 import org.com.repair.service.GamificationService;
 import org.com.repair.service.RepairOrderService;
 import org.com.repair.service.TechnicianService;
@@ -45,19 +47,22 @@ public class AdminController {
     private final AuthTokenService authTokenService;
     private final GamificationService gamificationService;
     private final RequestUserContextResolver requestUserContextResolver;
+    private final FeedbackSelfIterationService feedbackSelfIterationService;
     
     public AdminController(AdminService adminService,
                            RepairOrderService repairOrderService,
                            TechnicianService technicianService,
                            AuthTokenService authTokenService,
                            GamificationService gamificationService,
-                           RequestUserContextResolver requestUserContextResolver) {
+                           RequestUserContextResolver requestUserContextResolver,
+                           FeedbackSelfIterationService feedbackSelfIterationService) {
         this.adminService = adminService;
         this.repairOrderService = repairOrderService;
         this.technicianService = technicianService;
         this.authTokenService = authTokenService;
         this.gamificationService = gamificationService;
         this.requestUserContextResolver = requestUserContextResolver;
+        this.feedbackSelfIterationService = feedbackSelfIterationService;
     }
     
     @PostMapping
@@ -236,6 +241,42 @@ public class AdminController {
         requestUserContextResolver.requireAdminRole(servletRequest);
         JourneyGrandPrizeStatusResponse response = gamificationService.adminUpdateGrandPrizeShipment(userId, request);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/ai-self-iteration/draft")
+    public ResponseEntity<?> getSelfIterationDraft(HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireAdminRole(servletRequest);
+        return feedbackSelfIterationService.getLatestDraft()
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("message", "暂无待审核自演进草案，请先手动生成或等待定时任务生成")));
+    }
+
+    @PostMapping("/ai-self-iteration/draft")
+    public ResponseEntity<FeedbackSelfIterationService.SelfIterationDraft> generateSelfIterationDraft(
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireAdminRole(servletRequest);
+        FeedbackSelfIterationService.SelfIterationDraft draft = feedbackSelfIterationService.buildIterationDraft();
+        return ResponseEntity.ok(draft);
+    }
+
+    @PostMapping("/ai-self-iteration/approve")
+    public ResponseEntity<?> approveSelfIterationDraft(
+            @RequestBody(required = false) AdminSelfIterationApprovalRequest request,
+            HttpServletRequest servletRequest) {
+        requestUserContextResolver.requireAdminRole(servletRequest);
+        Object authUsername = servletRequest.getAttribute("authUsername");
+        String reviewer = request != null && request.reviewer() != null
+                ? request.reviewer()
+                : authUsername == null ? "admin" : String.valueOf(authUsername);
+        String reviewNote = request == null ? "" : request.reviewNote();
+        try {
+            FeedbackSelfIterationService.SelfIterationApprovalResult result =
+                    feedbackSelfIterationService.approveLatestDraft(reviewer, reviewNote);
+            return ResponseEntity.ok(result);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
     }
     
     // 错误响应类

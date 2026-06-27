@@ -10,4 +10,6 @@ import org.springframework.stereotype.Repository;
 public interface DispatchWeightConfigRepository extends JpaRepository<DispatchWeightConfig, Long> {
 
     Optional<DispatchWeightConfig> findByConfigKeyAndEnabledTrue(String configKey);
+
+    Optional<DispatchWeightConfig> findByConfigKey(String configKey);
 }

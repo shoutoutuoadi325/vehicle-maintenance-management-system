@@ -105,7 +105,7 @@
 5. **智能派单**: `AutoAssignmentService` 读取 `dispatch_weight_config` 动态权重，结合评分、工作负载、经验、`TechnicianService` 疲劳度快照和 `AgingAntiStarvationDispatchPolicy` 等待老化策略进行派单
 6. **维保预警**: `MaintenanceAlertService` 定时扫描车辆里程/时间，生成维保提醒
 7. **库存预警**: `MaterialService` 消耗库存时自动检测低库存并生成告警
-8. **反馈自迭代**: `FeedbackSelfIterationService` 基于反馈数据生成派单权重和 AI Prompt 模板调整建议，派单侧消费 `dispatch_weight_config` 中的已启用权重配置
+8. **反馈自迭代**: `FeedbackSelfIterationService` 基于反馈数据生成派单权重和 AI Prompt 模板调整建议，每日 03:15 生成待审草案；管理员可通过 `/api/admins/ai-self-iteration/*` API 和前端 `AI 自演进` 页面审核，审批后写入 `agent_prompt_template_config` 与 `dispatch_weight_config`，派单侧消费已启用权重配置
 
 ### 安全模型
 

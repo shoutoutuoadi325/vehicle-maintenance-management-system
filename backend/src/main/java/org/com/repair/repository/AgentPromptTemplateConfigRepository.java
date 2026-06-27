@@ -12,4 +12,8 @@ public interface AgentPromptTemplateConfigRepository extends JpaRepository<Agent
     Optional<AgentPromptTemplateConfig> findByAgentRoleAndTemplateKeyAndEnabledTrue(
             String agentRole,
             String templateKey);
+
+    Optional<AgentPromptTemplateConfig> findByAgentRoleAndTemplateKey(
+            String agentRole,
+            String templateKey);
 }

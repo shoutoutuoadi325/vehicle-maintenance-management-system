@@ -20,6 +20,9 @@
           <a v-if="isSuperAdmin" href="#" @click="activeTab = 'statistics'" :class="{ active: activeTab === 'statistics' }">
             <i class="fas fa-chart-bar"></i> 统计分析
           </a>
+          <a v-if="isSuperAdmin" href="#" @click.prevent="openSelfIterationTab" :class="{ active: activeTab === 'selfIteration' }">
+            <i class="fas fa-robot"></i> AI 自演进
+          </a>
           <a v-if="isSuperAdmin" href="#" @click="activeTab = 'users'" :class="{ active: activeTab === 'users' }">
             <i class="fas fa-users"></i> 用户管理
           </a>
@@ -131,6 +134,11 @@
               <i class="fas fa-chart-line"></i>
               <h3>查看报表</h3>
               <p>查看详细统计分析</p>
+            </div>
+            <div v-if="isSuperAdmin" class="action-card" @click="openSelfIterationTab">
+              <i class="fas fa-robot"></i>
+              <h3>AI 自演进审核</h3>
+              <p>审批 Prompt 补丁和派单权重</p>
             </div>
             <div v-if="isSuperAdmin" class="action-card" @click="activeTab = 'users'">
               <i class="fas fa-users"></i>
@@ -634,6 +642,105 @@
         </div>
       </div>
 
+      <!-- AI 自演进审核页面 (仅超级管理员) -->
+      <div v-if="activeTab === 'selfIteration' && isSuperAdmin" class="tab-content">
+        <div class="section-header">
+          <h2>AI 自演进审核</h2>
+          <div class="self-iteration-actions">
+            <button class="btn btn-outline" @click="loadSelfIterationDraft" :disabled="selfIterationLoading">
+              <i class="fas fa-sync-alt" :class="{ 'fa-spin': selfIterationLoading }"></i>
+              刷新草案
+            </button>
+            <button class="btn btn-primary" @click="generateSelfIterationDraft" :disabled="selfIterationLoading">
+              <i class="fas fa-magic"></i>
+              生成草案
+            </button>
+          </div>
+        </div>
+
+        <div v-if="selfIterationDraft" class="self-iteration-container">
+          <div class="stat-section self-iteration-summary">
+            <h3>近 {{ selfIterationDraft.aggregate.sampleWindowDays }} 天反馈聚合</h3>
+            <div class="self-iteration-metrics">
+              <div>
+                <span>反馈总数</span>
+                <strong>{{ selfIterationDraft.aggregate.totalFeedback }}</strong>
+              </div>
+              <div>
+                <span>平均评分</span>
+                <strong>{{ Number(selfIterationDraft.aggregate.averageRating || 0).toFixed(2) }}</strong>
+              </div>
+              <div>
+                <span>低分占比</span>
+                <strong>{{ formatPercent(selfIterationDraft.aggregate.lowRatingRatio) }}</strong>
+              </div>
+              <div>
+                <span>覆盖技师</span>
+                <strong>{{ selfIterationDraft.aggregate.touchedTechnicians }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-section">
+            <h3>Prompt 补丁建议</h3>
+            <pre class="self-iteration-code">{{ selfIterationDraft.promptPatch }}</pre>
+          </div>
+
+          <div class="stat-section">
+            <h3>派单权重建议</h3>
+            <div class="weight-grid">
+              <div>
+                <span>评分权重</span>
+                <strong>{{ selfIterationDraft.dispatchWeightDraft.ratingWeight }}</strong>
+              </div>
+              <div>
+                <span>工作量权重</span>
+                <strong>{{ selfIterationDraft.dispatchWeightDraft.workloadWeight }}</strong>
+              </div>
+              <div>
+                <span>经验权重</span>
+                <strong>{{ selfIterationDraft.dispatchWeightDraft.experienceWeight }}</strong>
+              </div>
+              <div>
+                <span>疲劳惩罚</span>
+                <strong>{{ selfIterationDraft.dispatchWeightDraft.fatiguePenaltyWeight }}</strong>
+              </div>
+            </div>
+            <p class="self-iteration-reason">{{ selfIterationDraft.dispatchWeightDraft.reason }}</p>
+          </div>
+
+          <div class="stat-section">
+            <h3>SQL 预览</h3>
+            <pre class="self-iteration-code" v-for="(sql, index) in selfIterationDraft.configUpsertPreviewSql" :key="index">{{ sql }}</pre>
+          </div>
+
+          <div class="stat-section">
+            <h3>审批执行</h3>
+            <textarea
+              v-model="selfIterationReviewNote"
+              class="form-input self-iteration-note"
+              placeholder="审批备注"
+              rows="3"
+            ></textarea>
+            <div class="self-iteration-approve-row">
+              <button class="btn btn-primary" @click="approveSelfIterationDraft" :disabled="selfIterationApproving">
+                <i class="fas fa-check-circle"></i>
+                {{ selfIterationApproving ? '写入中...' : '审批并写入配置' }}
+              </button>
+              <span v-if="selfIterationApprovalResult" class="self-iteration-result">
+                {{ selfIterationApprovalResult.message }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="empty-state">
+          <i class="fas fa-robot"></i>
+          <h3>暂无待审核草案</h3>
+          <p>可手动生成，也可等待每日定时任务生成。</p>
+        </div>
+      </div>
+
       <!-- 用户管理页面 (仅超级管理员) -->
       <div v-if="activeTab === 'users' && isSuperAdmin" class="tab-content">
         <div class="section-header">
@@ -1060,6 +1167,11 @@ export default {
         totalElements: 0,
         totalPages: 0
       },
+      selfIterationDraft: null,
+      selfIterationLoading: false,
+      selfIterationApproving: false,
+      selfIterationReviewNote: '',
+      selfIterationApprovalResult: null,
       statisticsDateRange: {
         start: '',
         end: ''
@@ -1239,6 +1351,7 @@ export default {
         
         if (this.isSuperAdmin) {
           await this.loadUsers();
+          await this.loadSelfIterationDraft({ silent: true });
         }
         
         // 然后基于基础数据计算统计信息
@@ -1401,6 +1514,70 @@ export default {
         console.error('加载统计数据失败，使用本地计算:', error);
         this.calculateLocalStatistics();
       }
+    },
+    async openSelfIterationTab() {
+      this.activeTab = 'selfIteration';
+      await this.loadSelfIterationDraft({ silent: true });
+    },
+    async loadSelfIterationDraft(options = {}) {
+      if (!this.isSuperAdmin) return;
+      this.selfIterationLoading = true;
+      try {
+        const response = await this.$axios.get('/admins/ai-self-iteration/draft');
+        this.selfIterationDraft = response.data;
+        this.selfIterationApprovalResult = null;
+      } catch (error) {
+        if (error.response?.status === 404) {
+          this.selfIterationDraft = null;
+          if (!options.silent) {
+            this.$emit('message', '暂无待审核自演进草案', 'info');
+          }
+        } else {
+          console.error('加载自演进草案失败:', error);
+          if (!options.silent) {
+            this.$emit('message', '加载自演进草案失败', 'error');
+          }
+        }
+      } finally {
+        this.selfIterationLoading = false;
+      }
+    },
+    async generateSelfIterationDraft() {
+      if (!this.isSuperAdmin) return;
+      this.selfIterationLoading = true;
+      try {
+        const response = await this.$axios.post('/admins/ai-self-iteration/draft');
+        this.selfIterationDraft = response.data;
+        this.selfIterationApprovalResult = null;
+        this.$emit('message', '自演进草案已生成', 'success');
+      } catch (error) {
+        console.error('生成自演进草案失败:', error);
+        this.$emit('message', '生成自演进草案失败', 'error');
+      } finally {
+        this.selfIterationLoading = false;
+      }
+    },
+    async approveSelfIterationDraft() {
+      if (!this.isSuperAdmin || !this.selfIterationDraft) return;
+      this.selfIterationApproving = true;
+      try {
+        const response = await this.$axios.post('/admins/ai-self-iteration/approve', {
+          reviewer: this.user.username || this.user.name || 'admin',
+          reviewNote: this.selfIterationReviewNote
+        });
+        this.selfIterationApprovalResult = response.data;
+        this.selfIterationDraft = null;
+        this.selfIterationReviewNote = '';
+        this.$emit('message', response.data.message || '自演进配置已写入', 'success');
+      } catch (error) {
+        console.error('审批自演进草案失败:', error);
+        this.$emit('message', '审批自演进草案失败', 'error');
+      } finally {
+        this.selfIterationApproving = false;
+      }
+    },
+    formatPercent(value) {
+      return `${((Number(value) || 0) * 100).toFixed(1)}%`;
     },
     
     async calculateLocalStatistics() {
@@ -2534,6 +2711,70 @@ export default {
 .statistics-container {
   display: grid;
   gap: 2rem;
+}
+
+.self-iteration-actions,
+.self-iteration-approve-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.self-iteration-container {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.self-iteration-metrics,
+.weight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+}
+
+.self-iteration-metrics div,
+.weight-grid div {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.self-iteration-metrics span,
+.weight-grid span {
+  display: block;
+  color: #6b7280;
+  font-size: 0.82rem;
+  margin-bottom: 0.4rem;
+}
+
+.self-iteration-metrics strong,
+.weight-grid strong {
+  color: #111827;
+  font-size: 1.35rem;
+}
+
+.self-iteration-code {
+  margin: 0 0 0.75rem 0;
+  padding: 1rem;
+  background: #111827;
+  color: #e5e7eb;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+}
+
+.self-iteration-note {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.self-iteration-reason,
+.self-iteration-result {
+  color: #475569;
 }
 
 .charts-grid {

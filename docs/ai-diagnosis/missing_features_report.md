@@ -85,6 +85,10 @@ AutoAssignmentService.calculateTechnicianScore()  →  score -= fatigueLevel * f
   - `DecisionFusionEngine` 已能在 Agent 摘要中区分 `AI Consilium: multi-stage diagnosis parsed` 与单次 `Semantic Agent` 诊断。
 * **测试覆盖**：`AIDiagnosisServiceFusionTest.technicianLowConfidenceSemanticResultShouldBeSuspended()` 验证技师端低置信场景会通过 `AI_CONSILIUM` 单次外部调用执行，Prompt 内包含 `PRE_DIAG → MAIN_AGENT → RED_TEAM → ARBITRATOR` 四阶段协同要求，并进入 SafetyNet 人工复核分支；隐私、库存、历史案例测试同步覆盖四阶段链路中的脱敏与上下文注入。
 
-## 5. 算法自演进闭环机制缺少执行与审批端点
+## 5. 算法自演进闭环机制缺少执行与审批端点（已实现）
 * **文档描述**：基于业务数据反馈的算法自演进闭环，"零算力损耗的免重训自演进架构"，系统能够自动生成 Prompt 补丁并调整派单权重。
-* **代码现状**：后端 `FeedbackSelfIterationService` 确实实现了数据统计并生成了调整权重的建议及 `UPDATE` SQL（`buildConfigUpsertPreviewSql`），生成了 `SelfIterationDraft` 对象。但是，**系统缺失触发该逻辑的 API 入口、定时任务以及管理员前端的审核/执行界面**，导致这套机制无法真正在业务中形成闭环。
+* **代码现状**：闭环已接入执行与审批链路：
+  - `FeedbackSelfIterationService` 保留反馈聚合、Prompt 补丁、派单权重建议和 SQL 预览，并新增每日 03:15 `@Scheduled` 自动生成最新待审草案。
+  - 管理员 API 已接入：`GET /api/admins/ai-self-iteration/draft` 查看待审草案，`POST /api/admins/ai-self-iteration/draft` 手动生成草案，`POST /api/admins/ai-self-iteration/approve` 审批并通过 JPA 写入 `agent_prompt_template_config` 与 `dispatch_weight_config`。
+  - 管理员控制台新增 `AI 自演进` 页面，支持查看反馈聚合、Prompt 补丁、派单权重建议、SQL 预览，并填写审批备注后写入配置。
+* **测试覆盖**：`FeedbackSelfIterationServiceTest` 覆盖草案生成与审批落库；`AdminControllerResilienceTest.shouldGenerateSelfIterationDraftFromAdminEndpoint()` 覆盖管理员端点触发草案生成。

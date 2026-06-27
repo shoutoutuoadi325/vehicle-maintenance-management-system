@@ -157,7 +157,12 @@
 - **输出**:
   - 派单权重调整建议（更新 `dispatch_weight_config` 表）
   - Prompt 模板补丁建议（更新 `agent_prompt_template_config` 表）
-  - 预览 SQL（人工确认后执行）
+  - 预览 SQL（供管理员审核）
+- **触发方式**:
+  - 每日 03:15 通过 `@Scheduled` 自动生成最新待审草案，不直接修改线上配置
+  - 管理员 API `POST /api/admins/ai-self-iteration/draft` 可手动生成草案
+  - 管理员 API `POST /api/admins/ai-self-iteration/approve` 审批后通过 JPA 写入 `agent_prompt_template_config` 与 `dispatch_weight_config`
+- **审核界面**: 管理员控制台 `AI 自演进` 页面展示反馈聚合、Prompt 补丁、派单权重、SQL 预览，并支持审批落库
 
 ### 配置表
 
