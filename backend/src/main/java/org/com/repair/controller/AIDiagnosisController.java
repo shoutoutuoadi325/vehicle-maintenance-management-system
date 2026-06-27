@@ -41,8 +41,9 @@ public class AIDiagnosisController {
                 ? ""
                 : request.getProblemDescription().trim();
         List<String> normalizedImageDataUrls = normalizeImageDataUrls(request.getImageDataUrls());
-        if (normalizedProblemDescription.isBlank() && normalizedImageDataUrls.isEmpty()) {
-            throw new IllegalArgumentException("请至少输入文字描述或上传故障图片");
+        String audioDataUrl = request.getAudioDataUrl() != null ? request.getAudioDataUrl().trim() : "";
+        if (normalizedProblemDescription.isBlank() && normalizedImageDataUrls.isEmpty() && audioDataUrl.isBlank()) {
+            throw new IllegalArgumentException("请至少输入文字描述、语音或上传故障图片");
         }
 
         String diagnosisRole = ("technician".equals(role) || "admin".equals(role)) ? "technician" : "customer";
@@ -51,7 +52,8 @@ public class AIDiagnosisController {
                 normalizedProblemDescription,
                 diagnosisRole,
                 request.getTechnicianId(),
-                normalizedImageDataUrls);
+                normalizedImageDataUrls,
+                audioDataUrl);
         
         if (response.isSuccess()) {
             return new ResponseEntity<>(response, HttpStatus.OK);

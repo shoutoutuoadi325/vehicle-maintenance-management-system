@@ -17,7 +17,7 @@ public class SemanticDiagnosisAgent {
                                        ExternalAiCaller externalAiCaller,
                                        ResponseParser responseParser) throws IOException {
         String prompt = promptComposer.compose(request);
-        String diagnosisText = externalAiCaller.call(prompt, request.traceId(), STAGE);
+        String diagnosisText = externalAiCaller.call(prompt, request.imageDataUrls(), request.audioDataUrl(), request.traceId(), STAGE);
         if (diagnosisText == null || diagnosisText.isBlank()) {
             throw new IOException("Semantic Agent returned empty diagnosis content");
         }
@@ -40,7 +40,9 @@ public class SemanticDiagnosisAgent {
     public record SemanticDiagnosisRequest(String problemDescription,
                                            String role,
                                            Long technicianId,
-                                           String traceId) {
+                                           String traceId,
+                                           List<String> imageDataUrls,
+                                           String audioDataUrl) {
     }
 
     @FunctionalInterface
@@ -50,7 +52,7 @@ public class SemanticDiagnosisAgent {
 
     @FunctionalInterface
     public interface ExternalAiCaller {
-        String call(String prompt, String traceId, String stage) throws IOException;
+        String call(String prompt, List<String> imageDataUrls, String audioDataUrl, String traceId, String stage) throws IOException;
     }
 
     @FunctionalInterface

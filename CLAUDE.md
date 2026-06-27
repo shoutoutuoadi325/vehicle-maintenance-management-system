@@ -18,7 +18,7 @@
 
 - **后端**: Spring Boot 3.4.5 + JPA + Flyway + MySQL 8 + Java 17
 - **前端**: Vue 2.6.14 + Vue Router 3.x + Vuex 3.x + Axios
-- **AI 诊断**: 外部 LLM API（DeepSeek）+ 规则引擎 + 多 Agent 协同
+- **AI 诊断**: 外部 LLM API（小米mimo v2.5）+ 规则引擎 + 多 Agent 协同
 - **构建**: Maven（后端）、npm（前端）
 
 ## 目录结构
@@ -188,7 +188,7 @@ mysql -u root -p car_repair < SQL/seed/demo-seed.sql
 | `SPRING_DATASOURCE_PASSWORD` | 数据库密码 | `root` |
 | `AI_DIAGNOSIS_API_KEY` | AI 诊断 API 密钥 | (需配置) |
 | `AI_DIAGNOSIS_API_BASE_URL` | AI 诊断 API 地址 | `https://api.apiyi.com` |
-| `AI_DIAGNOSIS_API_MODEL` | AI 模型名称 | `deepseek-chat` |
+| `AI_DIAGNOSIS_API_MODEL` | AI 模型名称 | `mimo-v2.5` |
 | `JWT_SECRET_KEY` | JWT 签名密钥 | (内置默认值) |
 
 ## 重要约定

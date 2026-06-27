@@ -8,6 +8,7 @@ public class AIDiagnosisRequest {
     private String role = "customer";
     private Long technicianId;
     private List<String> imageDataUrls = new ArrayList<>();
+    private String audioDataUrl;
 
     public AIDiagnosisRequest() {
     }
@@ -67,5 +68,13 @@ public class AIDiagnosisRequest {
 
     public void setImageDataUrls(List<String> imageDataUrls) {
         this.imageDataUrls = imageDataUrls;
+    }
+
+    public String getAudioDataUrl() {
+        return audioDataUrl;
+    }
+
+    public void setAudioDataUrl(String audioDataUrl) {
+        this.audioDataUrl = audioDataUrl;
     }
 }

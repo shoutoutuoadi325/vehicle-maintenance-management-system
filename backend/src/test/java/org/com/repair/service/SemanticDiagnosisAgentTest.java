@@ -19,9 +19,9 @@ class SemanticDiagnosisAgentTest {
         AtomicReference<String> capturedPrompt = new AtomicReference<>();
 
         AIDiagnosisResponse response = agent.analyze(
-                new SemanticDiagnosisAgent.SemanticDiagnosisRequest("冷车启动抖动", "technician", 7L, "trace-1"),
+                new SemanticDiagnosisAgent.SemanticDiagnosisRequest("冷车启动抖动", "technician", 7L, "trace-1", null, null),
                 request -> "semantic prompt for " + request.problemDescription(),
-                (prompt, traceId, stage) -> {
+                (prompt, imageDataUrls, audioDataUrl, traceId, stage) -> {
                     capturedPrompt.set(prompt);
                     capturedStage.set(stage);
                     return "{\"faultType\":\"点火系统异常\",\"suggestion\":\"读取故障码并检查火花塞\",\"possibleCauses\":[\"点火线圈异常\"]}";
@@ -44,9 +44,9 @@ class SemanticDiagnosisAgentTest {
         SemanticDiagnosisAgent agent = new SemanticDiagnosisAgent();
 
         assertThrows(IOException.class, () -> agent.analyze(
-                new SemanticDiagnosisAgent.SemanticDiagnosisRequest("油漆磨损", "technician", null, "trace-2"),
+                new SemanticDiagnosisAgent.SemanticDiagnosisRequest("油漆磨损", "technician", null, "trace-2", null, null),
                 request -> "semantic prompt",
-                (prompt, traceId, stage) -> " ",
+                (prompt, imageDataUrls, audioDataUrl, traceId, stage) -> " ",
                 (responseText, problemDescription) -> new AIDiagnosisResponse("unused", "unused")));
     }
 
@@ -55,9 +55,9 @@ class SemanticDiagnosisAgentTest {
         SemanticDiagnosisAgent agent = new SemanticDiagnosisAgent();
 
         AIDiagnosisResponse response = agent.analyze(
-                new SemanticDiagnosisAgent.SemanticDiagnosisRequest("油漆磨损", "customer", null, "trace-3"),
+                new SemanticDiagnosisAgent.SemanticDiagnosisRequest("油漆磨损", "customer", null, "trace-3", null, null),
                 request -> "semantic prompt",
-                (prompt, traceId, stage) -> "{\"faultType\":\"漆面磨损\",\"suggestion\":\"先清洁漆面\",\"possibleCauses\":[]}",
+                (prompt, imageDataUrls, audioDataUrl, traceId, stage) -> "{\"faultType\":\"漆面磨损\",\"suggestion\":\"先清洁漆面\",\"possibleCauses\":[]}",
                 (responseText, problemDescription) -> new AIDiagnosisResponse("漆面磨损", responseText));
 
         assertTrue(response.getDecisionPath().isEmpty());

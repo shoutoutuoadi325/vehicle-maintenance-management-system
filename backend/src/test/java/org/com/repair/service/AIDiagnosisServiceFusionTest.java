@@ -86,7 +86,7 @@ class AIDiagnosisServiceFusionTest {
         }
 
         @Override
-        protected String callOpenAIAPI(String prompt, String traceId, String stage) throws IOException {
+        protected String callOpenAIAPI(String prompt, java.util.List<String> imageDataUrls, String audioDataUrl, String traceId, String stage) throws IOException {
             externalCallCount++;
             return """
                     {
