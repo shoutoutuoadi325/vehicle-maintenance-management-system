@@ -9,10 +9,12 @@ import java.util.stream.Collectors;
 
 import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.Technician;
+import org.springframework.stereotype.Service;
 
 /**
  * 基于 Aging 的反饥饿调度策略。
  */
+@Service
 public class AgingAntiStarvationDispatchPolicy {
 
     /** 每等待 1 小时，priority 增长 0.08。 */

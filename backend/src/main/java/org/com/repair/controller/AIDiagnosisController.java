@@ -48,12 +48,18 @@ public class AIDiagnosisController {
 
         String diagnosisRole = ("technician".equals(role) || "admin".equals(role)) ? "technician" : "customer";
 
-        AIDiagnosisResponse response = aiDiagnosisService.diagnoseFault(
-                normalizedProblemDescription,
-                diagnosisRole,
-                request.getTechnicianId(),
-                normalizedImageDataUrls,
-                audioDataUrl);
+        AIDiagnosisResponse response = audioDataUrl.isBlank()
+                ? aiDiagnosisService.diagnoseFault(
+                        normalizedProblemDescription,
+                        diagnosisRole,
+                        request.getTechnicianId(),
+                        normalizedImageDataUrls)
+                : aiDiagnosisService.diagnoseFault(
+                        normalizedProblemDescription,
+                        diagnosisRole,
+                        request.getTechnicianId(),
+                        normalizedImageDataUrls,
+                        audioDataUrl);
         
         if (response.isSuccess()) {
             return new ResponseEntity<>(response, HttpStatus.OK);

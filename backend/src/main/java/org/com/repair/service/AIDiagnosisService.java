@@ -79,6 +79,13 @@ public class AIDiagnosisService {
     public AIDiagnosisResponse diagnoseFault(String problemDescription,
                                              String role,
                                              Long technicianId,
+                                             List<String> imageDataUrls) {
+        return diagnoseFault(problemDescription, role, technicianId, imageDataUrls, null);
+    }
+
+    public AIDiagnosisResponse diagnoseFault(String problemDescription,
+                                             String role,
+                                             Long technicianId,
                                              List<String> imageDataUrls,
                                              String audioDataUrl) {
         String traceId = UUID.randomUUID().toString();

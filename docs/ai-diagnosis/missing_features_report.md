@@ -6,11 +6,15 @@
 * **文档描述**：系统通过多元线性回归算法校准碳排放影响系数，并将碳排放结果映射为 S/A/B/C 绿色指数等级。
 * **代码现状**：代码库中确实存在完整的 `GreenEmissionEngine` 和 `GreenIndexGrade` 枚举类，但经过全局追踪，**这些类完全没有被注册到 Spring 容器中，也从未在任何 Service 中被调用。** 系统目前实际使用的只是 `EmissionCalculatorService` 中一个极简的硬编码乘法公式，并没有真正启用高阶的绿碳算法与评级映射功能。
 
-## 2. 基于 Aging 的反饥饿调度策略 (死代码孤岛)
+## 2. 基于 Aging 的反饥饿调度策略（已实现）
 * **文档描述**：为防止复杂长尾工单长时间未被接单，设计了基于时间的饥饿递增策略，等待时间越长优先级越高。
-* **代码现状**：代码库中存在对应的策略类 `AgingAntiStarvationDispatchPolicy`，其包含了详尽的等待惩罚和加权算法。然而与绿碳引擎类似，它在当前主流程的 `AutoAssignmentService` 中**完全没有被引入或调用**，属于未接入主控链路的废弃状态。
+* **代码现状**：`AgingAntiStarvationDispatchPolicy` 已注册为 Spring 组件，并接入 `AutoAssignmentService` 主流程：
+  - `AutoAssignmentService.autoAssignBestTechnician(RepairOrder)` 使用工单上下文调用 `calculateDispatchScore()`，将等待时长、长尾工单识别和技能匹配加成纳入技师派单评分。
+  - `AutoAssignmentService.rankPendingOrdersByAging()` 对待分配工单按 Aging 优先级排序。
+  - `RepairOrderService.reassignPendingOrders()` 已改为先按 Aging 队列处理积压工单，再执行自动派单，避免长时间等待的复杂工单继续被排在普通新单之后。
+* **测试覆盖**：`AutoAssignmentServiceTest.shouldRankOlderLongTailPendingOrdersFirstByAgingPolicy()` 验证等待更久且具备长尾特征的工单会排在普通新单之前。
 
-## 2.5. 疲劳度惩罚 — 派单评分层面存在关键断点 (部分实现)
+## 2.5. 疲劳度惩罚 — 派单评分层面关键断点（已实现）
 
 ### 已真实实现的部分
 
@@ -44,35 +48,28 @@
 - **现状**：该方法在 ARBITRATOR 阶段设计了更细粒度的疲劳度动态安全规则（>0.7 时强制”傻瓜式”拆解 + `[安全高危校验]` 物理确认步骤），但被标注 `@SuppressWarnings(“unused”)`，**在主流程中完全没有被调用**
 - **评价**：⚠️ 死代码，详见第 4 节”多 Agent 协同推理”
 
-### 未实现的关键断点
+### 已修复的关键断点
 
-#### d. 疲劳度 → 派单评分惩罚：数据流完全断裂
+#### d. 疲劳度 → 派单评分惩罚：数据流已打通
 
-设计文档描述的”疲劳度惩罚”应影响技师派单评分，但当前存在**数据流断点**：
+设计文档描述的”疲劳度惩罚”现在已经影响技师派单评分：
 
 ```
 FeedbackSelfIterationService  →  计算 fatiguePenaltyWeight  →  写入 dispatch_weight_config 表
                                                                          ↓
-                                                                    ❌ 无消费者
+                                                           AutoAssignmentService 读取 default 配置
                                                                          ↓
-AutoAssignmentService.calculateTechnicianScore()  →  使用硬编码权重，与疲劳度完全无关
+AutoAssignmentService.calculateTechnicianScore()  →  score -= fatigueLevel * fatiguePenaltyWeight
 ```
 
-具体问题：
+具体实现：
 
-1. **`AutoAssignmentService.calculateTechnicianScore()`**（[第 149-163 行](../backend/src/main/java/org/com/repair/service/AutoAssignmentService.java#L149-L163)）使用硬编码权重 `0.5/0.3/0.2`，其中 `workloadScore` 仅仅是 `max(0, 10 - 活跃工单数)`——这是一个简单的工作负载计数，**完全不是疲劳度**。
-2. 该方法**没有注入 `TechnicianService` 依赖**，因此无法调用 `getTechnicianFatigueSnapshot()` 获取真实疲劳度数据。
-3. **没有读取 `DispatchWeightConfig` 表**（虽然 `DispatchWeightConfigRepository` 存在但无消费者），`fatiguePenaltyWeight` 字段无人问津。
-4. `FeedbackSelfIterationService.proposeDispatchWeights()`（[第 115-127 行](../backend/src/main/java/org/com/repair/service/FeedbackSelfIterationService.java#L115-L127)）能根据低分反馈率计算并生成 `fatiguePenaltyWeight` 的 UPDATE SQL，但同样因缺少触发入口和审批界面而无法形成闭环（详见第 5 节）。
+1. **`AutoAssignmentService.calculateTechnicianScore()`** 不再使用固定写死的 `0.5/0.3/0.2`，而是通过 `DispatchWeightConfigRepository.findByConfigKeyAndEnabledTrue("default")` 读取评分权重；配置缺失时保留旧权重作为兜底。
+2. **`AutoAssignmentService` 已注入 `TechnicianService`**，通过 `getTechnicianFatigueSnapshot()` 获取真实疲劳度数据。
+3. **`fatiguePenaltyWeight` 已成为评分消费者字段**：最终评分公式为 `ratingScore×ratingWeight + workloadScore×workloadWeight + experienceScore×experienceWeight - fatigueLevel×fatiguePenaltyWeight`。
+4. **工单上下文已参与派单**：`RepairOrderService.createRepairOrder()`、`RepairOrderService.reassignPendingOrders()` 和技师拒单后的重分配路径均优先调用带 `RepairOrder` 上下文的自动派单入口。
 
-**结论**：`DispatchWeightConfig.fatiguePenaltyWeight` 是一条”断头路”——数据库表存在、实体字段存在、自迭代能写入，但派单评分的消费者端完全不走这条路。之前报告中”已通过扣除技师工作负载得分的方式正确实现”的说法不准确，工作负载计数 ≠ 疲劳度惩罚。
-
-### 修复建议
-
-要使疲劳度惩罚真正生效，至少需要：
-1. 在 `AutoAssignmentService` 中注入 `TechnicianService`，调用 `getTechnicianFatigueSnapshot()` 获取疲劳度
-2. 在 `calculateTechnicianScore()` 中引入疲劳惩罚项：`score -= fatigueLevel * fatiguePenaltyWeight`
-3. 从 `DispatchWeightConfig` 表动态读取权重值（替代硬编码），或至少让 `fatiguePenaltyWeight` 参与计算
+**测试覆盖**：`AutoAssignmentServiceTest.shouldApplyConfiguredFatiguePenaltyWhenSelectingTechnician()` 验证当 `dispatch_weight_config.fatigue_penalty_weight` 生效时，高疲劳技师即使评分略高也会被惩罚，低疲劳技师会被优先分配。
 
 ## 3. 多模态图像识别能力 (FlexVAI 视觉检测)(已实现)
 * **文档描述**：文档中多次提及“深度集成大语言模型与计算机视觉技术”，“FlexVAI mAP@50 达到 0.986，进行宏观渗漏检测和微观零件分析”。

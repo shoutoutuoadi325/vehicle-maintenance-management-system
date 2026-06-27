@@ -464,9 +464,10 @@ public class TechnicianService {
             }
             
             if (requiredSkillType != null) {
+                order.setRequiredSkillType(requiredSkillType);
                 // 排除已拒绝的技师，寻找其他技师
                 Technician newTechnician = autoAssignmentService.autoAssignBestTechnicianExcluding(
-                    requiredSkillType, safeTechnicianId);
+                    order, safeTechnicianId);
                 
                 if (newTechnician != null) {
                     // 分配给新技师

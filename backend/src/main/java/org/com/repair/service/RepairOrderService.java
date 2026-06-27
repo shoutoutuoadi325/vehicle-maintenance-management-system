@@ -79,17 +79,6 @@ public class RepairOrderService {
             throw new RuntimeException("该车辆已有进行中的维修工单，请等待当前维修完成后再提交");
         }
         
-        // 检查是否有对应工种的技师
-        if (request.requiredSkillType() != null) {
-            Technician assignedTechnician = autoAssignmentService.autoAssignBestTechnician(request.requiredSkillType());
-            
-            if (assignedTechnician == null) {
-                // 获取工种名称用于错误提示
-                String skillTypeName = getSkillTypeName(request.requiredSkillType());
-                throw new RuntimeException(String.format("抱歉，暂时没有可用的%s技师。请稍后再试或选择其他维修类型。我们会尽快安排合适的技师为您服务。", skillTypeName));
-            }
-        }
-        
         RepairOrder repairOrder = new RepairOrder();
         repairOrder.setOrderNumber(generateOrderNumber());
         repairOrder.setStatus(request.status() != null ? request.status() : RepairOrder.RepairStatus.PENDING);
@@ -109,7 +98,13 @@ public class RepairOrderService {
         
         // 自动分配技师（不再支持手动分配）
         if (request.requiredSkillType() != null) {
-            Technician assignedTechnician = autoAssignmentService.autoAssignBestTechnician(request.requiredSkillType());
+            Technician assignedTechnician = autoAssignmentService.autoAssignBestTechnician(repairOrder);
+
+            if (assignedTechnician == null) {
+                // 获取工种名称用于错误提示
+                String skillTypeName = getSkillTypeName(request.requiredSkillType());
+                throw new RuntimeException(String.format("抱歉，暂时没有可用的%s技师。请稍后再试或选择其他维修类型。我们会尽快安排合适的技师为您服务。", skillTypeName));
+            }
             
             Set<Technician> technicians = new HashSet<>();
             technicians.add(assignedTechnician);
@@ -603,10 +598,10 @@ public class RepairOrderService {
         int totalPendingOrders = pendingOrders.size();
         int successfulAssignments = 0;
         
-        for (RepairOrder order : pendingOrders) {
+        for (RepairOrder order : autoAssignmentService.rankPendingOrdersByAging(pendingOrders)) {
             try {
                 // 尝试为订单分配技师
-                Technician assignedTechnician = autoAssignmentService.autoAssignBestTechnician(order.getRequiredSkillType());
+                Technician assignedTechnician = autoAssignmentService.autoAssignBestTechnician(order);
                 
                 if (assignedTechnician != null) {
                     Set<Technician> technicians = new HashSet<>();

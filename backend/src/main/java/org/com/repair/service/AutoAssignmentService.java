@@ -1,5 +1,8 @@
 package org.com.repair.service;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -9,18 +12,32 @@ import java.util.Set;
 import org.com.repair.entity.RepairOrder;
 import org.com.repair.entity.Technician;
 import org.com.repair.entity.Technician.SkillType;
+import org.com.repair.repository.DispatchWeightConfigRepository;
 import org.com.repair.repository.TechnicianRepository;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AutoAssignmentService {
+
+    private static final String DEFAULT_DISPATCH_WEIGHT_CONFIG_KEY = "default";
     
     private final TechnicianRepository technicianRepository;
     private final FeedbackService feedbackService;
+    private final DispatchWeightConfigRepository dispatchWeightConfigRepository;
+    private final TechnicianService technicianService;
+    private final AgingAntiStarvationDispatchPolicy agingPolicy;
     
-    public AutoAssignmentService(TechnicianRepository technicianRepository, FeedbackService feedbackService) {
+    public AutoAssignmentService(TechnicianRepository technicianRepository,
+                                 FeedbackService feedbackService,
+                                 DispatchWeightConfigRepository dispatchWeightConfigRepository,
+                                 @Lazy TechnicianService technicianService,
+                                 AgingAntiStarvationDispatchPolicy agingPolicy) {
         this.technicianRepository = technicianRepository;
         this.feedbackService = feedbackService;
+        this.dispatchWeightConfigRepository = dispatchWeightConfigRepository;
+        this.technicianService = technicianService;
+        this.agingPolicy = agingPolicy;
     }
     
     /**
@@ -29,25 +46,20 @@ public class AutoAssignmentService {
      * @return 分配的技师
      */
     public Technician autoAssignBestTechnician(SkillType requiredSkillType) {
-        List<Technician> availableTechnicians = technicianRepository.findBySkillType(requiredSkillType);
-        
-        if (availableTechnicians.isEmpty()) {
+        return selectBestTechnician(requiredSkillType, null, null);
+    }
+
+    /**
+     * 自动分配单个技师到具体维修工单。
+     * 工单上下文用于 Aging 反饥饿调度和长尾工单识别。
+     * @param repairOrder 维修工单
+     * @return 分配的技师
+     */
+    public Technician autoAssignBestTechnician(RepairOrder repairOrder) {
+        if (repairOrder == null || repairOrder.getRequiredSkillType() == null) {
             return null;
         }
-        
-        // 计算每个技师的评分
-        Map<Technician, Double> scores = new HashMap<>();
-        
-        for (Technician technician : availableTechnicians) {
-            double score = calculateTechnicianScore(technician);
-            scores.put(technician, score);
-        }
-        
-        // 返回评分最高的技师
-        return scores.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
-                .map(Map.Entry::getKey)
-                .orElse(null);
+        return selectBestTechnician(repairOrder.getRequiredSkillType(), repairOrder, null);
     }
     
     /**
@@ -57,32 +69,20 @@ public class AutoAssignmentService {
      * @return 分配的技师
      */
     public Technician autoAssignBestTechnicianExcluding(SkillType requiredSkillType, Long excludeTechnicianId) {
-        List<Technician> availableTechnicians = technicianRepository.findBySkillType(requiredSkillType);
-        
-        if (availableTechnicians.isEmpty()) {
+        return selectBestTechnician(requiredSkillType, null, excludeTechnicianId);
+    }
+
+    /**
+     * 自动分配单个技师到具体维修工单（排除指定技师）。
+     * @param repairOrder 维修工单
+     * @param excludeTechnicianId 要排除的技师ID
+     * @return 分配的技师
+     */
+    public Technician autoAssignBestTechnicianExcluding(RepairOrder repairOrder, Long excludeTechnicianId) {
+        if (repairOrder == null || repairOrder.getRequiredSkillType() == null) {
             return null;
         }
-        
-        // 排除指定的技师
-        availableTechnicians.removeIf(technician -> technician.getId().equals(excludeTechnicianId));
-        
-        if (availableTechnicians.isEmpty()) {
-            return null;
-        }
-        
-        // 计算每个技师的评分
-        Map<Technician, Double> scores = new HashMap<>();
-        
-        for (Technician technician : availableTechnicians) {
-            double score = calculateTechnicianScore(technician);
-            scores.put(technician, score);
-        }
-        
-        // 返回评分最高的技师
-        return scores.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
-                .map(Map.Entry::getKey)
-                .orElse(null);
+        return selectBestTechnician(repairOrder.getRequiredSkillType(), repairOrder, excludeTechnicianId);
     }
     
     /**
@@ -95,13 +95,42 @@ public class AutoAssignmentService {
         Set<Technician> assignedTechnicians = new HashSet<>();
         
         for (SkillType skillType : requiredSkillTypes) {
-            Technician bestTechnician = autoAssignBestTechnician(skillType);
+            Technician bestTechnician = selectBestTechnician(skillType, repairOrder, null);
             if (bestTechnician != null) {
                 assignedTechnicians.add(bestTechnician);
             }
         }
         
         return assignedTechnicians;
+    }
+
+    /**
+     * 按 Aging 反饥饿策略排列待分配工单。
+     * 等待越久、越符合长尾特征的工单越靠前。
+     */
+    public List<RepairOrder> rankPendingOrdersByAging(List<RepairOrder> pendingOrders) {
+        if (pendingOrders == null || pendingOrders.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, RepairOrder> ordersById = new HashMap<>();
+        for (RepairOrder order : pendingOrders) {
+            if (order.getId() != null) {
+                ordersById.put(order.getId(), order);
+            }
+        }
+
+        List<RepairOrder> rankedOrders = agingPolicy.rankPendingOrders(pendingOrders, new Date())
+                .stream()
+                .map(priority -> ordersById.get(priority.orderId()))
+                .filter(order -> order != null)
+                .toList();
+
+        if (rankedOrders.size() == pendingOrders.size()) {
+            return rankedOrders;
+        }
+
+        return pendingOrders;
     }
     
     /**
@@ -145,8 +174,14 @@ public class AutoAssignmentService {
     /**
      * 计算技师评分
      * 评分规则：评分越高越好，工作负载越少越好，完成任务数量多更好
+     * 疲劳度按配置权重扣分，防止高负荷技师继续被优先分配。
      */
-    private double calculateTechnicianScore(Technician technician) {
+    double calculateTechnicianScore(Technician technician) {
+        DispatchScoringWeights weights = loadDispatchScoringWeights();
+        return calculateTechnicianScore(technician, weights);
+    }
+
+    private double calculateTechnicianScore(Technician technician, DispatchScoringWeights weights) {
         // 获取技师的平均评分（0-5分）
         Double averageRating = feedbackService.getAverageRatingByTechnicianId(technician.getId());
         double ratingScore = (averageRating != null) ? averageRating : 3.0; // 默认3分
@@ -158,9 +193,75 @@ public class AutoAssignmentService {
         // 获取完成任务数量
         int completedOrders = technician.getCompletedOrders() != null ? technician.getCompletedOrders() : 0;
         double experienceScore = Math.min(completedOrders * 0.1, 5.0); // 经验分数，最高5分
+
+        double fatigueLevel = getFatigueLevel(technician);
         
-        // 综合评分：评分权重50%，工作负载权重30%，经验权重20%
-        return (ratingScore * 0.5) + (workloadScore * 0.3) + (experienceScore * 0.2);
+        // 综合评分：正向评分权重来自 dispatch_weight_config；疲劳度作为惩罚项扣除。
+        return (ratingScore * weights.ratingWeight())
+                + (workloadScore * weights.workloadWeight())
+                + (experienceScore * weights.experienceWeight())
+                - (fatigueLevel * weights.fatiguePenaltyWeight());
+    }
+
+    private Technician selectBestTechnician(SkillType requiredSkillType,
+                                            RepairOrder repairOrder,
+                                            Long excludeTechnicianId) {
+        List<Technician> availableTechnicians = new ArrayList<>(technicianRepository.findBySkillType(requiredSkillType));
+
+        if (availableTechnicians.isEmpty()) {
+            return null;
+        }
+
+        if (excludeTechnicianId != null) {
+            availableTechnicians.removeIf(technician -> technician.getId() != null
+                    && technician.getId().equals(excludeTechnicianId));
+        }
+
+        if (availableTechnicians.isEmpty()) {
+            return null;
+        }
+
+        // 计算每个技师的评分
+        Map<Technician, Double> scores = new HashMap<>();
+
+        Date now = new Date();
+        DispatchScoringWeights weights = loadDispatchScoringWeights();
+        for (Technician technician : availableTechnicians) {
+            double baseScore = calculateTechnicianScore(technician, weights);
+            double score = repairOrder == null
+                    ? baseScore
+                    : agingPolicy.calculateDispatchScore(baseScore, repairOrder, technician, now);
+            scores.put(technician, score);
+        }
+
+        // 返回评分最高的技师
+        return scores.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
+    }
+
+    private DispatchScoringWeights loadDispatchScoringWeights() {
+        return dispatchWeightConfigRepository.findByConfigKeyAndEnabledTrue(DEFAULT_DISPATCH_WEIGHT_CONFIG_KEY)
+                .map(config -> new DispatchScoringWeights(
+                        toDouble(config.getRatingWeight(), DispatchScoringWeights.defaults().ratingWeight()),
+                        toDouble(config.getWorkloadWeight(), DispatchScoringWeights.defaults().workloadWeight()),
+                        toDouble(config.getExperienceWeight(), DispatchScoringWeights.defaults().experienceWeight()),
+                        toDouble(config.getFatiguePenaltyWeight(), DispatchScoringWeights.defaults().fatiguePenaltyWeight())))
+                .orElseGet(DispatchScoringWeights::defaults);
+    }
+
+    private double getFatigueLevel(Technician technician) {
+        if (technician == null || technician.getId() == null) {
+            return 0.0;
+        }
+        TechnicianService.TechnicianFatigueSnapshot snapshot =
+                technicianService.getTechnicianFatigueSnapshot(technician.getId());
+        return snapshot != null ? snapshot.getFatigueLevel() : 0.0;
+    }
+
+    private double toDouble(BigDecimal value, double fallback) {
+        return value != null ? value.doubleValue() : fallback;
     }
     
     /**
@@ -213,5 +314,16 @@ public class AutoAssignmentService {
         }
         
         return Math.max(0.5, baseHours); // 最少0.5小时
+    }
+
+    private record DispatchScoringWeights(
+            double ratingWeight,
+            double workloadWeight,
+            double experienceWeight,
+            double fatiguePenaltyWeight
+    ) {
+        private static DispatchScoringWeights defaults() {
+            return new DispatchScoringWeights(0.5, 0.3, 0.2, 0.0);
+        }
     }
 }

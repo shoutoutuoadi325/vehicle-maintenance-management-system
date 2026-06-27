@@ -102,9 +102,10 @@
 2. **AI 诊断**: `AIDiagnosisService` 编排规则引擎 + 多 Agent + 外部 LLM，详见 [agents.md](./agents.md)
 3. **零碳旅程游戏化**: `GamificationService`（~1560 行）管理能量账户、城市签到、答题、随机事件、优惠券、排行榜、大奖
 4. **绿碳高级算法与评级映射**: `GreenEmissionEngine` 基于工时、材料因子、维保策略因子和返工惩罚因子计算工单相对碳排放，映射为 S/A/B/C 四级绿色指数；`EmissionCalculatorService` 维护生命周期碳数据重算节点，支持历史样本线性回归系数校准
-5. **维保预警**: `MaintenanceAlertService` 定时扫描车辆里程/时间，生成维保提醒
-6. **库存预警**: `MaterialService` 消耗库存时自动检测低库存并生成告警
-7. **反馈自迭代**: `FeedbackSelfIterationService` 基于反馈数据自动调整派单权重和 AI Prompt 模板
+5. **智能派单**: `AutoAssignmentService` 读取 `dispatch_weight_config` 动态权重，结合评分、工作负载、经验、`TechnicianService` 疲劳度快照和 `AgingAntiStarvationDispatchPolicy` 等待老化策略进行派单
+6. **维保预警**: `MaintenanceAlertService` 定时扫描车辆里程/时间，生成维保提醒
+7. **库存预警**: `MaterialService` 消耗库存时自动检测低库存并生成告警
+8. **反馈自迭代**: `FeedbackSelfIterationService` 基于反馈数据生成派单权重和 AI Prompt 模板调整建议，派单侧消费 `dispatch_weight_config` 中的已启用权重配置
 
 ### 安全模型
 
