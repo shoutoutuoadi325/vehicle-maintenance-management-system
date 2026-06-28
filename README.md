@@ -217,8 +217,9 @@ http://localhost:8080
 | 管理员 / Admin | `admin` | `123456` |
 | 车主 / Customer | `user` | `123456` |
 | 技师 / Technician | `tech` | `123456` |
+| 钣喷技师 / Bodywork Technician | `body` | `123456` |
 
-运行包内置 Java 运行时，并使用本地文件数据库保存数据。首次启动只会自动初始化上表列出的默认账号，无需用户安装或配置 MySQL。
+运行包内置 Java 运行时，并使用本地文件数据库保存数据。默认首次启动会自动初始化上表列出的默认账号；若开发者打包时追加 `--sync-mysql-data`，则会优先导入包内 MySQL 业务数据快照。最终用户无需安装或配置 MySQL。
 
 #### 开发者：生成 Windows/macOS 运行包 / Developers: Build Packages
 
@@ -235,6 +236,10 @@ dist/installers/
   fangxingwei-ai-macos-arm64.zip
   fangxingwei-ai-macos-x64.zip
 ```
+
+Windows 包请直接使用脚本产物发布；脚本会保留 zip 的 UTF-8 中文文件名标志，避免 `启动系统.bat` 等文件在 Windows 解压后乱码。
+
+需要让一键包内置当前 MySQL 业务数据时，可追加 `--sync-mysql-data`；最终用户仍使用包内本地数据库，无需安装 MySQL。
 
 详细说明见 `docs/packaging/one_click_packaging.md`。
 

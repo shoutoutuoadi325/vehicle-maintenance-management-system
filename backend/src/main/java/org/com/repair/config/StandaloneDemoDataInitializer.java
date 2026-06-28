@@ -11,10 +11,12 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
+@Order(100)
 @Profile("standalone")
 @ConditionalOnProperty(prefix = "standalone.demo-data", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class StandaloneDemoDataInitializer implements ApplicationRunner {
@@ -37,6 +39,7 @@ public class StandaloneDemoDataInitializer implements ApplicationRunner {
         seedAdmin();
         seedUser();
         seedTechnician();
+        seedBodyTechnician();
     }
 
     private void seedAdmin() {
@@ -83,6 +86,25 @@ public class StandaloneDemoDataInitializer implements ApplicationRunner {
         technician.setEmail("tech@example.com");
         technician.setSkillType(SkillType.MECHANIC);
         technician.setHourlyRate(128.0);
+        technician.setTotalWorkHours(0.0);
+        technician.setCompletedOrders(0);
+        technicianRepository.save(technician);
+    }
+
+    private void seedBodyTechnician() {
+        if (technicianRepository.existsByUsername("body")) {
+            return;
+        }
+
+        Technician technician = new Technician();
+        technician.setUsername("body");
+        technician.setEmployeeId("TECH-002");
+        technician.setPassword("123456");
+        technician.setName("钣喷技师");
+        technician.setPhone("13920260002");
+        technician.setEmail("body@example.com");
+        technician.setSkillType(SkillType.BODY_WORK);
+        technician.setHourlyRate(138.0);
         technician.setTotalWorkHours(0.0);
         technician.setCompletedOrders(0);
         technicianRepository.save(technician);

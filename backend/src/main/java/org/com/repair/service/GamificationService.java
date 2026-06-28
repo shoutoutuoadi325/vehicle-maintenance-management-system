@@ -1317,7 +1317,19 @@ public class GamificationService {
                 eventDescription,
                 eventTheme,
                 quiz.getQuestion(),
-                quiz.getOptions());
+                normalizeQuizOptions(quiz.getOptions()));
+    }
+
+    private String normalizeQuizOptions(String options) {
+        if (options == null || options.isBlank()) {
+            return options;
+        }
+
+        String trimmed = options.trim();
+        if (trimmed.contains("\\\"")) {
+            trimmed = trimmed.replace("\\\"", "\"");
+        }
+        return trimmed;
     }
 
     private String normalizeOption(String value) {

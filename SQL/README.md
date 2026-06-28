@@ -2,7 +2,8 @@
 
 本文档包含测试帐号信息，以及如何在本地环境中重新构建数据库和注入测试数据的操作指南。
 
-> **一键运行包说明：** 面向普通用户的 Windows/macOS 一键运行包使用 `standalone` Profile 和本地文件数据库，首次启动会自动建表，并且只写入根目录 `README.md` 中列出的默认账号；不要求用户安装 MySQL，也不需要手动执行本文档中的 SQL 命令。本文档仍适用于开发、测试和正式部署的 MySQL 模式。
+> **一键运行包说明：** 面向普通用户的 Windows/macOS 一键运行包使用 `standalone` Profile 和本地文件数据库，首次启动会自动建表；默认只写入根目录 `README.md` 中列出的默认账号。不要求用户安装 MySQL，也不需要手动执行本文档中的 SQL 命令。本文档仍适用于开发、测试和正式部署的 MySQL 模式。
+> 如果打包时执行 `scripts/package-release.sh --sync-mysql-data`，脚本会从当前 MySQL 导出业务数据快照并放入安装包，安装包首次启动会优先导入该快照。
 
 ## 1. 预置测试帐号
 
@@ -16,7 +17,7 @@
 | **技师李浩** | `tech` | 个人任务、催单处理、收入统计、耗材消耗 |
 | **技师赵宁** | `body` | 个人任务、催单处理、收入统计、耗材消耗 |
 
-> *注：数据库 `user` 和 `technician` 等表中可能还包含其他供压测或特定场景验证使用的临时账号，但上述 3 个为标准业务链路演示账号。*
+> *注：数据库 `user` 和 `technician` 等表中可能还包含其他供压测或特定场景验证使用的临时账号，但上述 4 个为标准业务链路演示账号。*
 
 ---
 
@@ -39,6 +40,14 @@ cd ..
 
 # 4. 灌入最终核心业务测试数据
 mysql -uroot -p79Haolubenwei car_repair < SQL/seed/competition_demo_seed.sql
+```
+
+`competition_demo_seed.sql` 会同步写入“COMP-318 川藏零碳服务线”的低碳旅程题库样例，包括 5 个城市默认题、5 个城市情景题和 2 个随机突发事件题，方便在客户端零碳旅程页面直接演示问答、打卡和权益闭环。
+
+如果只需要补充/刷新低碳旅程题目，不想重置整套演示数据，可单独执行：
+
+```bash
+mysql -uroot -p79Haolubenwei car_repair < SQL/seed/low_carbon_journey_quiz_seed.sql
 ```
 
 > **注意：**
