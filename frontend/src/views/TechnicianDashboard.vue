@@ -1752,12 +1752,30 @@ export default {
   right: 1.5rem;
   bottom: 1.5rem;
   width: min(420px, calc(100vw - 2rem));
+  max-height: calc(100vh - 3rem);
+  max-height: calc(100dvh - 3rem);
   background: linear-gradient(140deg, #111827, #1f2937);
   color: #f9fafb;
   border-radius: 1rem;
   padding: 1rem;
   box-shadow: 0 18px 40px rgba(17, 24, 39, 0.35);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   z-index: 200;
+}
+
+.ai-copilot-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ai-copilot-panel::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+}
+
+.ai-copilot-panel::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.55);
+  border-radius: 999px;
 }
 
 .ai-copilot-toggle {

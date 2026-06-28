@@ -46,6 +46,7 @@ dist/
 coverage/
 .cache/
 .temp/
+.packaging-cache/
 *.tsbuildinfo
 
 # Vue specific caches (if created)

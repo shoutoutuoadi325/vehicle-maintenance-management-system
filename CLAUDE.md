@@ -16,7 +16,7 @@
 
 **方行唯 AI 智能汽车维修系统** — 全栈车辆维修管理系统，支持客户、技师、管理员三种角色。
 
-- **后端**: Spring Boot 3.4.5 + JPA + Flyway + MySQL 8 + Java 17
+- **后端**: Spring Boot 3.4.5 + JPA + Flyway + MySQL 8 + H2（测试/一键运行包）+ Java 17
 - **前端**: Vue 2.6.14 + Vue Router 3.x + Vuex 3.x + Axios
 - **AI 诊断**: 外部 LLM API（小米mimo v2.5）+ 规则引擎 + 多 Agent 协同
 - **构建**: Maven（后端）、npm（前端）
@@ -31,8 +31,8 @@
 ├── LICENSE
 │
 ├── docs/                           # 所有文档集中存放
-│   └── ai-diagnosis/               # AI 诊断设计文档
-│       └── missing_features_report.md  # 缺失功能清单与待完善项
+│   └── packaging/
+│       └── one_click_packaging.md  # Windows/macOS 一键运行包打包说明
 │
 ├── SQL/                            # 所有数据库脚本
 │   ├── README.md                   # 数据库脚本使用说明
@@ -64,9 +64,13 @@
 │   │   └── service/                # 业务逻辑（含 green/ 子包）
 │   ├── src/main/resources/
 │   │   ├── application.properties
+│   │   ├── application-standalone.properties  # 一键运行包配置
 │   │   └── db/migration/           # Flyway 迁移 V3-V24
 │   ├── src/test/                   # JUnit 测试
 │   └── scripts/                    # PowerShell 质量/发布脚本
+│
+├── scripts/
+│   └── package-release.sh          # 生成 Windows/macOS 一键运行包
 │
 └── frontend/                       # Vue 2 前端
     ├── src/
@@ -143,6 +147,9 @@ cd backend && ./mvnw test
 
 # 启动（需要 MySQL）
 cd backend && ./mvnw spring-boot:run
+
+# 启动一键包同款 standalone 模式（无需 MySQL）
+cd backend && APP_DATA_DIR=../data ./mvnw spring-boot:run -Dspring-boot.run.profiles=standalone
 ```
 
 ### 前端
@@ -156,6 +163,8 @@ npm run test:e2e     # Playwright E2E 测试
 ```
 
 ### 数据库初始化
+
+一键运行包使用 `standalone` Profile 和本地 H2 文件数据库，首次启动自动建表，并且只注入根目录 `README.md` 中列出的默认账号，不需要执行 SQL 初始化命令。
 
 ```bash
 # 方式一：完整导入
@@ -178,6 +187,9 @@ mysql -u root -p car_repair < SQL/seed/demo-seed.sql
 | `AI_DIAGNOSIS_API_BASE_URL` | AI 诊断 API 地址 | `https://api.xiaomimimo.com/v1` |
 | `AI_DIAGNOSIS_API_MODEL` | AI 模型名称 | `mimo-v2.5` |
 | `JWT_SECRET_KEY` | JWT 签名密钥 | (内置默认值) |
+| `APP_PORT` | 一键运行包端口 | `8080` |
+| `APP_DATA_DIR` | 一键运行包本地数据目录 | `~/.fangxingwei-ai` 或运行包内 `data/` |
+| `STANDALONE_DEMO_DATA_ENABLED` | 是否启用 standalone 默认账号初始化 | `true` |
 
 ## 重要约定
 
@@ -188,6 +200,7 @@ mysql -u root -p car_repair < SQL/seed/demo-seed.sql
 5. **幂等设计**: 游戏化奖励使用 `(sourceType, sourceId, actionKey)` 幂等键；维保预警使用 `dedupKey` 去重
 6. **并发控制**: 库存消耗使用 `PESSIMISTIC_WRITE`，能量账户使用 `@Version` 乐观锁
 7. **测试**: 使用 H2 内存数据库，测试配置在 `src/test/resources/application.properties`
+8. **一键运行包**: 使用 `scripts/package-release.sh` 生成 Windows/macOS zip，运行时激活 `standalone` Profile，内置 JRE 并使用本地 H2 文件数据库
 
 ## 文档与质量纪律
 

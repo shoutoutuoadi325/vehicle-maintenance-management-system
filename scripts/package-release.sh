@@ -1,0 +1,344 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DIST_DIR="$ROOT_DIR/dist/installers"
+CACHE_DIR="$ROOT_DIR/.packaging-cache"
+APP_NAME="fangxingwei-ai"
+JAR_SOURCE="$ROOT_DIR/backend/target/repair-0.0.1-SNAPSHOT.jar"
+
+PLATFORM_ARG="all"
+SKIP_BUILD=0
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/package-release.sh [--platform all|windows-x64|macos-x64|macos-arm64|current] [--skip-build]
+
+Builds portable one-click packages with an embedded JRE and local H2 data store.
+End users do not need Java, Node.js, Maven, or MySQL installed.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --platform)
+      PLATFORM_ARG="${2:-}"
+      shift 2
+      ;;
+    --skip-build)
+      SKIP_BUILD=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+detect_current_platform() {
+  local os arch
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "$os:$arch" in
+    Darwin:arm64) echo "macos-arm64" ;;
+    Darwin:x86_64) echo "macos-x64" ;;
+    MINGW*:x86_64|MSYS*:x86_64|CYGWIN*:x86_64) echo "windows-x64" ;;
+    *) echo "Unsupported current platform: $os $arch" >&2; exit 1 ;;
+  esac
+}
+
+resolve_platforms() {
+  case "$PLATFORM_ARG" in
+    all) echo "windows-x64 macos-x64 macos-arm64" ;;
+    current) detect_current_platform ;;
+    windows-x64|macos-x64|macos-arm64) echo "$PLATFORM_ARG" ;;
+    *) echo "Unsupported platform: $PLATFORM_ARG" >&2; exit 1 ;;
+  esac
+}
+
+build_application() {
+  echo "==> Building frontend"
+  (cd "$ROOT_DIR/frontend" && npm ci && npm run build)
+
+  echo "==> Building backend jar"
+  (cd "$ROOT_DIR/backend" && ./mvnw -DskipTests package)
+}
+
+adoptium_url() {
+  local platform="$1"
+  case "$platform" in
+    windows-x64) echo "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse?project=jdk" ;;
+    macos-x64) echo "https://api.adoptium.net/v3/binary/latest/17/ga/mac/x64/jre/hotspot/normal/eclipse?project=jdk" ;;
+    macos-arm64) echo "https://api.adoptium.net/v3/binary/latest/17/ga/mac/aarch64/jre/hotspot/normal/eclipse?project=jdk" ;;
+    *) echo "Unsupported platform: $platform" >&2; exit 1 ;;
+  esac
+}
+
+java_binary_name() {
+  local platform="$1"
+  if [[ "$platform" == windows-* ]]; then
+    echo "java.exe"
+  else
+    echo "java"
+  fi
+}
+
+archive_name() {
+  local platform="$1"
+  if [[ "$platform" == windows-* ]]; then
+    echo "$platform-jre.zip"
+  else
+    echo "$platform-jre.tar.gz"
+  fi
+}
+
+download_runtime() {
+  local platform="$1"
+  local runtime_dir="$CACHE_DIR/jre/$platform"
+  local java_name
+  java_name="$(java_binary_name "$platform")"
+
+  if [[ -x "$runtime_dir/bin/$java_name" ]]; then
+    echo "==> Reusing cached JRE for $platform"
+    return
+  fi
+
+  rm -rf "$runtime_dir"
+  mkdir -p "$runtime_dir" "$CACHE_DIR/downloads" "$CACHE_DIR/extract/$platform"
+
+  local archive="$CACHE_DIR/downloads/$(archive_name "$platform")"
+  local url
+  url="$(adoptium_url "$platform")"
+
+  echo "==> Downloading Temurin JRE 17 for $platform"
+  curl -L --fail --retry 3 -o "$archive" "$url"
+
+  rm -rf "$CACHE_DIR/extract/$platform"
+  mkdir -p "$CACHE_DIR/extract/$platform"
+
+  if [[ "$archive" == *.zip ]]; then
+    unzip -q "$archive" -d "$CACHE_DIR/extract/$platform"
+  else
+    tar -xzf "$archive" -C "$CACHE_DIR/extract/$platform"
+  fi
+
+  local java_path runtime_root
+  java_path="$(find "$CACHE_DIR/extract/$platform" -type f -path "*/bin/$java_name" | head -n 1)"
+  if [[ -z "$java_path" ]]; then
+    echo "Could not locate $java_name in extracted runtime for $platform" >&2
+    exit 1
+  fi
+
+  runtime_root="$(cd "$(dirname "$java_path")/.." && pwd)"
+  cp -R "$runtime_root"/. "$runtime_dir"/
+}
+
+write_windows_launchers() {
+  local bundle="$1"
+  mkdir -p "$bundle/scripts"
+
+  cat > "$bundle/启动系统.bat" <<'EOF'
+@echo off
+set ROOT=%~dp0
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\start-windows.ps1"
+pause
+EOF
+
+  cat > "$bundle/停止系统.bat" <<'EOF'
+@echo off
+set ROOT=%~dp0
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\stop-windows.ps1"
+pause
+EOF
+
+  cat > "$bundle/scripts/start-windows.ps1" <<'EOF'
+$ErrorActionPreference = "Stop"
+$Root = Split-Path -Parent $PSScriptRoot
+$Java = Join-Path $Root "runtime\bin\java.exe"
+$Jar = Join-Path $Root "app\backend.jar"
+$DataDir = Join-Path $Root "data"
+$LogDir = Join-Path $Root "logs"
+$PidFile = Join-Path $DataDir "app.pid"
+$Url = "http://localhost:8080"
+
+New-Item -ItemType Directory -Force -Path $DataDir, $LogDir | Out-Null
+
+if (Test-Path $PidFile) {
+  $ExistingPid = Get-Content $PidFile -ErrorAction SilentlyContinue
+  if ($ExistingPid -and (Get-Process -Id $ExistingPid -ErrorAction SilentlyContinue)) {
+    Start-Process $Url
+    Write-Host "系统已经在运行：$Url"
+    exit 0
+  }
+}
+
+$StdOut = Join-Path $LogDir "backend.log"
+$StdErr = Join-Path $LogDir "backend.err.log"
+$AppDataArg = "-DAPP_DATA_DIR=$DataDir"
+$Args = @($AppDataArg, "-jar", $Jar, "--spring.profiles.active=standalone")
+
+$Process = Start-Process -FilePath $Java -ArgumentList $Args -WorkingDirectory $Root -RedirectStandardOutput $StdOut -RedirectStandardError $StdErr -WindowStyle Hidden -PassThru
+Set-Content -Path $PidFile -Value $Process.Id
+
+Write-Host "正在启动系统，请稍候..."
+Start-Sleep -Seconds 8
+Start-Process $Url
+Write-Host "已启动：$Url"
+Write-Host "默认账号：admin/user/tech，密码均为 123456"
+EOF
+
+  cat > "$bundle/scripts/stop-windows.ps1" <<'EOF'
+$Root = Split-Path -Parent $PSScriptRoot
+$PidFile = Join-Path $Root "data\app.pid"
+
+if (!(Test-Path $PidFile)) {
+  Write-Host "没有找到正在运行的系统。"
+  exit 0
+}
+
+$PidValue = Get-Content $PidFile -ErrorAction SilentlyContinue
+if ($PidValue -and (Get-Process -Id $PidValue -ErrorAction SilentlyContinue)) {
+  Stop-Process -Id $PidValue -Force
+  Write-Host "系统已停止。"
+} else {
+  Write-Host "系统进程已经不存在。"
+}
+
+Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+EOF
+}
+
+write_macos_launchers() {
+  local bundle="$1"
+
+  cat > "$bundle/启动系统.command" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+JAVA="$ROOT/runtime/bin/java"
+JAR="$ROOT/app/backend.jar"
+DATA_DIR="$ROOT/data"
+LOG_DIR="$ROOT/logs"
+PID_FILE="$DATA_DIR/app.pid"
+URL="http://localhost:8080"
+
+mkdir -p "$DATA_DIR" "$LOG_DIR"
+
+if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+  open "$URL"
+  echo "系统已经在运行：$URL"
+  exit 0
+fi
+
+nohup "$JAVA" \
+  "-DAPP_DATA_DIR=$DATA_DIR" \
+  -jar "$JAR" \
+  --spring.profiles.active=standalone \
+  > "$LOG_DIR/backend.log" 2>&1 &
+
+echo $! > "$PID_FILE"
+echo "正在启动系统，请稍候..."
+sleep 8
+open "$URL"
+echo "已启动：$URL"
+echo "默认账号：admin/user/tech，密码均为 123456"
+EOF
+
+  cat > "$bundle/停止系统.command" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+PID_FILE="$ROOT/data/app.pid"
+
+if [[ ! -f "$PID_FILE" ]]; then
+  echo "没有找到正在运行的系统。"
+  exit 0
+fi
+
+PID="$(cat "$PID_FILE")"
+if kill -0 "$PID" 2>/dev/null; then
+  kill "$PID"
+  echo "系统已停止。"
+else
+  echo "系统进程已经不存在。"
+fi
+
+rm -f "$PID_FILE"
+EOF
+
+  chmod +x "$bundle/启动系统.command" "$bundle/停止系统.command"
+}
+
+write_bundle_readme() {
+  local bundle="$1"
+  cat > "$bundle/使用说明.txt" <<'EOF'
+方行唯 AI 智能汽车维修系统 - 一键运行包
+
+1. Windows：双击“启动系统.bat”。
+2. macOS：双击“启动系统.command”；如果系统提示无法打开，请右键文件并选择“打开”。
+3. 浏览器会自动打开 http://localhost:8080。
+4. 默认演示账号：
+   - 管理员：admin / 123456
+   - 车主：user / 123456
+   - 技师：tech / 123456
+5. 本地数据保存在 data 目录。删除 data 会重置本机数据。
+6. 需要关闭系统时，双击“停止系统”脚本。
+
+本运行包内置 Java 运行时并使用本地文件数据库，不需要安装 Java、Node.js、Maven 或 MySQL。
+EOF
+}
+
+create_bundle() {
+  local platform="$1"
+  local bundle="$DIST_DIR/$APP_NAME-$platform"
+  local runtime_cache="$CACHE_DIR/jre/$platform"
+
+  echo "==> Creating bundle: $platform"
+  rm -rf "$bundle"
+  mkdir -p "$bundle/app" "$bundle/runtime" "$bundle/data" "$bundle/logs"
+
+  cp "$JAR_SOURCE" "$bundle/app/backend.jar"
+  cp -R "$runtime_cache"/. "$bundle/runtime"/
+
+  if [[ "$platform" == windows-* ]]; then
+    write_windows_launchers "$bundle"
+  else
+    write_macos_launchers "$bundle"
+  fi
+
+  write_bundle_readme "$bundle"
+
+  (cd "$DIST_DIR" && rm -f "$APP_NAME-$platform.zip" && zip -qr "$APP_NAME-$platform.zip" "$APP_NAME-$platform")
+}
+
+main() {
+  if [[ "$SKIP_BUILD" -eq 0 ]]; then
+    build_application
+  fi
+
+  if [[ ! -f "$JAR_SOURCE" ]]; then
+    echo "Backend jar not found: $JAR_SOURCE" >&2
+    exit 1
+  fi
+
+  mkdir -p "$DIST_DIR"
+
+  local platforms
+  platforms="$(resolve_platforms)"
+  for platform in $platforms; do
+    download_runtime "$platform"
+    create_bundle "$platform"
+  done
+
+  echo "==> Done. Packages are under $DIST_DIR"
+}
+
+main

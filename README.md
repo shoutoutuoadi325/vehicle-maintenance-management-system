@@ -68,7 +68,7 @@ The system adopts a centralized deployment model with decoupled frontend-backend
    - 智能安全兜底 / Intelligent Safety Fallback — 置信度 < 0.85 自动挂起转人工复核 / Auto-suspend and escalate to manual review when confidence < 0.85
 5. **动态隐私与安全层 / Dynamic Privacy & Security Layer**：旁路监听网关 + 本地正则引擎，车牌/VIN 无损脱敏 / Bypass monitoring gateway + local regex engine for lossless license plate/VIN masking
 6. **算法与规则调度层 / Algorithm & Rule Scheduling Layer**：疲劳感知派单算法、微观 ESG 碳减排量化、游戏化积分里程换算 / Fatigue-aware dispatch algorithm, micro-ESG carbon emission quantification, gamification point-to-mileage conversion
-7. **数据与缓存存储层 / Data & Cache Storage Layer**：MySQL 持久化 + H2 测试隔离 + Caffeine 热点缓存 / MySQL persistence + H2 test isolation + Caffeine hot-spot caching
+7. **数据与缓存存储层 / Data & Cache Storage Layer**：MySQL 持久化 + H2 测试/一键运行包隔离 + Caffeine 热点缓存 / MySQL persistence + H2 isolation for tests and one-click packages + Caffeine hot-spot caching
 
 ## 六、功能模块
 ## 6. Functional Modules
@@ -145,7 +145,7 @@ The system passed six specialized tests, validating the engineering reliability 
 |------|------|------|
 | **后端框架<br>Backend Framework** | Spring Boot + Security + Data JPA/Hibernate | 3.4.5 |
 | **前端框架<br>Frontend Framework** | Vue 2 + Vue Router + Vuex + Axios | 2.6.14 / 3.5.1 / 3.6.2 / 1.9.0 |
-| **数据库<br>Database** | MySQL（生产/Production）/ H2（测试/Test） | 8.4.8 / 2.x |
+| **数据库<br>Database** | MySQL（生产/Production）/ H2（测试与一键运行包/Test & One-click Package） | 8.4.8 / 2.x |
 | **缓存<br>Cache** | Caffeine | — |
 | **数据迁移<br>DB Migration** | Flyway | — |
 | **API 文档<br>API Docs** | springdoc-openapi | 2.8.6 |
@@ -191,24 +191,66 @@ Inter-module data exchange uses HTTP JSON protocol in RESTful style, with a unif
 ## 12. Installation & Usage
 
 ### 环境要求 / Prerequisites
-- Docker 24.0+ & Docker Compose 2.0+
-- 浏览器 / Browser：近两年主流 Chrome、Edge 或 Firefox / Recent mainstream Chrome, Edge, or Firefox (within 2 years)
+- **普通用户 / End Users**：无需安装 Java、Node.js、Maven 或 MySQL，只需使用 Windows/macOS 一键运行包 / No Java, Node.js, Maven, or MySQL installation is required when using the Windows/macOS one-click package
+- **打包开发者 / Release Builders**：JDK 17+、Node.js/npm、Bash、curl、zip、unzip、tar / JDK 17+, Node.js/npm, Bash, curl, zip, unzip, tar
+- **浏览器 / Browser**：近两年主流 Chrome、Edge 或 Firefox / Recent mainstream Chrome, Edge, or Firefox (within 2 years)
 
 ### 快速启动 / Quick Start
+
+#### 普通用户：一键运行包 / End Users: One-Click Package
+
+下载并解压对应平台的运行包：
+
+- Windows：双击 `启动系统.bat`
+- macOS：双击 `启动系统.command`；如系统提示无法打开，请右键选择“打开”
+
+启动后浏览器会自动打开：
+
+```text
+http://localhost:8080
+```
+
+默认演示账号 / Demo Accounts：
+
+| 角色 / Role | 账号 / Username | 密码 / Password |
+| --- | --- | --- |
+| 管理员 / Admin | `admin` | `123456` |
+| 车主 / Customer | `user` | `123456` |
+| 技师 / Technician | `tech` | `123456` |
+
+运行包内置 Java 运行时，并使用本地文件数据库保存数据。首次启动只会自动初始化上表列出的默认账号，无需用户安装或配置 MySQL。
+
+#### 开发者：生成 Windows/macOS 运行包 / Developers: Build Packages
+
 ```bash
-# 1. 解压部署包后，配置环境变量 / Extract deployment package and configure environment variables
-vim .env   # 设置数据库密码、AI 接口密钥等 / Set database password, AI API key, etc.
+chmod +x scripts/package-release.sh
+scripts/package-release.sh --platform all
+```
 
-# 2. 启动服务 / Start services
-docker-compose up -d
+生成结果位于：
 
-# 3. 初始化数据库 / Initialize database
-docker exec -i repair_system_db mysql -uroot -p<password> repair_db < init.sql
+```text
+dist/installers/
+  fangxingwei-ai-windows-x64.zip
+  fangxingwei-ai-macos-arm64.zip
+  fangxingwei-ai-macos-x64.zip
+```
 
-# 4. 访问系统 / Access the system
-# 用户端 / Customer portal：http://localhost
-# 管理端 / Admin portal：http://localhost/admin
-# 默认管理员 / Default admin：admin / 123456（首次登录后请立即修改密码 / Change immediately after first login）
+详细说明见 `docs/packaging/one_click_packaging.md`。
+
+#### 开发/生产部署：MySQL 模式 / Development & Production: MySQL Mode
+
+项目默认配置仍使用 MySQL，适合开发、测试和正式部署。请先按 `SQL/README.md` 初始化数据库，再启动后端和前端开发服务。
+
+```bash
+# 后端 / Backend
+cd backend
+./mvnw spring-boot:run
+
+# 前端 / Frontend
+cd frontend
+npm install
+npm run serve
 ```
 
 ### 各端使用流程 / Workflow by Role
