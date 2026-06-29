@@ -47,9 +47,12 @@ class HistoryCaseAgentTest {
 
         assertTrue(evidence.hasSimilarCases());
         assertTrue(evidence.summary().contains("History Case Agent"));
+        assertTrue(evidence.summary().contains("RAG vector retrieval"));
+        assertTrue(evidence.summary().contains("similarity="));
         assertTrue(evidence.summary().contains("RO-1001"));
         assertTrue(evidence.summary().contains("\u53d1\u52a8\u673a"));
         assertTrue(evidence.summary().contains("HISTORY_RELATED_CASE"));
+        assertTrue(evidence.summary().contains("HISTORY_RAG_VECTOR_MATCH"));
         assertFalse(evidence.summary().contains("\u6caaB67890"));
         assertFalse(evidence.summary().contains("LSVFA49J232123456"));
         assertTrue(evidence.summary().contains("[MASKED_PLATE_1]"));

@@ -63,7 +63,7 @@ The system adopts a centralized deployment model with decoupled frontend-backend
 3. **业务逻辑服务层 / Business Logic Service Layer**：Spring Boot（Controller → Service → Repository），认证鉴权、工单生命周期、绿色 ESG 激励、预测性维护 / Authentication, order lifecycle, green ESG incentives, predictive maintenance
 4. **混合智能诊断层 / Hybrid Intelligent Diagnosis Layer**（AI 大脑 / AI Brain）：
    - 规则预处理 / Rule Preprocessing — 正则 + 决策树，覆盖 90% 基础场景，毫秒级响应 / Regex + decision trees, covering 90% of basic scenarios with millisecond response
-   - 多 Agent 协同推理 / Multi-Agent Collaborative Reasoning — 语义 Agent + 库存关联 Agent + 历史知识 Agent（RAG）/ Semantic Agent + Inventory Agent + Historical Knowledge Agent (RAG)
+   - 多 Agent 协同推理 / Multi-Agent Collaborative Reasoning — 语义 Agent + 库存关联 Agent + 历史知识 Agent（脱敏向量 RAG）+ 技师专属 Copilot 记忆 / Semantic Agent + Inventory Agent + Historical Knowledge Agent (anonymized vector RAG) + technician-specific Copilot memory
    - 决策综合融合 / Decision Fusion — 加权证据推理，消解跨模态冲突 / Weighted evidence reasoning to resolve cross-modal conflicts
    - 智能安全兜底 / Intelligent Safety Fallback — 置信度 < 0.85 自动挂起转人工复核 / Auto-suspend and escalate to manual review when confidence < 0.85
 5. **动态隐私与安全层 / Dynamic Privacy & Security Layer**：旁路监听网关 + 本地正则引擎，车牌/VIN 无损脱敏 / Bypass monitoring gateway + local regex engine for lossless license plate/VIN masking
@@ -94,7 +94,7 @@ The system adopts a centralized deployment model with decoupled frontend-backend
 
 ### 7.2 技师端 / Technician Side
 - **智能化作业与透明薪酬 / Intelligent Operations & Transparent Compensation**：自动精准推送工单，灵活接单/拒单，工时费 + 材料提成复合收益分析 / Auto-assigned precise order push, flexible accept/reject, labor + material commission composite income analysis
-- **AI Copilot 诊断体系 / AI Copilot Diagnosis System**：规则优先识别高置信故障 → 多 Agent 协同攻克疑难杂症 → 敏感数据自动脱敏 → 决策融合输出置信度 / Rules-first high-confidence fault identification → multi-agent collaborative complex case resolution → auto data masking → decision fusion confidence output
+- **AI Copilot 诊断体系 / AI Copilot Diagnosis System**：规则优先识别高置信故障 → 多 Agent 协同攻克疑难杂症 → 脱敏历史案例向量 RAG 召回 → 技师专属 Copilot 记忆续接 → 决策融合输出置信度 / Rules-first high-confidence fault identification → multi-agent complex case resolution → anonymized historical-case vector RAG retrieval → technician-specific Copilot memory continuity → decision fusion confidence output
 
 ### 7.3 管理端 / Admin Side
 - **人机协同智能调度 / Human-AI Collaborative Intelligent Dispatch**：事件驱动架构 + 技能图谱 + 疲劳度模型动态派单 + 可视化人工干预 / Event-driven architecture + skill graph + fatigue model dynamic dispatch + visual manual intervention
@@ -113,7 +113,7 @@ The system adopts a centralized deployment model with decoupled frontend-backend
 
 ### 7.6 数据驱动的规则 + 多 Agent 协同混合故障诊断引擎 / Data-Driven Rules + Multi-Agent Collaborative Hybrid Fault Diagnosis Engine
 - **规则预处理 / Rule Preprocessing**：正则 + 决策树，覆盖 90% 场景，毫秒级响应 / Regex + decision trees, 90% scenario coverage, millisecond response
-- **三 Agent 并行推理 / Three-Agent Parallel Reasoning**：语义 Agent（方言/黑话解析）+ 库存 Agent（备货状态校验）+ 历史 Agent（RAG 检索相似案例）/ Semantic Agent (dialect/slang parsing) + Inventory Agent (stock verification) + Historical Agent (RAG-based similar case retrieval)
+- **三 Agent 并行推理 / Three-Agent Parallel Reasoning**：语义 Agent（方言/黑话解析）+ 库存 Agent（备货状态校验）+ 历史 Agent（脱敏向量 RAG 检索相似案例）+ 技师 Copilot 记忆上下文 / Semantic Agent (dialect/slang parsing) + Inventory Agent (stock verification) + Historical Agent (anonymized vector RAG similar-case retrieval) + technician Copilot memory context
 - **动态隐私熔断 / Dynamic Privacy Fusing**：本地正则扫描车牌/VIN，出站前无损脱敏 / Local regex scanning of license plates/VINs with lossless masking before external transmission
 - **决策融合 / Decision Fusion**：后期融合策略加权证据推理，消解跨模态冲突 / Late fusion strategy with weighted evidence reasoning to resolve cross-modal conflicts
 - **智能兜底 / Intelligent Fallback**：置信度 < 0.85 自动挂起转人工复核 / Auto-suspend and escalate to manual review when confidence < 0.85

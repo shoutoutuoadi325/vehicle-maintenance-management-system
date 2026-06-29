@@ -517,6 +517,12 @@
                 <li v-for="(item, index) in copilotRuleHits" :key="`rule-${index}`">{{ item }}</li>
               </ul>
             </div>
+            <div v-if="copilotAgentSummaries.length" class="copilot-evidence-block">
+              <strong>Agent 证据</strong>
+              <ul>
+                <li v-for="(item, index) in copilotAgentSummaries" :key="`agent-${index}`">{{ item }}</li>
+              </ul>
+            </div>
           </div>
         </div>
         <div v-if="copilotHistory.length" class="copilot-history">
@@ -861,6 +867,7 @@ export default {
       copilotConfidence: null,
       copilotWorkflowStatus: '',
       copilotRuleHits: [],
+      copilotAgentSummaries: [],
       copilotInventoryWarnings: [],
       copilotError: '',
       copilotLoading: false,
@@ -899,6 +906,7 @@ export default {
       return this.copilotWorkflowStatus
         || this.copilotConfidence !== null
         || this.copilotRuleHits.length
+        || this.copilotAgentSummaries.length
         || this.copilotInventoryWarnings.length;
     },
     renderedTaskAiSuggestion() {
@@ -1122,6 +1130,7 @@ export default {
           confidence: this.copilotConfidence,
           workflowStatus: this.copilotWorkflowStatus,
           ruleHits: this.copilotRuleHits,
+          agentSummaries: this.copilotAgentSummaries,
           inventoryWarnings: this.copilotInventoryWarnings
         });
         this.clearCopilotImages();
@@ -1139,12 +1148,14 @@ export default {
       this.copilotConfidence = typeof payload.confidence === 'number' ? payload.confidence : null;
       this.copilotWorkflowStatus = payload.workflowStatus || '';
       this.copilotRuleHits = Array.isArray(payload.ruleHits) ? payload.ruleHits : [];
+      this.copilotAgentSummaries = Array.isArray(payload.agentSummaries) ? payload.agentSummaries : [];
       this.copilotInventoryWarnings = Array.isArray(payload.inventoryWarnings) ? payload.inventoryWarnings : [];
     },
     clearCopilotEvidence() {
       this.copilotConfidence = null;
       this.copilotWorkflowStatus = '';
       this.copilotRuleHits = [];
+      this.copilotAgentSummaries = [];
       this.copilotInventoryWarnings = [];
     },
     formatCopilotConfidence(confidence) {
@@ -1189,6 +1200,7 @@ export default {
         confidence: entry.confidence ?? null,
         workflowStatus: entry.workflowStatus || '',
         ruleHits: entry.ruleHits || [],
+        agentSummaries: entry.agentSummaries || [],
         inventoryWarnings: entry.inventoryWarnings || [],
         createdAt: new Date().toLocaleString()
       };

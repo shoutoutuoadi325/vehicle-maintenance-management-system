@@ -54,3 +54,7 @@ mysql -uroot -p79Haolubenwei car_repair < SQL/seed/low_carbon_journey_quiz_seed.
 > 1. 上述命令要求你的本机（或当前终端环境）中已安装 `mysql` 客户端工具。
 > 2. 请根据你的实际本地数据库配置（账号/密码），替换掉上述命令中的 `-uroot -p79Haolubenwei` 等认证参数。
 > 3. 所有 SQL 路径如 `SQL/schema/...` 为相对路径，需确保在**项目根目录（即 `/Users/zhiqizhang/development/vehicle-maintenance-management-system`）**下执行。
+
+## 3. 与 Flyway 迁移相关的 AI 诊断表
+
+最新迁移包含 `V25__add_technician_copilot_memory.sql`，会创建 `technician_copilot_memory` 表。该表用于保存每位技师的 AI Copilot 专属记忆，包括脱敏后的最近问题、故障类型、建议、历史案例 RAG 证据、置信度和工作流状态。开发或部署环境使用 `spring.jpa.hibernate.ddl-auto=validate` 时，必须先完成 Flyway 迁移再启动后端服务。

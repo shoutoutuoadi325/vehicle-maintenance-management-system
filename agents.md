@@ -16,7 +16,7 @@
 
 系统采用**混合诊断引擎**架构，融合规则引擎、多 Agent 协同推理和外部 LLM，为客户提供故障预判，为技师提供维修辅助建议。
 
-核心服务类：`AIDiagnosisService`（编排入口）、`RuleDiagnosisService`、`SemanticDiagnosisAgent`、`InventoryDiagnosisAgent`、`HistoryCaseAgent`、`DecisionFusionEngine`、`SafetyNetGate`、`PrivacyMaskingService`
+核心服务类：`AIDiagnosisService`（编排入口）、`RuleDiagnosisService`、`SemanticDiagnosisAgent`、`InventoryDiagnosisAgent`、`HistoryCaseAgent`、`HistoryCaseVectorizer`、`TechnicianCopilotMemoryService`、`DecisionFusionEngine`、`SafetyNetGate`、`PrivacyMaskingService`
 
 ## 诊断流程
 
@@ -47,7 +47,8 @@
     │  │ RED_TEAM          │ ← 红队 QA 质疑长尾/高危漏判
     │  │ ARBITRATOR        │ ← 总控车间主任融合裁决
     │  │ InventoryDiagnosisAgent │ ← 库存匹配 + 低库存预警
-    │  │ HistoryCaseAgent  │ ← 历史工单相似案例检索
+    │  │ HistoryCaseAgent  │ ← 脱敏历史工单 RAG 向量召回
+    │  │ TechnicianCopilotMemory │ ← 技师专属 Copilot 记忆上下文
     │  └────────┬─────────┘
     │           │
     │           ▼
@@ -99,7 +100,7 @@
 
 **阶段**:
 - `PRE_DIAG`：基于脱敏后的用户描述提取结构化故障特征；如请求包含图片或语音，则在该阶段一并提取多模态线索。
-- `MAIN_AGENT`：主治维修工程师基于结构化特征、库存证据和历史案例证据输出初诊路径。
+- `MAIN_AGENT`：主治维修工程师基于结构化特征、库存证据、历史案例证据和技师专属 Copilot 记忆输出初诊路径。
 - `RED_TEAM`：红队 QA 审视初诊结论，补充低概率高风险故障和逻辑漏洞。
 - `ARBITRATOR`：总控车间主任融合主治诊断、红队质疑、库存/历史证据和技师疲劳度，生成最终报告。
 
@@ -111,13 +112,22 @@
 
 **输出**: 库存证据摘要（匹配的物料列表、库存状态、安全库存警告）
 
-### 4. HistoryCaseAgent — 历史案例 Agent
+### 4. HistoryCaseAgent — 历史案例 RAG Agent
 
-**职责**: 在已完成的维修工单中检索相似案例，基于关键词匹配和评分排序。
+**职责**: 穿透业务库读取已完成维修工单，先通过 `PrivacyMaskingService` 脱敏案例文本，再用 `HistoryCaseVectorizer` 生成本地哈希向量，按 cosine 相似度召回 Top 3 相似案例。向量化器融合维修领域词、同义词归一和中英文 n-gram，覆盖“点火效率下降 ↔ 火花塞/缺缸”等非完全同词场景。
 
-**输出**: 历史案例证据摘要（相似案例列表、维修方案、成功率）
+**输出**: 历史案例证据摘要（相似案例列表、相似度、维修类型、工时、材料费用、RAG 标签）
 
-**隐私**: 通过 `PrivacyMaskingService` 对历史案例中的敏感信息进行脱敏。
+**隐私**: 检索输入、案例摘要和 Copilot 记忆写回均通过 `PrivacyMaskingService` 对 VIN、车牌号进行脱敏；外部 LLM 只接收脱敏后的相似案例摘要。
+
+### 4.5. TechnicianCopilotMemoryService — 技师专属 Copilot 记忆
+
+**职责**: 为每位技师维护一条后端持久化 Copilot 记忆，记录最近一次疑难诊断的脱敏问题、故障类型、建议、历史案例证据、置信度和工作流状态。
+
+**链路**:
+- 技师/admin 调用诊断时，`AIDiagnosisService` 根据 `technicianId` 读取 `technician_copilot_memory`，并把上下文加入 `AI_CONSILIUM` Prompt。
+- 诊断完成后写回该技师的最新 Copilot 记忆；写回失败不影响诊断主链路。
+- 前端 `AI 技师 Copilot` 面板展示 `agentSummaries`，可看到 `History Case Agent: RAG vector retrieval...` 等证据。
 
 ### 5. DecisionFusionEngine — 决策融合引擎
 
@@ -170,6 +180,7 @@
 |---|------|
 | `agent_prompt_template_config` | Agent Prompt 模板，按角色和模板键存储 |
 | `dispatch_weight_config` | 派单权重参数（评分权重、工作量权重、经验权重、疲劳惩罚） |
+| `technician_copilot_memory` | 技师专属 Copilot 记忆，保存脱敏后的最近诊断上下文 |
 
 ## 角色交互差异
 
@@ -188,7 +199,10 @@
 | `backend/src/main/java/org/com/repair/service/RuleDiagnosisService.java` | 规则诊断 |
 | `backend/src/main/java/org/com/repair/service/SemanticDiagnosisAgent.java` | 语义 Agent |
 | `backend/src/main/java/org/com/repair/service/InventoryDiagnosisAgent.java` | 库存 Agent |
-| `backend/src/main/java/org/com/repair/service/HistoryCaseAgent.java` | 历史案例 Agent |
+| `backend/src/main/java/org/com/repair/service/HistoryCaseAgent.java` | 历史案例 RAG Agent |
+| `backend/src/main/java/org/com/repair/service/HistoryCaseVectorizer.java` | 历史案例本地向量化召回 |
+| `backend/src/main/java/org/com/repair/service/TechnicianCopilotMemoryService.java` | 技师专属 Copilot 记忆服务 |
+| `backend/src/main/java/org/com/repair/entity/TechnicianCopilotMemory.java` | Copilot 记忆持久化实体 |
 | `backend/src/main/java/org/com/repair/service/DecisionFusionEngine.java` | 决策融合 |
 | `backend/src/main/java/org/com/repair/service/SafetyNetGate.java` | 安全网关 |
 | `backend/src/main/java/org/com/repair/service/PrivacyMaskingService.java` | 隐私脱敏 |

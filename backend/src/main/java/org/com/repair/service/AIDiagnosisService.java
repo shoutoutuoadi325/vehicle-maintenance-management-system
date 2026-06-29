@@ -7,6 +7,7 @@ import org.com.repair.DTO.AIDiagnosisResponse;
 import org.com.repair.service.TechnicianService.TechnicianFatigueSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -41,6 +42,7 @@ public class AIDiagnosisService {
     private final InventoryDiagnosisAgent inventoryDiagnosisAgent;
     private final HistoryCaseAgent historyCaseAgent;
     private final DecisionFusionEngine decisionFusionEngine;
+    private final TechnicianCopilotMemoryService technicianCopilotMemoryService;
     private final OkHttpClient client;
     private final ObjectMapper objectMapper;
 
@@ -52,6 +54,27 @@ public class AIDiagnosisService {
                               InventoryDiagnosisAgent inventoryDiagnosisAgent,
                               HistoryCaseAgent historyCaseAgent,
                               DecisionFusionEngine decisionFusionEngine) {
+        this(gamificationService,
+                technicianService,
+                ruleDiagnosisService,
+                privacyMaskingService,
+                semanticDiagnosisAgent,
+                inventoryDiagnosisAgent,
+                historyCaseAgent,
+                decisionFusionEngine,
+                null);
+    }
+
+    @Autowired
+    public AIDiagnosisService(GamificationService gamificationService,
+                              TechnicianService technicianService,
+                              RuleDiagnosisService ruleDiagnosisService,
+                              PrivacyMaskingService privacyMaskingService,
+                              SemanticDiagnosisAgent semanticDiagnosisAgent,
+                              InventoryDiagnosisAgent inventoryDiagnosisAgent,
+                              HistoryCaseAgent historyCaseAgent,
+                              DecisionFusionEngine decisionFusionEngine,
+                              TechnicianCopilotMemoryService technicianCopilotMemoryService) {
         this.gamificationService = gamificationService;
         this.technicianService = technicianService;
         this.ruleDiagnosisService = ruleDiagnosisService;
@@ -60,6 +83,7 @@ public class AIDiagnosisService {
         this.inventoryDiagnosisAgent = inventoryDiagnosisAgent;
         this.historyCaseAgent = historyCaseAgent;
         this.decisionFusionEngine = decisionFusionEngine;
+        this.technicianCopilotMemoryService = technicianCopilotMemoryService;
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(45, TimeUnit.SECONDS)
@@ -96,19 +120,25 @@ public class AIDiagnosisService {
         PrivacyMaskingService.MaskingResult maskingResult = privacyMaskingService.mask(normalizedDescription);
         InventoryDiagnosisAgent.InventoryEvidence inventoryEvidence = null;
         HistoryCaseAgent.HistoryCaseEvidence historyCaseEvidence = null;
+        TechnicianCopilotMemoryService.CopilotMemoryContext copilotMemoryContext =
+                TechnicianCopilotMemoryService.CopilotMemoryContext.empty();
         try {
             if (isTechnicianRole(normalizedRole)) {
                 ruleResult = ruleDiagnosisService.diagnose(normalizedDescription);
                 inventoryEvidence = inventoryDiagnosisAgent.analyze(normalizedDescription);
                 historyCaseEvidence = historyCaseAgent.analyze(normalizedDescription);
+                copilotMemoryContext = resolveCopilotMemoryContext(technicianId, traceId);
                 if (ruleResult.directReturn()) {
                     logger.info("[AI-DIAGNOSIS][{}] 技师端规则高置信直出, ruleHit={}, confidence={}",
                             traceId,
                             ruleResult.ruleHit(),
                             ruleResult.confidence());
                     AIDiagnosisResponse response = ruleResult.response();
-                    return finalizeDiagnosisResponse(
+                    AIDiagnosisResponse finalResponse = finalizeDiagnosisResponse(
                             response, ruleResult, false, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
+                    appendCopilotMemoryDecisionPath(finalResponse, copilotMemoryContext, normalizedRole);
+                    recordCopilotMemory(technicianId, normalizedDescription, finalResponse, historyCaseEvidence, normalizedRole, traceId);
+                    return finalResponse;
                 }
             }
             AIDiagnosisResponse response;
@@ -120,6 +150,7 @@ public class AIDiagnosisService {
                         traceId,
                         inventoryEvidence,
                         historyCaseEvidence,
+                        copilotMemoryContext,
                         imageDataUrls,
                         audioDataUrl);
             } else {
@@ -134,8 +165,11 @@ public class AIDiagnosisService {
                         audioDataUrl);
             }
             logger.info("[AI-DIAGNOSIS][{}] 外部AI诊断完成", traceId);
-            return finalizeDiagnosisResponse(
+            AIDiagnosisResponse finalResponse = finalizeDiagnosisResponse(
                     response, ruleResult, true, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
+            appendCopilotMemoryDecisionPath(finalResponse, copilotMemoryContext, normalizedRole);
+            recordCopilotMemory(technicianId, normalizedDescription, finalResponse, historyCaseEvidence, normalizedRole, traceId);
+            return finalResponse;
         } catch (Exception e) {
             if (isTechnicianRole(normalizedRole) && ruleResult.matched()) {
                 logger.warn("[AI-DIAGNOSIS][{}] 外部AI诊断失败，返回已命中的技师端规则结果: ruleHit={}, confidence={}, error={}",
@@ -144,13 +178,19 @@ public class AIDiagnosisService {
                         ruleResult.confidence(),
                         e.getMessage());
                 AIDiagnosisResponse response = ruleResult.response();
-                return finalizeDiagnosisResponse(
+                AIDiagnosisResponse finalResponse = finalizeDiagnosisResponse(
                         response, ruleResult, false, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
+                appendCopilotMemoryDecisionPath(finalResponse, copilotMemoryContext, normalizedRole);
+                recordCopilotMemory(technicianId, normalizedDescription, finalResponse, historyCaseEvidence, normalizedRole, traceId);
+                return finalResponse;
             }
             logger.warn("[AI-DIAGNOSIS][{}] 外部AI诊断失败，启用本地规则兜底: {}", traceId, e.getMessage(), e);
             AIDiagnosisResponse response = buildLocalFallbackResponse(normalizedDescription, normalizedRole);
-            return finalizeDiagnosisResponse(
+            AIDiagnosisResponse finalResponse = finalizeDiagnosisResponse(
                     response, ruleResult, false, inventoryEvidence, historyCaseEvidence, maskingResult, normalizedRole);
+            appendCopilotMemoryDecisionPath(finalResponse, copilotMemoryContext, normalizedRole);
+            recordCopilotMemory(technicianId, normalizedDescription, finalResponse, historyCaseEvidence, normalizedRole, traceId);
+            return finalResponse;
         }
     }
     // Image fallback handling integrated into catch block of diagnoseFault
@@ -190,6 +230,17 @@ public class AIDiagnosisService {
         return "\n\nHistory Case Agent context:" + historyCaseEvidence.promptContext();
     }
 
+    private String buildCopilotMemoryPromptContext(TechnicianCopilotMemoryService.CopilotMemoryContext copilotMemoryContext,
+                                                   String role) {
+        if (!isTechnicianRole(role)
+                || copilotMemoryContext == null
+                || copilotMemoryContext.promptContext() == null
+                || copilotMemoryContext.promptContext().isBlank()) {
+            return "";
+        }
+        return "\n\nTechnician-specific Copilot context:\n- " + copilotMemoryContext.promptContext();
+    }
+
     private AIDiagnosisResponse finalizeDiagnosisResponse(AIDiagnosisResponse response,
                                                           RuleDiagnosisService.RuleDiagnosisResult ruleResult,
                                                           boolean semanticExecuted,
@@ -207,6 +258,46 @@ public class AIDiagnosisService {
                 inventoryEvidence,
                 historyCaseEvidence,
                 isTechnicianRole(normalizedRole)));
+    }
+
+    private TechnicianCopilotMemoryService.CopilotMemoryContext resolveCopilotMemoryContext(Long technicianId,
+                                                                                            String traceId) {
+        if (technicianCopilotMemoryService == null) {
+            return TechnicianCopilotMemoryService.CopilotMemoryContext.empty();
+        }
+        TechnicianCopilotMemoryService.CopilotMemoryContext context =
+                technicianCopilotMemoryService.resolveContext(technicianId);
+        logger.info("[AI-COPILOT][{}] 专属记忆上下文加载完成, technicianId={}, found={}",
+                traceId,
+                technicianId,
+                context.found());
+        return context;
+    }
+
+    private void recordCopilotMemory(Long technicianId,
+                                     String problemDescription,
+                                     AIDiagnosisResponse response,
+                                     HistoryCaseAgent.HistoryCaseEvidence historyCaseEvidence,
+                                     String normalizedRole,
+                                     String traceId) {
+        if (!isTechnicianRole(normalizedRole) || technicianCopilotMemoryService == null) {
+            return;
+        }
+        technicianCopilotMemoryService.recordInteraction(technicianId, problemDescription, response, historyCaseEvidence);
+        logger.info("[AI-COPILOT][{}] 专属记忆写回完成, technicianId={}", traceId, technicianId);
+    }
+
+    private void appendCopilotMemoryDecisionPath(AIDiagnosisResponse response,
+                                                 TechnicianCopilotMemoryService.CopilotMemoryContext copilotMemoryContext,
+                                                 String normalizedRole) {
+        if (!isTechnicianRole(normalizedRole) || response == null || copilotMemoryContext == null) {
+            return;
+        }
+        java.util.List<String> decisionPath = new java.util.ArrayList<>(response.getDecisionPath());
+        decisionPath.add(copilotMemoryContext.found()
+                ? "Technician Copilot Memory: loaded persisted technician context"
+                : "Technician Copilot Memory: no persisted technician context");
+        response.setDecisionPath(decisionPath);
     }
 
     private String semanticJsonOutputContract() {
@@ -246,6 +337,7 @@ public class AIDiagnosisService {
                                                 String traceId,
                                                 InventoryDiagnosisAgent.InventoryEvidence inventoryEvidence,
                                                 HistoryCaseAgent.HistoryCaseEvidence historyCaseEvidence,
+                                                TechnicianCopilotMemoryService.CopilotMemoryContext copilotMemoryContext,
                                                 List<String> imageDataUrls,
                                                 String audioDataUrl) throws IOException {
         List<String> ecoTips = resolveEcoTips(traceId);
@@ -265,6 +357,7 @@ public class AIDiagnosisService {
                 + ecoTipContext
                 + buildInventoryPromptContext(inventoryEvidence, role)
                 + buildHistoryCasePromptContext(historyCaseEvidence, role)
+                + buildCopilotMemoryPromptContext(copilotMemoryContext, role)
                 + "\n\n当前被派单技师的疲劳度指标为：" + fatigueLevel + " (0到1之间)。"
                 + "\n极其重要的动态安全规则：如果该指标大于 0.7，你必须在报告中将原本复杂的排查步骤进行最细粒度拆解，并在涉及高压电、燃油等高危操作前，强制插入带有 [安全高危校验] 标签的物理确认步骤。如果小于 0.7，则正常输出。"
                 + "\n\n输出要求："
