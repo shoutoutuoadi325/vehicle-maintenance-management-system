@@ -406,6 +406,10 @@
                   <span>¥{{ technician.hourlyRate }}/小时</span>
                 </div>
                 <div class="detail-item">
+                  <i class="fas fa-star"></i>
+                  <span>{{ formatServiceRating(technician.serviceRating) }}</span>
+                </div>
+                <div class="detail-item">
                   <i class="fas fa-phone"></i>
                   <span>{{ technician.phone }}</span>
                 </div>
@@ -413,6 +417,11 @@
                   <i class="fas fa-envelope"></i>
                   <span>{{ technician.email }}</span>
                 </div>
+              </div>
+              <div v-if="getSkillTagsArray(technician.skillTags).length" class="tech-tags">
+                <span v-for="tag in getSkillTagsArray(technician.skillTags)" :key="`${technician.id}-${tag}`" class="tech-tag">
+                  {{ tag }}
+                </span>
               </div>
             </div>
             <div class="tech-actions">
@@ -1083,7 +1092,87 @@
       </div>
     </div>
 
-    <!-- 添加技师模态框 -->
+    <!-- 技师编辑模态框 -->
+    <div v-if="showEditTechnician" class="modal-overlay" @click="closeTechnicianEditor">
+      <div class="modal-content technician-edit-modal" @click.stop>
+        <div class="modal-header">
+          <h2>编辑技师</h2>
+          <button class="modal-close" @click="closeTechnicianEditor">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <form @submit.prevent="saveTechnicianProfile">
+          <div class="modal-body">
+            <div class="technician-form">
+              <div class="form-row">
+                <label class="form-group">
+                  <span class="form-label">姓名</span>
+                  <input v-model.trim="technicianForm.name" class="form-input" required>
+                </label>
+                <label class="form-group">
+                  <span class="form-label">员工编号</span>
+                  <input v-model.trim="technicianForm.employeeId" class="form-input" required>
+                </label>
+              </div>
+              <div class="form-row">
+                <label class="form-group">
+                  <span class="form-label">登录名</span>
+                  <input v-model.trim="technicianForm.username" class="form-input" required>
+                </label>
+                <label class="form-group">
+                  <span class="form-label">新密码</span>
+                  <input v-model="technicianForm.password" type="password" class="form-input" autocomplete="new-password">
+                </label>
+              </div>
+              <div class="form-row">
+                <label class="form-group">
+                  <span class="form-label">手机号</span>
+                  <input v-model.trim="technicianForm.phone" class="form-input" required>
+                </label>
+                <label class="form-group">
+                  <span class="form-label">邮箱</span>
+                  <input v-model.trim="technicianForm.email" type="email" class="form-input">
+                </label>
+              </div>
+              <div class="form-row">
+                <label class="form-group">
+                  <span class="form-label">主工种</span>
+                  <select v-model="technicianForm.skillType" class="form-input" required>
+                    <option disabled value="">请选择工种</option>
+                    <option v-for="option in skillTypeOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="form-group">
+                  <span class="form-label">时薪</span>
+                  <input v-model.number="technicianForm.hourlyRate" type="number" min="1" step="0.01" class="form-input" required>
+                </label>
+              </div>
+              <div class="form-row">
+                <label class="form-group">
+                  <span class="form-label">历史服务评分</span>
+                  <input v-model.number="technicianForm.serviceRating" type="number" min="0" max="5" step="0.1" class="form-input">
+                </label>
+                <label class="form-group">
+                  <span class="form-label">技能标签</span>
+                  <input v-model.trim="technicianForm.skillTags" class="form-input">
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline" @click="closeTechnicianEditor">
+              <i class="fas fa-times"></i> 取消
+            </button>
+            <button type="submit" class="btn btn-primary" :disabled="isSavingTechnician">
+              <i class="fas" :class="isSavingTechnician ? 'fa-spinner fa-spin' : 'fa-save'"></i>
+              {{ isSavingTechnician ? '保存中...' : '保存' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1106,6 +1195,7 @@ export default {
       showAssignModal: false,
       showDeleteUserModal: false,
       showDeleteOrderModal: false,
+      isSavingTechnician: false,
       selectedOrder: null,
       selectedOrderDetail: null,
       editingTechnician: null,
@@ -1126,8 +1216,17 @@ export default {
         phone: '',
         email: '',
         skillType: '',
-        hourlyRate: ''
+        hourlyRate: '',
+        serviceRating: '',
+        skillTags: ''
       },
+      skillTypeOptions: [
+        { value: 'MECHANIC', label: '机修' },
+        { value: 'ELECTRICIAN', label: '电工' },
+        { value: 'BODY_WORK', label: '钣金' },
+        { value: 'PAINT', label: '喷漆' },
+        { value: 'DIAGNOSTIC', label: '诊断' }
+      ],
       assignForm: {
         technicianIds: [],
         laborCost: 0,
@@ -1669,8 +1768,99 @@ export default {
       this.$emit('message', '订单编辑功能开发中', 'info');
     },
     editTechnician(technician) {
-      // 实现技师编辑
-      this.$emit('message', '技师编辑功能开发中', 'info');
+      this.editingTechnician = technician;
+      this.technicianForm = {
+        name: technician.name || '',
+        employeeId: technician.employeeId || '',
+        username: technician.username || '',
+        password: '',
+        phone: technician.phone || '',
+        email: technician.email || '',
+        skillType: technician.skillType || '',
+        hourlyRate: technician.hourlyRate || '',
+        serviceRating: technician.serviceRating ?? '',
+        skillTags: technician.skillTags || ''
+      };
+      this.showEditTechnician = true;
+    },
+    closeTechnicianEditor() {
+      if (this.isSavingTechnician) {
+        return;
+      }
+      this.showEditTechnician = false;
+      this.editingTechnician = null;
+      this.resetTechnicianForm();
+    },
+    resetTechnicianForm() {
+      this.technicianForm = {
+        name: '',
+        employeeId: '',
+        username: '',
+        password: '',
+        phone: '',
+        email: '',
+        skillType: '',
+        hourlyRate: '',
+        serviceRating: '',
+        skillTags: ''
+      };
+    },
+    buildTechnicianPayload() {
+      return {
+        name: this.technicianForm.name,
+        employeeId: this.technicianForm.employeeId,
+        username: this.technicianForm.username,
+        password: this.technicianForm.password || '',
+        phone: this.technicianForm.phone,
+        email: this.technicianForm.email,
+        skillType: this.technicianForm.skillType,
+        hourlyRate: Number(this.technicianForm.hourlyRate),
+        serviceRating: this.technicianForm.serviceRating === '' || this.technicianForm.serviceRating === null
+          ? null
+          : Number(this.technicianForm.serviceRating),
+        skillTags: this.technicianForm.skillTags
+      };
+    },
+    validateTechnicianPayload(payload) {
+      if (!payload.name || !payload.employeeId || !payload.username || !payload.phone || !payload.skillType) {
+        this.$emit('message', '请完整填写技师基础信息', 'warning');
+        return false;
+      }
+      if (!Number.isFinite(payload.hourlyRate) || payload.hourlyRate <= 0) {
+        this.$emit('message', '时薪必须大于0', 'warning');
+        return false;
+      }
+      if (payload.serviceRating !== null && (!Number.isFinite(payload.serviceRating) || payload.serviceRating < 0 || payload.serviceRating > 5)) {
+        this.$emit('message', '历史服务评分必须在0-5分之间', 'warning');
+        return false;
+      }
+      return true;
+    },
+    async saveTechnicianProfile() {
+      if (!this.editingTechnician) {
+        return;
+      }
+
+      const payload = this.buildTechnicianPayload();
+      if (!this.validateTechnicianPayload(payload)) {
+        return;
+      }
+
+      this.isSavingTechnician = true;
+      try {
+        await this.$axios.put(`/technicians/${this.editingTechnician.id}`, payload);
+        this.$emit('message', '技师信息已更新', 'success');
+        this.showEditTechnician = false;
+        this.editingTechnician = null;
+        this.resetTechnicianForm();
+        await this.loadTechnicians();
+        await this.loadDashboardStats();
+      } catch (error) {
+        console.error('更新技师失败:', error);
+        this.$emit('message', '更新技师失败: ' + (error.response?.data?.message || error.message), 'error');
+      } finally {
+        this.isSavingTechnician = false;
+      }
     },
     async deleteTechnician(technician) {
       if (confirm(`确定要删除技师 ${technician.name} 吗？此操作不可撤销。`)) {
@@ -1836,6 +2026,22 @@ export default {
         'DIAGNOSTIC': '诊断'
       };
       return skillMap[skillType] || skillType;
+    },
+    formatServiceRating(serviceRating) {
+      if (serviceRating === null || serviceRating === undefined || serviceRating === '') {
+        return '未设';
+      }
+      const rating = Number(serviceRating);
+      return Number.isFinite(rating) ? `${rating.toFixed(1)}分` : '未设';
+    },
+    getSkillTagsArray(skillTags) {
+      if (!skillTags) {
+        return [];
+      }
+      return skillTags
+        .split(/[,，、;；\s]+/)
+        .map(tag => tag.trim())
+        .filter(Boolean);
     },
     getVehicleDisplay(order) {
       if (order.vehicle) {
@@ -2703,6 +2909,23 @@ export default {
   width: 1rem;
 }
 
+.tech-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.tech-tag {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 0.32rem 0.58rem;
+}
+
 .tech-actions {
   display: flex;
   gap: 0.5rem;
@@ -2955,6 +3178,10 @@ export default {
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
 }
 
+.technician-edit-modal {
+  max-width: 720px;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -3000,6 +3227,44 @@ export default {
 .assign-form {
   display: grid;
   gap: 1rem;
+}
+
+.technician-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.form-group {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.form-label {
+  color: #374151;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.form-input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  color: #111827;
+  font-size: 0.95rem;
+  padding: 0.65rem 0.75rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  outline: none;
 }
 
 .technician-selection {
@@ -3141,6 +3406,10 @@ export default {
   }
   
   .tech-details {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row {
     grid-template-columns: 1fr;
   }
   

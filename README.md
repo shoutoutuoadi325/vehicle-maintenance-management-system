@@ -97,12 +97,12 @@ The system adopts a centralized deployment model with decoupled frontend-backend
 - **AI Copilot 诊断体系 / AI Copilot Diagnosis System**：规则优先识别高置信故障 → 多 Agent 协同攻克疑难杂症 → 脱敏历史案例向量 RAG 召回 → 技师专属 Copilot 记忆续接 → 决策融合输出置信度 / Rules-first high-confidence fault identification → multi-agent complex case resolution → anonymized historical-case vector RAG retrieval → technician-specific Copilot memory continuity → decision fusion confidence output
 
 ### 7.3 管理端 / Admin Side
-- **人机协同智能调度 / Human-AI Collaborative Intelligent Dispatch**：事件驱动架构 + 技能图谱 + 疲劳度模型动态派单 + 可视化人工干预 / Event-driven architecture + skill graph + fatigue model dynamic dispatch + visual manual intervention
+- **人机协同智能调度 / Human-AI Collaborative Intelligent Dispatch**：事件驱动架构 + 技能图谱 + 疲劳度模型动态派单 + 可视化人工干预；管理端可维护技师历史服务评分、技能标签与时薪 / Event-driven architecture + skill graph + fatigue model dynamic dispatch + visual manual intervention; admins can maintain technician historical service ratings, skill tags, and hourly rates
 - **多维数据聚合洞察 / Multi-Dimensional Data Analytics**：营收效能、高频故障态势、车型分布商业决策矩阵 + 绿色生态参数集中配置 / Revenue performance, high-frequency fault trends, vehicle model distribution business intelligence matrix + centralized green ecosystem parameter configuration
 
 ### 7.4 疲劳感知动态资源调度算法 / Fatigue-Aware Dynamic Resource Scheduling Algorithm
 - **问题建模 / Problem Modeling**：带技能硬约束的启发式多目标优化（最小化等待时间 + 平衡负载）/ Heuristic multi-objective optimization with hard skill constraints (minimize wait time + balance workload)
-- **评分模型 / Scoring Model**：`Score = 历史服务评分(50%) + 负载适配度(30%) + 经验匹配度(20%)` / `Score = Historical Service Rating (50%) + Load Adaptability (30%) + Experience Match (20%)`
+- **评分模型 / Scoring Model**：`Score = 历史服务评分(50%) + 负载适配度(30%) + 经验匹配度(20%)`，历史服务评分优先使用管理员维护值，未设置时回退到用户反馈平均分 / `Score = Historical Service Rating (50%) + Load Adaptability (30%) + Experience Match (20%)`; historical service rating prefers the admin-maintained value and falls back to average user feedback when unset
 - **疲劳度惩罚 / Fatigue Penalty**：基于"当日完成单量、连续作业时长、夜间工单占比"实时计算 Fatigue Level (0~1.0)，>0.7 触发拦截 / Real-time Fatigue Level (0–1.0) calculated from daily completed orders, continuous working hours, and nighttime order ratio; triggers interception when >0.7
 - **反饥饿机制 / Anti-Starvation Mechanism**：长尾工单随驻留时间线性累加等待惩罚乘数，借鉴操作系统老化算法 / Long-tail orders linearly accumulate wait-penalty multipliers as queue residency increases, inspired by OS aging algorithms
 
@@ -192,7 +192,7 @@ Inter-module data exchange uses HTTP JSON protocol in RESTful style, with a unif
 
 ### 环境要求 / Prerequisites
 - **普通用户 / End Users**：无需安装 Java、Node.js、Maven 或 MySQL，只需使用 Windows/macOS 一键运行包 / No Java, Node.js, Maven, or MySQL installation is required when using the Windows/macOS one-click package
-- **打包开发者 / Release Builders**：JDK 17+、Node.js/npm、Bash、curl、zip、unzip、tar / JDK 17+, Node.js/npm, Bash, curl, zip, unzip, tar
+- **打包开发者 / Release Builders**：JDK 17+、Node.js/npm、Bash、curl、zip、unzip、tar、mysql/mysqldump / JDK 17+, Node.js/npm, Bash, curl, zip, unzip, tar, mysql/mysqldump
 - **浏览器 / Browser**：近两年主流 Chrome、Edge 或 Firefox / Recent mainstream Chrome, Edge, or Firefox (within 2 years)
 
 ### 快速启动 / Quick Start
@@ -219,7 +219,7 @@ http://localhost:8080
 | 技师 / Technician | `tech` | `123456` |
 | 钣喷技师 / Bodywork Technician | `body` | `123456` |
 
-运行包内置 Java 运行时，并使用本地文件数据库保存数据。默认首次启动会自动初始化上表列出的默认账号；若开发者打包时追加 `--sync-mysql-data`，则会优先导入包内 MySQL 业务数据快照。最终用户无需安装或配置 MySQL。
+运行包内置 Java 运行时，并使用本地文件数据库保存数据。打包脚本默认会内置当前 MySQL 业务数据快照，首次启动优先导入该快照；只有构建时显式追加 `--without-mysql-data`，才会回退到仅初始化上表默认账号。最终用户无需安装或配置 MySQL。
 
 #### 开发者：生成 Windows/macOS 运行包 / Developers: Build Packages
 
@@ -234,12 +234,11 @@ scripts/package-release.sh --platform all
 dist/installers/
   fangxingwei-ai-windows-x64.zip
   fangxingwei-ai-macos-arm64.zip
-  fangxingwei-ai-macos-x64.zip
 ```
 
 Windows 包请直接使用脚本产物发布；脚本会保留 zip 的 UTF-8 中文文件名标志，避免 `启动系统.bat` 等文件在 Windows 解压后乱码。
 
-需要让一键包内置当前 MySQL 业务数据时，可追加 `--sync-mysql-data`；最终用户仍使用包内本地数据库，无需安装 MySQL。
+脚本默认会让一键包内置当前 MySQL 业务数据；最终用户仍使用包内本地数据库，无需安装 MySQL。
 
 详细说明见 `docs/packaging/one_click_packaging.md`。
 
@@ -261,7 +260,7 @@ npm run serve
 ### 各端使用流程 / Workflow by Role
 - **用户端 / Customer**：注册登录 → 添加车辆 → AI 问诊/报修 → 创建预约 → 查看进度 → 确认费用并评价 → 查看碳评估 → 参与零碳公路之旅 / Register/Login → Add Vehicle → AI Consultation/Report Repair → Create Appointment → Track Progress → Confirm Cost & Review → View Carbon Assessment → Join Zero-Carbon Road Trip
 - **技师端 / Technician**：登录 → 查看任务 → 接单 → 填写维修日志与材料 → 提交完成 → 查看收入 / Login → View Tasks → Accept Order → Log Repair & Materials → Submit Completion → View Income
-- **管理端 / Admin**：登录 → 运营概览 → 工单监控与人工调整 → 技师/配置维护 → 绿色评估/优惠券/活动管理 / Login → Operations Overview → Monitor & Manually Adjust Orders → Maintain Technicians & Config → Manage Green Assessment/Coupons/Campaigns
+- **管理端 / Admin**：登录 → 运营概览 → 工单监控与人工调整 → 维护技师历史服务评分、技能标签、时薪与配置 → 绿色评估/优惠券/活动管理 / Login → Operations Overview → Monitor & Manually Adjust Orders → Maintain technician historical service ratings, skill tags, hourly rates, and config → Manage Green Assessment/Coupons/Campaigns
 
 ## 十三、项目发展历程
 ## 13. Project Timeline

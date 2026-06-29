@@ -1,0 +1,3 @@
+ALTER TABLE technician
+    ADD COLUMN service_rating DOUBLE DEFAULT NULL,
+    ADD COLUMN skill_tags VARCHAR(512) DEFAULT NULL;

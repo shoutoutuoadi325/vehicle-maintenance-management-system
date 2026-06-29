@@ -84,6 +84,7 @@ public class RepairOrderService {
         repairOrder.setStatus(request.status() != null ? request.status() : RepairOrder.RepairStatus.PENDING);
         repairOrder.setDescription(request.description());
         repairOrder.setCreatedAt(request.createdAt() != null ? request.createdAt() : new Date());
+        repairOrder.setPreferredDate(request.preferredDate());
         repairOrder.setUpdatedAt(new Date());
         repairOrder.setCompletedAt(request.completedAt());
         repairOrder.setRepairEndedAt(request.completedAt());
@@ -480,6 +481,9 @@ public class RepairOrderService {
         }
         if (request.description() != null) {
             repairOrder.setDescription(request.description());
+        }
+        if (request.preferredDate() != null) {
+            repairOrder.setPreferredDate(request.preferredDate());
         }
         if (request.laborCost() != null) {
             repairOrder.setLaborCost(request.laborCost());

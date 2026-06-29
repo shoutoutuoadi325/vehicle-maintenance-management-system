@@ -9,7 +9,7 @@ JAR_SOURCE="$ROOT_DIR/backend/target/repair-0.0.1-SNAPSHOT.jar"
 
 PLATFORM_ARG="all"
 SKIP_BUILD=0
-SYNC_MYSQL_DATA=0
+SYNC_MYSQL_DATA=1
 MYSQL_HOST="${MYSQL_HOST:-localhost}"
 MYSQL_PORT="${MYSQL_PORT:-3306}"
 MYSQL_DATABASE="${MYSQL_DATABASE:-car_repair}"
@@ -19,7 +19,7 @@ MYSQL_SNAPSHOT="$CACHE_DIR/mysql-snapshot/standalone-mysql-data.sql"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/package-release.sh [--platform all|windows-x64|macos-x64|macos-arm64|current] [--skip-build] [--sync-mysql-data]
+Usage: scripts/package-release.sh [--platform all|windows-x64|macos-arm64|current] [--skip-build] [--sync-mysql-data] [--without-mysql-data]
 
 Builds portable one-click packages with an embedded JRE and local H2 data store.
 End users do not need Java, Node.js, Maven, or MySQL installed.
@@ -28,9 +28,10 @@ Windows archives are created with the JDK jar tool so Chinese launcher names are
 stored with the ZIP UTF-8 language encoding flag. Do not re-pack Windows bundles
 with plain zip -qr, which can produce garbled filenames on Windows.
 
-Use --sync-mysql-data to export the current MySQL car_repair data into the
+By default the script exports the current MySQL car_repair data into the
 package. The snapshot is imported into the package-local H2 database on first
-startup, so end users still do not need MySQL.
+startup, so end users still do not need MySQL. Use --without-mysql-data only
+when intentionally building a clean demo-data package.
 USAGE
 }
 
@@ -46,6 +47,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --sync-mysql-data)
       SYNC_MYSQL_DATA=1
+      shift
+      ;;
+    --without-mysql-data)
+      SYNC_MYSQL_DATA=0
       shift
       ;;
     -h|--help)
@@ -66,7 +71,6 @@ detect_current_platform() {
   arch="$(uname -m)"
   case "$os:$arch" in
     Darwin:arm64) echo "macos-arm64" ;;
-    Darwin:x86_64) echo "macos-x64" ;;
     MINGW*:x86_64|MSYS*:x86_64|CYGWIN*:x86_64) echo "windows-x64" ;;
     *) echo "Unsupported current platform: $os $arch" >&2; exit 1 ;;
   esac
@@ -74,9 +78,9 @@ detect_current_platform() {
 
 resolve_platforms() {
   case "$PLATFORM_ARG" in
-    all) echo "windows-x64 macos-x64 macos-arm64" ;;
+    all) echo "windows-x64 macos-arm64" ;;
     current) detect_current_platform ;;
-    windows-x64|macos-x64|macos-arm64) echo "$PLATFORM_ARG" ;;
+    windows-x64|macos-arm64) echo "$PLATFORM_ARG" ;;
     *) echo "Unsupported platform: $PLATFORM_ARG" >&2; exit 1 ;;
   esac
 }
@@ -113,7 +117,7 @@ generate_mysql_snapshot() {
   fi
 
   if ! command -v mysql >/dev/null 2>&1 || ! command -v mysqldump >/dev/null 2>&1; then
-    echo "mysql and mysqldump are required when --sync-mysql-data is used" >&2
+    echo "mysql and mysqldump are required when MySQL data sync is enabled" >&2
     exit 1
   fi
 
@@ -161,7 +165,6 @@ adoptium_url() {
   local platform="$1"
   case "$platform" in
     windows-x64) echo "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse?project=jdk" ;;
-    macos-x64) echo "https://api.adoptium.net/v3/binary/latest/17/ga/mac/x64/jre/hotspot/normal/eclipse?project=jdk" ;;
     macos-arm64) echo "https://api.adoptium.net/v3/binary/latest/17/ga/mac/aarch64/jre/hotspot/normal/eclipse?project=jdk" ;;
     *) echo "Unsupported platform: $platform" >&2; exit 1 ;;
   esac

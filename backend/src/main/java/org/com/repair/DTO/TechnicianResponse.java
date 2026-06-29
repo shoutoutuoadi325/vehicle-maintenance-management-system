@@ -11,11 +11,14 @@ public record TechnicianResponse(
     String phone,
     String email,
     SkillType skillType,
-    Double hourlyRate
+    Double hourlyRate,
+    Double serviceRating,
+    String skillTags
 ) {
     public TechnicianResponse(Technician technician) {
         this(technician.getId(), technician.getName(), technician.getEmployeeId(), 
              technician.getUsername(), technician.getPhone(), technician.getEmail(), 
-             technician.getSkillType(), technician.getHourlyRate());
+             technician.getSkillType(), technician.getHourlyRate(), technician.getServiceRating(),
+             technician.getSkillTags());
     }
-} 
+}

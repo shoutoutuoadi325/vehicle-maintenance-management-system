@@ -46,6 +46,10 @@ public class RepairOrder {
 
     @Column
     @Temporal(TemporalType.TIMESTAMP)
+    private Date preferredDate;
+
+    @Column
+    @Temporal(TemporalType.TIMESTAMP)
     private Date updatedAt;
 
     @Column
@@ -232,6 +236,14 @@ public class RepairOrder {
 
     public void setCreatedAt(Date createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Date getPreferredDate() {
+        return preferredDate;
+    }
+
+    public void setPreferredDate(Date preferredDate) {
+        this.preferredDate = preferredDate;
     }
 
     public Date getUpdatedAt() {

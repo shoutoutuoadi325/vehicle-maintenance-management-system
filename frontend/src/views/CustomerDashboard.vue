@@ -722,8 +722,73 @@
           </div>
           <div class="form-group">
             <label class="form-label">预约时间</label>
-            <input v-model="repairOrderForm.preferredDate" type="datetime-local" class="form-input"
-                   :min="new Date().toISOString().slice(0, 16)">
+            <div class="datetime-picker" @click.stop>
+              <button
+                type="button"
+                class="datetime-trigger"
+                :class="{ active: appointmentPickerOpen }"
+                @click="togglePreferredDatePicker"
+              >
+                <span :class="{ placeholder: !repairOrderForm.preferredDate }">
+                  {{ preferredDateDisplay }}
+                </span>
+                <i class="fas fa-calendar-alt"></i>
+              </button>
+              <div v-if="appointmentPickerOpen" class="datetime-menu">
+                <div class="datetime-menu-header">
+                  <button type="button" class="icon-button" @click="shiftAppointmentMonth(-1)">
+                    <i class="fas fa-chevron-left"></i>
+                  </button>
+                  <strong>{{ appointmentMonthLabel }}</strong>
+                  <button type="button" class="icon-button" @click="shiftAppointmentMonth(1)">
+                    <i class="fas fa-chevron-right"></i>
+                  </button>
+                </div>
+                <div class="datetime-weekdays">
+                  <span v-for="weekday in appointmentWeekdays" :key="weekday">{{ weekday }}</span>
+                </div>
+                <div class="datetime-days">
+                  <button
+                    v-for="day in appointmentCalendarDays"
+                    :key="day.key"
+                    type="button"
+                    class="datetime-day"
+                    :class="{
+                      muted: !day.inCurrentMonth,
+                      selected: isSelectedAppointmentDay(day.date),
+                      today: day.isToday
+                    }"
+                    :disabled="day.disabled"
+                    @click="selectPreferredDate(day.date)"
+                  >
+                    {{ day.label }}
+                  </button>
+                </div>
+                <div class="datetime-time-row">
+                  <label>
+                    时
+                    <select v-model="appointmentPickerHour" @change="commitPreferredDateTime">
+                      <option v-for="hour in appointmentHourOptions" :key="hour" :value="hour">
+                        {{ hour }}
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    分
+                    <select v-model="appointmentPickerMinute" @change="commitPreferredDateTime">
+                      <option v-for="minute in appointmentMinuteOptions" :key="minute" :value="minute">
+                        {{ minute }}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+                <div class="datetime-actions">
+                  <button type="button" @click="clearPreferredDate">清除</button>
+                  <button type="button" @click="setPreferredDateToday">今天</button>
+                  <button type="button" class="primary" @click="closePreferredDatePicker">确定</button>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">联系方式</label>
@@ -987,6 +1052,13 @@ export default {
         reworkCount: 0,
         repairType: 'repair'
       },
+      appointmentPickerOpen: false,
+      appointmentPickerYear: new Date().getFullYear(),
+      appointmentPickerMonth: new Date().getMonth(),
+      appointmentPickerHour: '09',
+      appointmentPickerMinute: '00',
+      appointmentWeekdays: ['一', '二', '三', '四', '五', '六', '日'],
+      appointmentMinuteOptions: ['00', '15', '30', '45'],
       feedbackForm: {
         comment: '',
         rating: 0
@@ -1055,6 +1127,45 @@ export default {
         return '平稳驾驶和规范保养，有助于减少排放并提升安全性。';
       }
       return this.ecoTips[this.ecoTipIndex % this.ecoTips.length];
+    },
+    preferredDateDisplay() {
+      if (!this.repairOrderForm.preferredDate) {
+        return '请选择预约时间';
+      }
+      const parsed = this.parseLocalDateTimeValue(this.repairOrderForm.preferredDate);
+      if (!parsed) {
+        return '请选择预约时间';
+      }
+      return `${parsed.getFullYear()}/${this.pad2(parsed.getMonth() + 1)}/${this.pad2(parsed.getDate())} ${this.pad2(parsed.getHours())}:${this.pad2(parsed.getMinutes())}`;
+    },
+    appointmentMonthLabel() {
+      return `${this.appointmentPickerYear}年${this.appointmentPickerMonth + 1}月`;
+    },
+    appointmentHourOptions() {
+      return Array.from({ length: 24 }, (_, hour) => this.pad2(hour));
+    },
+    appointmentCalendarDays() {
+      const firstDay = new Date(this.appointmentPickerYear, this.appointmentPickerMonth, 1);
+      const startOffset = (firstDay.getDay() + 6) % 7;
+      const startDate = new Date(this.appointmentPickerYear, this.appointmentPickerMonth, 1 - startOffset);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      return Array.from({ length: 42 }, (_, index) => {
+        const date = new Date(startDate);
+        date.setDate(startDate.getDate() + index);
+        const dayStart = new Date(date);
+        dayStart.setHours(0, 0, 0, 0);
+
+        return {
+          key: this.formatDateKey(date),
+          date,
+          label: date.getDate(),
+          inCurrentMonth: date.getMonth() === this.appointmentPickerMonth,
+          isToday: this.formatDateKey(date) === this.formatDateKey(new Date()),
+          disabled: dayStart < today
+        };
+      });
     },
     filteredMaintenanceAlerts() {
       return this.maintenanceAlerts;
@@ -1464,6 +1575,96 @@ export default {
       }
       return new Date(dateString).toLocaleString('zh-CN');
     },
+    pad2(value) {
+      return String(value).padStart(2, '0');
+    },
+    formatDateKey(date) {
+      return `${date.getFullYear()}-${this.pad2(date.getMonth() + 1)}-${this.pad2(date.getDate())}`;
+    },
+    formatLocalDateTimeValue(date) {
+      return `${this.formatDateKey(date)}T${this.pad2(date.getHours())}:${this.pad2(date.getMinutes())}`;
+    },
+    parseLocalDateTimeValue(value) {
+      if (!value) {
+        return null;
+      }
+      const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+      if (!match) {
+        const fallback = new Date(value);
+        return Number.isNaN(fallback.getTime()) ? null : fallback;
+      }
+      const [, year, month, day, hour, minute] = match;
+      const parsed = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    },
+    nextBookableDate() {
+      const now = new Date();
+      const minutes = now.getMinutes();
+      const roundedMinutes = minutes < 15 ? 15 : minutes < 30 ? 30 : minutes < 45 ? 45 : 0;
+      if (roundedMinutes === 0) {
+        now.setHours(now.getHours() + 1);
+      }
+      now.setMinutes(roundedMinutes, 0, 0);
+      return now;
+    },
+    syncAppointmentPickerFromValue() {
+      const parsed = this.parseLocalDateTimeValue(this.repairOrderForm.preferredDate) || this.nextBookableDate();
+      this.appointmentPickerYear = parsed.getFullYear();
+      this.appointmentPickerMonth = parsed.getMonth();
+      this.appointmentPickerHour = this.pad2(parsed.getHours());
+      const normalizedMinute = Math.round(parsed.getMinutes() / 15) * 15;
+      this.appointmentPickerMinute = this.pad2(normalizedMinute === 60 ? 45 : normalizedMinute);
+    },
+    togglePreferredDatePicker() {
+      if (this.appointmentPickerOpen) {
+        this.closePreferredDatePicker();
+        return;
+      }
+      this.openPreferredDatePicker();
+    },
+    openPreferredDatePicker() {
+      this.syncAppointmentPickerFromValue();
+      this.appointmentPickerOpen = true;
+    },
+    closePreferredDatePicker() {
+      this.appointmentPickerOpen = false;
+    },
+    shiftAppointmentMonth(delta) {
+      const shifted = new Date(this.appointmentPickerYear, this.appointmentPickerMonth + delta, 1);
+      this.appointmentPickerYear = shifted.getFullYear();
+      this.appointmentPickerMonth = shifted.getMonth();
+    },
+    isSelectedAppointmentDay(date) {
+      const selected = this.parseLocalDateTimeValue(this.repairOrderForm.preferredDate);
+      return !!selected && this.formatDateKey(selected) === this.formatDateKey(date);
+    },
+    selectPreferredDate(date) {
+      const selected = new Date(date);
+      selected.setHours(Number(this.appointmentPickerHour), Number(this.appointmentPickerMinute), 0, 0);
+      this.setPreferredDateFromDate(selected);
+    },
+    commitPreferredDateTime() {
+      const selected = this.parseLocalDateTimeValue(this.repairOrderForm.preferredDate)
+        || new Date(this.appointmentPickerYear, this.appointmentPickerMonth, new Date().getDate());
+      selected.setHours(Number(this.appointmentPickerHour), Number(this.appointmentPickerMinute), 0, 0);
+      this.setPreferredDateFromDate(selected);
+    },
+    setPreferredDateFromDate(date) {
+      const nextBookable = this.nextBookableDate();
+      const selected = date < nextBookable ? nextBookable : date;
+      this.repairOrderForm.preferredDate = this.formatLocalDateTimeValue(selected);
+      this.appointmentPickerYear = selected.getFullYear();
+      this.appointmentPickerMonth = selected.getMonth();
+      this.appointmentPickerHour = this.pad2(selected.getHours());
+      this.appointmentPickerMinute = this.pad2(selected.getMinutes());
+    },
+    setPreferredDateToday() {
+      this.setPreferredDateFromDate(this.nextBookableDate());
+    },
+    clearPreferredDate() {
+      this.repairOrderForm.preferredDate = '';
+      this.closePreferredDatePicker();
+    },
     editVehicle(vehicle) {
       // 实现编辑车辆功能
       this.$emit('message', '编辑功能开发中', 'info');
@@ -1511,6 +1712,9 @@ export default {
           vehicleId: this.repairOrderForm.vehicleId,
           technicianIds: [],
           requiredSkillType: this.repairOrderForm.requiredSkillType,
+          preferredDate: this.repairOrderForm.preferredDate
+            ? this.parseLocalDateTimeValue(this.repairOrderForm.preferredDate).toISOString()
+            : null,
           ecoMaterial: this.repairOrderForm.ecoMaterial,
           reworkCount: this.repairOrderForm.reworkCount || 0,
           repairType: this.repairOrderForm.repairType
@@ -1529,6 +1733,7 @@ export default {
           reworkCount: 0,
           repairType: 'repair'
         };
+        this.closePreferredDatePicker();
         this.calculateStatistics();
         
         // 检查订单状态，给出相应提示
@@ -2440,6 +2645,175 @@ export default {
 .form-help i {
   color: #3b82f6;
   margin-right: 0.25rem;
+}
+
+.datetime-picker {
+  position: relative;
+}
+
+.datetime-trigger {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 0.5rem;
+  background: #fff;
+  color: #1f2937;
+  font: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.datetime-trigger.active,
+.datetime-trigger:focus {
+  outline: none;
+  border-color: #42b983;
+  box-shadow: 0 0 0 3px rgba(66, 185, 131, 0.1);
+}
+
+.datetime-trigger .placeholder {
+  color: #9ca3af;
+}
+
+.datetime-trigger i {
+  color: #374151;
+}
+
+.datetime-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 1100;
+  width: min(100%, 380px);
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+  padding: 1rem;
+}
+
+.datetime-menu-header,
+.datetime-actions,
+.datetime-time-row {
+  display: flex;
+  align-items: center;
+}
+
+.datetime-menu-header {
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  color: #111827;
+}
+
+.icon-button {
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 0.375rem;
+  background: #f3f4f6;
+  color: #374151;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: #e5e7eb;
+}
+
+.datetime-weekdays,
+.datetime-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.datetime-weekdays {
+  margin-bottom: 0.35rem;
+  color: #6b7280;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.datetime-day {
+  aspect-ratio: 1;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  background: #f9fafb;
+  color: #1f2937;
+  cursor: pointer;
+  font: inherit;
+}
+
+.datetime-day:hover:not(:disabled) {
+  border-color: #42b983;
+  background: #ecfdf5;
+}
+
+.datetime-day.muted {
+  color: #9ca3af;
+  background: #fff;
+}
+
+.datetime-day.today {
+  border-color: #93c5fd;
+}
+
+.datetime-day.selected {
+  background: #42b983;
+  color: #fff;
+}
+
+.datetime-day:disabled {
+  cursor: not-allowed;
+  color: #d1d5db;
+  background: #f9fafb;
+}
+
+.datetime-time-row {
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+
+.datetime-time-row label {
+  flex: 1;
+  color: #374151;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.datetime-time-row select {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  background: #fff;
+  font: inherit;
+}
+
+.datetime-actions {
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.datetime-actions button {
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  background: #fff;
+  color: #374151;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.datetime-actions button.primary {
+  border-color: #42b983;
+  background: #42b983;
+  color: #fff;
 }
 
 .btn {

@@ -41,6 +41,12 @@ public class Technician {
 
     @Column(nullable = false)
     private Double hourlyRate;
+
+    @Column
+    private Double serviceRating;
+
+    @Column(length = 512)
+    private String skillTags;
     
     @Column
     private Double totalWorkHours = 0.0;
@@ -131,6 +137,22 @@ public class Technician {
 
     public void setHourlyRate(Double hourlyRate) {
         this.hourlyRate = hourlyRate;
+    }
+
+    public Double getServiceRating() {
+        return serviceRating;
+    }
+
+    public void setServiceRating(Double serviceRating) {
+        this.serviceRating = serviceRating;
+    }
+
+    public String getSkillTags() {
+        return skillTags;
+    }
+
+    public void setSkillTags(String skillTags) {
+        this.skillTags = skillTags;
     }
     
     public Double getTotalWorkHours() {

@@ -21,18 +21,20 @@ ON DUPLICATE KEY UPDATE
   email = VALUES(email),
   address = VALUES(address);
 
-INSERT INTO technician (name, employee_id, username, password, phone, email, skill_type, hourly_rate, total_work_hours, completed_orders)
+INSERT INTO technician (name, employee_id, username, password, phone, email, skill_type, hourly_rate, service_rating, skill_tags, total_work_hours, completed_orders)
 VALUES
-  ('Technician Demo', 'EMP-DEMO-001', 'tech_demo', 'Pass@1234', '13800000003', 'tech.demo@example.com', 'MECHANIC', 120, 0, 0),
-  ('Bodywork Demo', 'EMP-DEMO-002', 'tech_body_demo', 'Pass@1234', '13800000004', 'tech.body@example.com', 'BODY_WORK', 110, 0, 0),
-  ('Diagnostic Demo', 'EMP-DEMO-003', 'tech_diag_demo', 'Pass@1234', '13800000005', 'tech.diag@example.com', 'DIAGNOSTIC', 130, 0, 0)
+  ('Technician Demo', 'EMP-DEMO-001', 'tech_demo', 'Pass@1234', '13800000003', 'tech.demo@example.com', 'MECHANIC', 120, 4.7, 'engine,chassis,diagnostics', 0, 0),
+  ('Bodywork Demo', 'EMP-DEMO-002', 'tech_body_demo', 'Pass@1234', '13800000004', 'tech.body@example.com', 'BODY_WORK', 110, 4.5, 'bodywork,panel repair', 0, 0),
+  ('Diagnostic Demo', 'EMP-DEMO-003', 'tech_diag_demo', 'Pass@1234', '13800000005', 'tech.diag@example.com', 'DIAGNOSTIC', 130, 4.8, 'obd,complex diagnosis', 0, 0)
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   password = VALUES(password),
   phone = VALUES(phone),
   email = VALUES(email),
   skill_type = VALUES(skill_type),
-  hourly_rate = VALUES(hourly_rate);
+  hourly_rate = VALUES(hourly_rate),
+  service_rating = VALUES(service_rating),
+  skill_tags = VALUES(skill_tags);
 
 SET @admin_demo_id = (SELECT id FROM admin WHERE username = 'admin_demo' LIMIT 1);
 SET @customer_demo_id = (SELECT id FROM user WHERE username = 'customer_demo' LIMIT 1);

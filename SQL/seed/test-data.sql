@@ -9,9 +9,9 @@ INSERT INTO vehicle (id, license_plate, brand, model, year, color, vin, user_id)
 (2, '沪B67890', '本田', '思域', 2020, '黑色', 'VIN987654321098765', 2);
 
 -- 插入技师数据
-INSERT INTO technician (id, name, employee_id, username, password, phone, email, skill_type, hourly_rate, total_work_hours, completed_orders) VALUES
-(1, '王强', 'EMP001', 'tech1', 'password1', '13800138003', 'tech1@example.com', 'MECHANIC', 80.0, 0.0, 0),
-(2, '赵敏', 'EMP002', 'tech2', 'password2', '13800138004', 'tech2@example.com', 'ELECTRICIAN', 85.0, 0.0, 0);
+INSERT INTO technician (id, name, employee_id, username, password, phone, email, skill_type, hourly_rate, service_rating, skill_tags, total_work_hours, completed_orders) VALUES
+(1, '王强', 'EMP001', 'tech1', 'password1', '13800138003', 'tech1@example.com', 'MECHANIC', 80.0, 4.6, '发动机,底盘', 0.0, 0),
+(2, '赵敏', 'EMP002', 'tech2', 'password2', '13800138004', 'tech2@example.com', 'ELECTRICIAN', 85.0, 4.4, '电气,启动系统', 0.0, 0);
 
 -- 插入维修订单数据
 INSERT INTO repair_order (id, order_number, status, description, created_at, updated_at, completed_at, labor_cost, material_cost, total_cost, estimated_hours, actual_hours, user_id, vehicle_id, required_skill_type, assignment_type) VALUES

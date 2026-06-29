@@ -9,7 +9,7 @@
   - 数据库：H2 文件数据库，启用 MySQL 兼容模式。
   - 数据目录：启动脚本设置为运行包内的 `data/`。
   - 建表：Hibernate 根据实体自动维护。
-  - 初始数据：默认由 `StandaloneDemoDataInitializer` 首次启动写入 README 中列出的管理员、车主、技师、钣喷技师四个默认账号；如果打包时使用 `--sync-mysql-data`，则优先导入包内 MySQL 数据快照。
+  - 初始数据：打包脚本默认导出当前 MySQL 业务数据快照并放入安装包，首次启动优先导入该快照；仅在构建时显式使用 `--without-mysql-data` 时，才回退到 `StandaloneDemoDataInitializer` 写入 README 中列出的管理员、车主、技师、钣喷技师四个默认账号。
 - 前端 `frontend/dist` 会在 Maven 打包时写入后端 jar 的 `static/` 目录，由 Spring Boot 统一托管。
 - 现有 `application-secret.properties` 会随后端 jar 一起进入运行包，AI API Key 无需普通用户配置。
 
@@ -20,6 +20,7 @@
 - JDK 17+
 - Node.js / npm
 - Bash、curl、zip、unzip、tar
+- mysql、mysqldump（默认同步当前 MySQL 数据时需要）
 - 可访问互联网，用于下载各平台 Temurin JRE 17
 
 Windows 包含 `启动系统.bat`、`停止系统.bat`、`使用说明.txt` 等中文文件名。打包脚本会使用 JDK 自带的 `jar` 工具生成 Windows zip，确保 ZIP 条目写入 UTF-8 文件名标志，避免用户在 Windows 解压后看到乱码文件名。发布 Windows 包时不要用普通 `zip -qr` 手工重新压缩目录。
@@ -38,11 +39,10 @@ scripts/package-release.sh --platform all
 ```bash
 scripts/package-release.sh --platform windows-x64
 scripts/package-release.sh --platform macos-arm64
-scripts/package-release.sh --platform macos-x64
 scripts/package-release.sh --platform current
 ```
 
-如果希望安装包内初始数据同步当前项目 MySQL（默认读取 `localhost:3306/car_repair`，账号 `root`，密码 `79Haolubenwei`），执行：
+脚本默认会同步当前项目 MySQL（默认读取 `localhost:3306/car_repair`，账号 `root`，密码 `79Haolubenwei`）。`--sync-mysql-data` 仍可显式传入，效果与默认一致：
 
 ```bash
 scripts/package-release.sh --platform all --sync-mysql-data
@@ -50,13 +50,18 @@ scripts/package-release.sh --platform all --sync-mysql-data
 
 可通过 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DATABASE`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 环境变量覆盖连接信息。脚本会排除 `flyway_schema_history` 与登录态 `auth_refresh_token`，将其余业务表导出为 `app/mysql-snapshot.sql`，一键包首次启动时导入到本地 H2。
 
+如需刻意生成只包含默认账号的干净演示包，可执行：
+
+```bash
+scripts/package-release.sh --platform all --without-mysql-data
+```
+
 输出目录：
 
 ```text
 dist/installers/
   fangxingwei-ai-windows-x64.zip
   fangxingwei-ai-macos-arm64.zip
-  fangxingwei-ai-macos-x64.zip
 ```
 
 ## 用户使用方式
@@ -89,7 +94,7 @@ http://localhost:8080
 2. 删除 `data/` 目录。
 3. 再运行 `启动系统` 脚本。
 
-如果该包是通过 `--sync-mysql-data` 生成的，重置后会重新导入包内 MySQL 快照；否则会恢复到仅包含默认账号的初始状态。
+默认打包产物重置后会重新导入包内 MySQL 快照；只有使用 `--without-mysql-data` 生成的包才会恢复到仅包含默认账号的初始状态。
 
 ## MySQL 说明
 

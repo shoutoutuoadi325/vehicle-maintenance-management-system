@@ -73,6 +73,35 @@ class AutoAssignmentServiceTest {
     }
 
     @Test
+    void shouldUseMaintainedServiceRatingBeforeFeedbackAverage() {
+        Technician maintainedRatingTechnician = technician(1L, "维护评分技师");
+        maintainedRatingTechnician.setServiceRating(4.9);
+        Technician feedbackOnlyTechnician = technician(2L, "反馈评分技师");
+
+        RepairOrder order = new RepairOrder();
+        order.setId(11L);
+        order.setRequiredSkillType(Technician.SkillType.MECHANIC);
+        order.setDescription("发动机异响");
+        order.setCreatedAt(new Date());
+        order.setEstimatedHours(2.0);
+
+        when(technicianRepository.findBySkillType(Technician.SkillType.MECHANIC))
+                .thenReturn(List.of(maintainedRatingTechnician, feedbackOnlyTechnician));
+        when(dispatchWeightConfigRepository.findByConfigKeyAndEnabledTrue("default"))
+                .thenReturn(Optional.empty());
+        when(feedbackService.getAverageRatingByTechnicianId(1L)).thenReturn(1.0);
+        when(feedbackService.getAverageRatingByTechnicianId(2L)).thenReturn(4.0);
+        when(technicianService.getTechnicianFatigueSnapshot(1L))
+                .thenReturn(new TechnicianService.TechnicianFatigueSnapshot(0.0, 0, 0.0, 0));
+        when(technicianService.getTechnicianFatigueSnapshot(2L))
+                .thenReturn(new TechnicianService.TechnicianFatigueSnapshot(0.0, 0, 0.0, 0));
+
+        Technician assignedTechnician = autoAssignmentService.autoAssignBestTechnician(order);
+
+        assertEquals(maintainedRatingTechnician, assignedTechnician);
+    }
+
+    @Test
     void shouldRankOlderLongTailPendingOrdersFirstByAgingPolicy() {
         RepairOrder freshSimpleOrder = pendingOrder(
                 1L,

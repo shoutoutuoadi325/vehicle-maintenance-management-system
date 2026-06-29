@@ -182,9 +182,8 @@ public class AutoAssignmentService {
     }
 
     private double calculateTechnicianScore(Technician technician, DispatchScoringWeights weights) {
-        // 获取技师的平均评分（0-5分）
-        Double averageRating = feedbackService.getAverageRatingByTechnicianId(technician.getId());
-        double ratingScore = (averageRating != null) ? averageRating : 3.0; // 默认3分
+        // 历史服务评分可由管理员维护；未维护时回退到客户反馈平均分。
+        double ratingScore = resolveHistoricalServiceRating(technician);
         
         // 获取当前工作负载（未完成的订单数量）
         int currentWorkload = getCurrentWorkload(technician);
@@ -201,6 +200,15 @@ public class AutoAssignmentService {
                 + (workloadScore * weights.workloadWeight())
                 + (experienceScore * weights.experienceWeight())
                 - (fatigueLevel * weights.fatiguePenaltyWeight());
+    }
+
+    private double resolveHistoricalServiceRating(Technician technician) {
+        if (technician.getServiceRating() != null) {
+            return technician.getServiceRating();
+        }
+
+        Double averageRating = feedbackService.getAverageRatingByTechnicianId(technician.getId());
+        return averageRating != null ? averageRating : 3.0;
     }
 
     private Technician selectBestTechnician(SkillType requiredSkillType,

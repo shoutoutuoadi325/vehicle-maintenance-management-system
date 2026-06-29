@@ -10,6 +10,8 @@ public record NewTechnicianRequest(
     String phone,
     String email,
     SkillType skillType,
-    Double hourlyRate
+    Double hourlyRate,
+    Double serviceRating,
+    String skillTags
 ) {
-} 
+}

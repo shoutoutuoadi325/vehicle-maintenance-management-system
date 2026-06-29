@@ -68,7 +68,7 @@ public class TechnicianService {
         technician.setPhone(request.phone());
         technician.setEmail(request.email());
         technician.setSkillType(request.skillType());
-        technician.setHourlyRate(request.hourlyRate());
+        applyEditableProfileFields(technician, request);
         
         Technician savedTechnician = technicianRepository.save(technician);
         return new TechnicianResponse(savedTechnician);
@@ -115,10 +115,40 @@ public class TechnicianService {
         technician.setPhone(request.phone());
         technician.setEmail(request.email());
         technician.setSkillType(request.skillType());
-        technician.setHourlyRate(request.hourlyRate());
+        applyEditableProfileFields(technician, request);
         
         Technician updatedTechnician = technicianRepository.save(technician);
         return new TechnicianResponse(updatedTechnician);
+    }
+
+    private void applyEditableProfileFields(Technician technician, NewTechnicianRequest request) {
+        validateEditableProfile(request);
+        technician.setHourlyRate(request.hourlyRate());
+        technician.setServiceRating(request.serviceRating());
+        technician.setSkillTags(normalizeSkillTags(request.skillTags()));
+    }
+
+    private void validateEditableProfile(NewTechnicianRequest request) {
+        if (request.skillType() == null) {
+            throw new RuntimeException("技师主工种不能为空");
+        }
+        if (request.hourlyRate() == null || request.hourlyRate() <= 0) {
+            throw new RuntimeException("技师时薪必须大于0");
+        }
+        if (request.serviceRating() != null && (request.serviceRating() < 0 || request.serviceRating() > 5)) {
+            throw new RuntimeException("历史服务评分必须在0-5分之间");
+        }
+        if (request.skillTags() != null && request.skillTags().length() > 512) {
+            throw new RuntimeException("技能标签长度不能超过512个字符");
+        }
+    }
+
+    private String normalizeSkillTags(String skillTags) {
+        if (skillTags == null) {
+            return null;
+        }
+        String normalized = skillTags.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
     
     @Transactional

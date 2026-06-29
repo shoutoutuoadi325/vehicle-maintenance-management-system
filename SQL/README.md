@@ -2,8 +2,8 @@
 
 本文档包含测试帐号信息，以及如何在本地环境中重新构建数据库和注入测试数据的操作指南。
 
-> **一键运行包说明：** 面向普通用户的 Windows/macOS 一键运行包使用 `standalone` Profile 和本地文件数据库，首次启动会自动建表；默认只写入根目录 `README.md` 中列出的默认账号。不要求用户安装 MySQL，也不需要手动执行本文档中的 SQL 命令。本文档仍适用于开发、测试和正式部署的 MySQL 模式。
-> 如果打包时执行 `scripts/package-release.sh --sync-mysql-data`，脚本会从当前 MySQL 导出业务数据快照并放入安装包，安装包首次启动会优先导入该快照。
+> **一键运行包说明：** 面向普通用户的 Windows/macOS 一键运行包使用 `standalone` Profile 和本地文件数据库，首次启动会自动建表；打包脚本默认会从当前 MySQL 导出业务数据快照并放入安装包，安装包首次启动会优先导入该快照。不要求用户安装 MySQL，也不需要手动执行本文档中的 SQL 命令。本文档仍适用于开发、测试和正式部署的 MySQL 模式。
+> 如果构建时显式执行 `scripts/package-release.sh --without-mysql-data`，安装包才会回退到只写入根目录 `README.md` 中列出的默认账号。
 
 ## 1. 预置测试帐号
 
@@ -55,6 +55,10 @@ mysql -uroot -p79Haolubenwei car_repair < SQL/seed/low_carbon_journey_quiz_seed.
 > 2. 请根据你的实际本地数据库配置（账号/密码），替换掉上述命令中的 `-uroot -p79Haolubenwei` 等认证参数。
 > 3. 所有 SQL 路径如 `SQL/schema/...` 为相对路径，需确保在**项目根目录（即 `/Users/zhiqizhang/development/vehicle-maintenance-management-system`）**下执行。
 
-## 3. 与 Flyway 迁移相关的 AI 诊断表
+## 3. 最新 Flyway 迁移说明
 
-最新迁移包含 `V25__add_technician_copilot_memory.sql`，会创建 `technician_copilot_memory` 表。该表用于保存每位技师的 AI Copilot 专属记忆，包括脱敏后的最近问题、故障类型、建议、历史案例 RAG 证据、置信度和工作流状态。开发或部署环境使用 `spring.jpa.hibernate.ddl-auto=validate` 时，必须先完成 Flyway 迁移再启动后端服务。
+最新迁移包含 `V27__add_technician_profile_edit_fields.sql`，会为 `technician` 表新增 `service_rating` 与 `skill_tags` 字段，用于支持管理端维护技师历史服务评分和技能标签；派单评分优先使用该历史服务评分，未设置时回退到用户反馈平均分。
+
+此前的 `V26__add_preferred_date_to_repair_order.sql` 会为 `repair_order` 表新增 `preferred_date` 字段，用于保存车主预约维修时选择的日期时间。
+
+此前的 `V25__add_technician_copilot_memory.sql` 会创建 `technician_copilot_memory` 表。该表用于保存每位技师的 AI Copilot 专属记忆，包括脱敏后的最近问题、故障类型、建议、历史案例 RAG 证据、置信度和工作流状态。开发或部署环境使用 `spring.jpa.hibernate.ddl-auto=validate` 时，必须先完成 Flyway 迁移再启动后端服务。

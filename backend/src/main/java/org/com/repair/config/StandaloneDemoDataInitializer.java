@@ -86,6 +86,8 @@ public class StandaloneDemoDataInitializer implements ApplicationRunner {
         technician.setEmail("tech@example.com");
         technician.setSkillType(SkillType.MECHANIC);
         technician.setHourlyRate(128.0);
+        technician.setServiceRating(4.8);
+        technician.setSkillTags("发动机,底盘,疑难诊断");
         technician.setTotalWorkHours(0.0);
         technician.setCompletedOrders(0);
         technicianRepository.save(technician);
@@ -105,6 +107,8 @@ public class StandaloneDemoDataInitializer implements ApplicationRunner {
         technician.setEmail("body@example.com");
         technician.setSkillType(SkillType.BODY_WORK);
         technician.setHourlyRate(138.0);
+        technician.setServiceRating(4.6);
+        technician.setSkillTags("钣金,喷漆,外观修复");
         technician.setTotalWorkHours(0.0);
         technician.setCompletedOrders(0);
         technicianRepository.save(technician);

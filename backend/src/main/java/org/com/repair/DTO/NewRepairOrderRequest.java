@@ -11,6 +11,7 @@ public record NewRepairOrderRequest(
     RepairStatus status,
     String description,
     Date createdAt,
+    Date preferredDate,
     Date updatedAt,
     Date completedAt,
     Double laborCost,

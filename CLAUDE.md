@@ -106,7 +106,7 @@
 2. **AI 诊断**: `AIDiagnosisService` 编排规则引擎 + 外部 LLM；车主端使用单次语义诊断，技师/admin 端非高置信规则直出场景通过单次 `AI_CONSILIUM` 请求完成 `PRE_DIAG → MAIN_AGENT → RED_TEAM → ARBITRATOR` 四阶段协同会诊，并融合 `HistoryCaseAgent` 脱敏向量 RAG 召回和 `TechnicianCopilotMemoryService` 技师专属 Copilot 记忆，详见 [agents.md](./agents.md)
 3. **零碳旅程游戏化**: `GamificationService`（~1560 行）管理能量账户、城市签到、答题、随机事件、优惠券、排行榜、大奖
 4. **绿碳高级算法与评级映射**: `GreenEmissionEngine` 基于工时、材料因子、维保策略因子和返工惩罚因子计算工单相对碳排放，映射为 S/A/B/C 四级绿色指数；`EmissionCalculatorService` 维护生命周期碳数据重算节点，支持历史样本线性回归系数校准
-5. **智能派单**: `AutoAssignmentService` 读取 `dispatch_weight_config` 动态权重，结合评分、工作负载、经验、`TechnicianService` 疲劳度快照和 `AgingAntiStarvationDispatchPolicy` 等待老化策略进行派单
+5. **智能派单**: `AutoAssignmentService` 读取 `dispatch_weight_config` 动态权重，结合管理员维护的技师历史服务评分（未设置时回退到反馈平均分）、工作负载、经验、`TechnicianService` 疲劳度快照和 `AgingAntiStarvationDispatchPolicy` 等待老化策略进行派单；管理端技师编辑支持维护历史服务评分、技能标签与时薪
 6. **维保预警**: `MaintenanceAlertService` 定时扫描车辆里程/时间，生成维保提醒
 7. **库存预警**: `MaterialService` 消耗库存时自动检测低库存并生成告警
 8. **反馈自迭代**: `FeedbackSelfIterationService` 基于反馈数据生成派单权重和 AI Prompt 模板调整建议，每日 03:15 生成待审草案；管理员可通过 `/api/admins/ai-self-iteration/*` API 和前端 `AI 自演进` 页面审核，审批后写入 `agent_prompt_template_config` 与 `dispatch_weight_config`，派单侧消费已启用权重配置
@@ -164,7 +164,7 @@ npm run test:e2e     # Playwright E2E 测试
 
 ### 数据库初始化
 
-一键运行包使用 `standalone` Profile 和本地 H2 文件数据库，首次启动自动建表；默认只注入根目录 `README.md` 中列出的默认账号，若打包时追加 `--sync-mysql-data` 则优先导入包内 MySQL 业务数据快照，不需要最终用户执行 SQL 初始化命令。
+一键运行包使用 `standalone` Profile 和本地 H2 文件数据库，首次启动自动建表；打包脚本默认导出并内置当前 MySQL 业务数据快照，包首次启动优先导入该快照。只有构建时显式追加 `--without-mysql-data`，才回退到仅注入根目录 `README.md` 中列出的默认账号。最终用户不需要执行 SQL 初始化命令。
 
 ```bash
 # 方式一：完整导入
@@ -200,7 +200,7 @@ mysql -u root -p car_repair < SQL/seed/demo-seed.sql
 5. **幂等设计**: 游戏化奖励使用 `(sourceType, sourceId, actionKey)` 幂等键；维保预警使用 `dedupKey` 去重
 6. **并发控制**: 库存消耗使用 `PESSIMISTIC_WRITE`，能量账户使用 `@Version` 乐观锁
 7. **测试**: 使用 H2 内存数据库，测试配置在 `src/test/resources/application.properties`
-8. **一键运行包**: 使用 `scripts/package-release.sh` 生成 Windows/macOS zip，运行时激活 `standalone` Profile，内置 JRE 并使用本地 H2 文件数据库；如需安装包初始数据同步当前 MySQL，打包时加 `--sync-mysql-data`；Windows zip 必须保留 UTF-8 中文文件名标志，避免 `启动系统.bat` 等文件在 Windows 解压后乱码，不要用普通 `zip -qr` 手工重压发布目录
+8. **一键运行包**: 使用 `scripts/package-release.sh` 生成 Windows x64/macOS arm64 zip，运行时激活 `standalone` Profile，内置 JRE 并使用本地 H2 文件数据库；打包默认同步当前 MySQL 业务数据，只有明确需要干净演示包时才加 `--without-mysql-data`；Windows zip 必须保留 UTF-8 中文文件名标志，避免 `启动系统.bat` 等文件在 Windows 解压后乱码，不要用普通 `zip -qr` 手工重压发布目录
 
 ## 文档与质量纪律
 

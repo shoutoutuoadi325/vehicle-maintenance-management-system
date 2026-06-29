@@ -82,20 +82,22 @@ ON DUPLICATE KEY UPDATE
   email = VALUES(email),
   address = VALUES(address);
 
-INSERT INTO technician (name, employee_id, username, password, phone, email, skill_type, hourly_rate, total_work_hours, completed_orders)
+INSERT INTO technician (name, employee_id, username, password, phone, email, skill_type, hourly_rate, service_rating, skill_tags, total_work_hours, completed_orders)
 VALUES
-  ('李浩', 'COMP-TECH-001', 'tech', '123456', '13920260001', 'lihao@example.com', 'MECHANIC', 128, 0, 0),
-  ('王敏', 'COMP-TECH-002', 'electric', '123456', '13920260002', 'wangmin@example.com', 'ELECTRICIAN', 148, 0, 0),
-  ('周凯', 'COMP-TECH-003', 'diag', '123456', '13920260003', 'zhoukai@example.com', 'DIAGNOSTIC', 168, 0, 0),
-  ('赵宁', 'COMP-TECH-004', 'body', '123456', '13920260004', 'zhaoning@example.com', 'BODY_WORK', 138, 0, 0),
-  ('许清', 'COMP-TECH-005', 'paint', '123456', '13920260005', 'xuqing@example.com', 'PAINT', 132, 0, 0)
+  ('李浩', 'COMP-TECH-001', 'tech', '123456', '13920260001', 'lihao@example.com', 'MECHANIC', 128, 4.8, '发动机,底盘,疑难诊断', 0, 0),
+  ('王敏', 'COMP-TECH-002', 'electric', '123456', '13920260002', 'wangmin@example.com', 'ELECTRICIAN', 148, 4.7, '电路,新能源,电池检测', 0, 0),
+  ('周凯', 'COMP-TECH-003', 'diag', '123456', '13920260003', 'zhoukai@example.com', 'DIAGNOSTIC', 168, 4.9, 'OBD,长尾故障,AI Copilot', 0, 0),
+  ('赵宁', 'COMP-TECH-004', 'body', '123456', '13920260004', 'zhaoning@example.com', 'BODY_WORK', 138, 4.6, '钣金,结构件,外观修复', 0, 0),
+  ('许清', 'COMP-TECH-005', 'paint', '123456', '13920260005', 'xuqing@example.com', 'PAINT', 132, 4.5, '喷漆,环保材料,色差修复', 0, 0)
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   password = VALUES(password),
   phone = VALUES(phone),
   email = VALUES(email),
   skill_type = VALUES(skill_type),
-  hourly_rate = VALUES(hourly_rate);
+  hourly_rate = VALUES(hourly_rate),
+  service_rating = VALUES(service_rating),
+  skill_tags = VALUES(skill_tags);
 
 SET @admin_id = (SELECT id FROM admin WHERE username = 'admin' LIMIT 1);
 SET @u_chen = (SELECT id FROM user WHERE username = 'user' LIMIT 1);
