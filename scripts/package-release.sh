@@ -260,7 +260,7 @@ if (Test-Path $PidFile) {
   $ExistingPid = Get-Content $PidFile -ErrorAction SilentlyContinue
   if ($ExistingPid -and (Get-Process -Id $ExistingPid -ErrorAction SilentlyContinue)) {
     Start-Process $Url
-    Write-Host "系统已经在运行：$Url"
+    Write-Host "The system is already running: $Url"
     exit 0
   }
 }
@@ -274,11 +274,11 @@ $Args = @($AppDataArg, $SnapshotArg, "-jar", $Jar, "--spring.profiles.active=sta
 $Process = Start-Process -FilePath $Java -ArgumentList $Args -WorkingDirectory $Root -RedirectStandardOutput $StdOut -RedirectStandardError $StdErr -WindowStyle Hidden -PassThru
 Set-Content -Path $PidFile -Value $Process.Id
 
-Write-Host "正在启动系统，请稍候..."
+Write-Host "Starting the system, please wait..."
 Start-Sleep -Seconds 8
 Start-Process $Url
-Write-Host "已启动：$Url"
-Write-Host "默认账号：admin/user/tech/body，密码均为 123456"
+Write-Host "Started: $Url"
+Write-Host "Default accounts: admin/user/tech/body, password: 123456"
 EOF
 
   cat > "$bundle/scripts/stop-windows.ps1" <<'EOF'
@@ -286,16 +286,16 @@ $Root = Split-Path -Parent $PSScriptRoot
 $PidFile = Join-Path $Root "data\app.pid"
 
 if (!(Test-Path $PidFile)) {
-  Write-Host "没有找到正在运行的系统。"
+  Write-Host "No running system was found."
   exit 0
 }
 
 $PidValue = Get-Content $PidFile -ErrorAction SilentlyContinue
 if ($PidValue -and (Get-Process -Id $PidValue -ErrorAction SilentlyContinue)) {
   Stop-Process -Id $PidValue -Force
-  Write-Host "系统已停止。"
+  Write-Host "The system has been stopped."
 } else {
-  Write-Host "系统进程已经不存在。"
+  Write-Host "The system process is no longer running."
 }
 
 Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
